@@ -75,8 +75,8 @@ function plain(v: unknown): Cell {
 }
 
 export async function readWorkbook(file: File): Promise<SheetData[]> {
-  const ExcelJS = (await import("exceljs")).default;
-  const workbook = new ExcelJS.Workbook();
+  const { newWorkbook } = await import("./excel");
+  const workbook = await newWorkbook();
   await workbook.xlsx.load(await file.arrayBuffer());
   const sheets: SheetData[] = [];
   for (const ws of workbook.worksheets) {

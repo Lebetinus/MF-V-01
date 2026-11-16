@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LanguageSetup, Login } from "./components/Login";
 import { ProfileModal } from "./components/ProfileModal";
 import { Dashboard } from "./components/Dashboard";
-import { Records, RecordModal } from "./components/Records";
+import { Records } from "./components/Records";
+import { RecordModal } from "./components/records/RecordModal";
 import { useDraggableModals, DeleteConfirmModal } from "./components/shared";
 import { Archive } from "./components/Archive";
 import { Activity } from "./components/Activity";

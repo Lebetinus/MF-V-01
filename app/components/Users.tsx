@@ -33,7 +33,6 @@ export function Users({
   users,
   setUsers,
   currentUsername,
-  currentUserIsAdmin,
   currentUserIsSuperAdmin,
   checkPassword,
   onlineUserIds,

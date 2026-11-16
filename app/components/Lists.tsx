@@ -7,6 +7,7 @@ import { PersonChip } from "./shared";
 import { TableTools } from "./TableTools";
 import type { Language } from "../lib/types";
 import { notify } from "../lib/notify";
+import { downloadWorkbook, newWorkbook } from "../lib/excel";
 
 // Liste Kasaları (çalışma alanları): bir kasanın geliri, giderleri ve giderlerin kişilere dağılımı. Kasanın Gider
 // kayıtları (Gider sayfasından girilir) burada bir tabloda listelenir; her giderin kişilere dağıtılan kısmı kişinin
@@ -238,7 +239,6 @@ function ListsResultModal({
   const income = byCurrency((w) => w.totals.income);
   const expense = byCurrency((w) => w.totals.expense);
   const result = byCurrency((w) => w.totals.income - w.totals.expense);
-  const cashLeft = byCurrency((w) => w.totals.kasaRemaining);
   const allocatedSum = byCurrency((w) => w.totals.distributed);
   const incomeTotal = sum((w) => w.totals.income);
   const expenseTotal = sum((w) => w.totals.expense);
@@ -253,8 +253,7 @@ function ListsResultModal({
     .sort((a, b) => b.date.localeCompare(a.date));
 
   async function exportToExcel() {
-    const ExcelJS = (await import("exceljs")).default;
-    const workbook = new ExcelJS.Workbook();
+    const workbook = await newWorkbook();
     workbook.creator = "Maliye-Finans Online";
     workbook.created = new Date();
     const thin = { style: "thin" as const, color: { argb: "FFD3DDDD" } };
@@ -332,13 +331,7 @@ function ListsResultModal({
       row.getCell(4).alignment = { horizontal: "right" };
       row.eachCell({ includeEmpty: true }, (cell) => { cell.fill = fill(bg); cell.border = border; });
     }
-    const buffer = await workbook.xlsx.writeBuffer();
-    const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${title.replace(/[\\/:*?"<>|]/g, "-")}-Liste-Sonuc-${today()}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(url);
+    await downloadWorkbook(workbook, `${title.replace(/[\\/:*?"<>|]/g, "-")}-Liste-Sonuc-${today()}.xlsx`);
   }
 
   const rowsView = (rows: Row[]) =>
@@ -742,7 +735,6 @@ function WorkspaceView({
   );
 }
 
-const RECIPIENT_TINTS = ["#f1f6fc", "#f2f9f1", "#fef5ee", "#f7f2fb", "#fdf1f4", "#f1f4f9"];
 const RECIPIENT_TEXT = ["#1f3d69", "#085041", "#712b13", "#3c3489", "#72243e", "#182f51"];
 const RECIPIENT_COLORS = ["#cfe1f4", "#d5ecd4", "#fbdcc4", "#e6d9f3", "#f8d3de", "#d3ddec"];
 

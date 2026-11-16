@@ -389,7 +389,7 @@ export function Comments({ language, records = [], onRead }: { language: Languag
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   async function load() {

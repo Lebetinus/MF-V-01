@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb, type DbClient } from "../../../db";
-import { cashAccounts, expenseAllocations, listAllocations, listItems, listWorkspaces, lists, records, users, workspaceDistributions, workspaceRecipients } from "../../../db/schema";
+import { cashAccounts, expenseAllocations, listAllocations, listWorkspaces, lists, records, users, workspaceRecipients } from "../../../db/schema";
 import type { SessionUser } from "./auth";
 import { accessibleCashAccountIds, canWriteCashAccount } from "./cash-access";
 

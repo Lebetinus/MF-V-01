@@ -3,7 +3,7 @@
 import { TableTools } from "./TableTools";
 import { MoneyStack } from "./MoneyStack";
 import { useEffect, useState } from "react";
-import { Title, PersonChip } from "./shared";
+import { PersonChip } from "./shared";
 import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, total } from "../lib/finance";
 import { isDebtLeg } from "../lib/debts";
@@ -12,32 +12,6 @@ import type { CashTransfer, Language, Page, RecordItem } from "../lib/types";
 import type { AnalysisTab } from "./Analysis";
 import { notify } from "../lib/notify";
 
-function Stat({
-  label,
-  linkLabel,
-  display,
-  tone,
-  icon,
-  onClick,
-}: {
-  label: string;
-  linkLabel: string;
-  display: string;
-  tone: string;
-  icon: string;
-  onClick: () => void;
-}) {
-  return (
-    <button className={`stat ${tone}`} onClick={onClick} title={linkLabel}>
-      <span>
-        <small>{label}</small>
-        <b>{display}</b>
-        <em>{linkLabel} →</em>
-      </span>
-      <i>{icon}</i>
-    </button>
-  );
-}
 
 function Bar({
   label,
@@ -97,16 +71,6 @@ export function Dashboard({
   const expenseRows = records.filter((x) => x.kind === "expense" && !isDebtLeg(x));
   const linkedIncomeRows = records.filter((x) => x.kind === "income" && x.cashAccount);
   const linkedExpenseRows = records.filter((x) => x.kind === "expense" && x.cashAccount);
-  const cashIn = total(cashRows);
-  const income = total(incomeRows) + total(flowCashRows),
-    expense = total(expenseRows);
-  const cashBalance = cashIn + total(linkedIncomeRows) - total(linkedExpenseRows);
-  // Per-currency breakdowns for the card text (see combineByCurrency) — the
-  // scalar values above stay blended and are only used for the bar chart's
-  // relative widths, never shown to the user as a money figure.
-  const incomeByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: flowCashRows }]);
-  const expenseByCurrency = combineByCurrency([{ rows: expenseRows }]);
-  const netByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: flowCashRows }, { rows: expenseRows, sign: -1 }]);
   const cashBalanceByCurrency = combineByCurrency([
     { rows: cashRows },
     { rows: linkedIncomeRows },

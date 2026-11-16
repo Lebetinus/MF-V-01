@@ -58,7 +58,6 @@ export function AreaDetails({
   const [picked, setPicked] = useState<Set<string> | null>(null); // null = hepsi
 
   const years = useMemo(() => [...new Set(records.map((x) => x.date.slice(0, 4)).filter(Boolean))].sort().reverse(), [records]);
-  const period = `${year}|${month}`;
 
   const nodes: Node[] = useMemo(() => {
     const cashSections = sections.filter((x) => x.scope === "cash");
@@ -115,7 +114,10 @@ export function AreaDetails({
   const isOn = (name: string) => (picked ? picked.has(name) : true);
   const setNames = (names: string[], on: boolean) => {
     const next = new Set(picked ?? allNames);
-    for (const n of names) (on ? next.add(n) : next.delete(n));
+    for (const n of names) {
+      if (on) next.add(n);
+      else next.delete(n);
+    }
     setPicked(next);
   };
   const state = (names: string[]) => (names.length === 0 ? "off" : names.every(isOn) ? "on" : names.some(isOn) ? "part" : "off");

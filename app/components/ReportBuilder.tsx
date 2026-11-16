@@ -1,8 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-// exceljs (~1 MB) yalnız Excel dışa/içe aktarılırken yüklenir; ana sayfa paketine girmez.
-const loadExcelJS = async () => (await import("exceljs")).default;
+import { downloadWorkbook, newWorkbook } from "../lib/excel";
 import { Title, DeleteConfirmModal, PersonChip } from "./shared";
 import { TableTools } from "./TableTools";
 import { tx, localizeData } from "../lib/i18n";
@@ -415,7 +414,7 @@ function ReportBuilderModal({
 }
 
 async function downloadPreparedReport(report: PreparedReport, language: Language) {
-  const workbook = new (await loadExcelJS()).Workbook();
+  const workbook = await newWorkbook();
   workbook.creator = "Maliye-Finans Online";
   workbook.created = new Date();
   const sheet = workbook.addWorksheet(tx(language, "Rapor", "Report", "Rapor"), {
@@ -524,14 +523,7 @@ async function downloadPreparedReport(report: PreparedReport, language: Language
 
   sheet.pageSetup.margins = { left: 0.3, right: 0.3, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.2 };
   sheet.headerFooter.oddFooter = `&L${report.title}&RPage &P / &N`;
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const link = window.document.createElement("a");
-  link.href = url;
-  link.download = `${report.title.replaceAll(" ", "-").replace(/[\\/:*?"<>|]/g, "-")}.xlsx`;
-  link.click();
-  URL.revokeObjectURL(url);
+  await downloadWorkbook(workbook, `${report.title.replaceAll(" ", "-").replace(/[\\/:*?"<>|]/g, "-")}.xlsx`);
 }
 
 function TemplateTable({ title, kind, lines, total, language }: { title: string; kind: "income" | "expense"; lines: ReportLine[]; total: Totals; language: Language }) {
@@ -539,10 +531,6 @@ function TemplateTable({ title, kind, lines, total, language }: { title: string;
     <h3>{title}</h3>
     <TableTools id="report-template" language={language} className="templateTableScroll"><table><thead><tr><th>{tx(language, "Tarih", "Date", "Dîrok")}</th><th>{kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref")}</th><th>{tx(language, "Detay", "Detail", "Hûrgulî")}</th><th>{tx(language, "Not", "Note", "Nîşe")}</th><th>{tx(language, "Miktar", "Amount", "Meblağ")}</th></tr></thead><tbody>{lines.map((line, index) => <tr key={`${line.title}-${index}`}><td>{date(line.date, language)}</td><td>{localizeData(line.title, language)}</td><td>{localizeData(line.detail || "", language)}</td><td>{localizeData(line.note || "", language)}</td><td className="amount">{money(line.amount, lineCurrency(line))}</td></tr>)}{!lines.length && <tr><td colSpan={5}>—</td></tr>}<tr className="templateSubtotal"><td colSpan={3}></td><td>{kind === "income" ? tx(language, "Toplam Gelir", "Total Income", "Dahata Giştî") : tx(language, "Toplam Gider", "Total Expense", "Mesrefa Giştî")}</td><td className="amount">{moneyBreakdown(total)}</td></tr></tbody></table></TableTools>
   </section>;
-}
-
-function ReportLines({ lines, language }: { lines: ReportLine[]; language: Language }) {
-  return <TableTools id="report-compact" language={language} className="recordsTable compactReportTable"><table><thead><tr><th>{tx(language, "Tarih", "Date", "Dîrok")}</th><th>{tx(language, "Başlık", "Category", "Sernav")}</th><th>{tx(language, "Detay / Not", "Detail / Note", "Hûrgulî / Nîşe")}</th><th>{tx(language, "Tutar", "Amount", "Meblağ")}</th></tr></thead><tbody>{lines.map((line, index) => <tr key={`${line.title}-${index}`}><td>{date(line.date, language)}</td><td>{localizeData(line.title, language)}</td><td>{localizeData(line.detail || line.note || "—", language)}</td><td className="amount">{money(line.amount, lineCurrency(line))}</td></tr>)}</tbody></table></TableTools>;
 }
 
 export function AnnualReports({

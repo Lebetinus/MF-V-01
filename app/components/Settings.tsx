@@ -7,6 +7,7 @@ import { tx, kbGroupLogo } from "../lib/i18n";
 import { defaultTypography, typographyNames, colorSwatches } from "../lib/typography";
 import type { BlockedIp, KasaSection, NoteColumn, Language, SectionScope, TypographyKey, TypographyRule, TypographySettings } from "../lib/types";
 import { notify } from "../lib/notify";
+import { downloadBlob } from "../lib/download";
 
 type SettingsTab = "general" | "typography" | "sections" | "rates" | "noteTasks" | "users" | "access" | "database";
 
@@ -161,13 +162,7 @@ export function Settings({
       const response = await fetch("/api/database/export");
       if (!response.ok) throw new Error();
       const data = await response.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `mf-v01-yedek-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), `mf-v01-yedek-${new Date().toISOString().slice(0, 10)}.json`);
     } catch {
       notify(dbErrorMessage);
     }
