@@ -7,7 +7,8 @@ import { PersonChip } from "./shared";
 import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, toUsd } from "../lib/finance";
 import { isDebtLeg } from "../lib/debts";
-import type { Language, Page, RecordItem } from "../lib/types";
+import { makeIsTransferLeg } from "../lib/transfers";
+import type { CashTransfer, Language, Page, RecordItem } from "../lib/types";
 
 export type AnalysisTab = "summary" | "kasa" | "income" | "expense";
 
@@ -77,6 +78,7 @@ export function Analysis({
   initialTab = "summary",
   initialPeriod,
   goTo,
+  cashTransfers = [],
 }: {
   records: RecordItem[];
   language: Language;
@@ -84,13 +86,18 @@ export function Analysis({
   initialTab?: AnalysisTab;
   initialPeriod?: string | null;
   goTo: (page: Page) => void;
+  cashTransfers?: CashTransfer[];
 }) {
   const usd = (x: RecordItem) => toUsd(x.amount, x.currency, exchangeRates) ?? 0;
   const kasaOf = (x: RecordItem) => (x.kind === "cash" ? x.source : x.cashAccount);
 
-  const inc = useMemo(() => records.filter((x) => x.kind === "income" && !isDebtLeg(x)), [records]);
+  // Kasa aktarımları (iki taraf) gelir/akış toplamlarına girmez, bakiyelere girer (bkz. lib/transfers).
+  const isTransferLeg = useMemo(() => makeIsTransferLeg(cashTransfers), [cashTransfers]);
+  const inc = useMemo(() => records.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x)), [records, isTransferLeg]);
   const exp = useMemo(() => records.filter((x) => x.kind === "expense" && !isDebtLeg(x)), [records]);
+  // cash: bakiyeler için tüm kasa kayıtları; flowCash: kasa girişi toplamları için aktarımsız hali.
   const cash = useMemo(() => records.filter((x) => x.kind === "cash"), [records]);
+  const flowCash = useMemo(() => cash.filter((x) => !isTransferLeg(x)), [cash, isTransferLeg]);
   const missingRate = records.some((x) => x.amount !== 0 && toUsd(x.amount, x.currency, exchangeRates) === null);
 
   const withData = (k: string) => inc.some((x) => monthOf(x) === k) || exp.some((x) => monthOf(x) === k);
@@ -118,7 +125,7 @@ export function Analysis({
   const curExp = exp.filter((x) => monthOf(x) === period);
   const prevInc = inc.filter((x) => monthOf(x) === prev);
   const prevExp = exp.filter((x) => monthOf(x) === prev);
-  const curCash = cash.filter((x) => monthOf(x) === period);
+  const curCash = flowCash.filter((x) => monthOf(x) === period);
   const incUsd = sum(curInc), expUsd = sum(curExp), prevIncUsd = sum(prevInc), prevExpUsd = sum(prevExp);
   const netUsd = incUsd - expUsd, prevNetUsd = prevIncUsd - prevExpUsd;
   const prevName = monthName(prev);
@@ -135,7 +142,7 @@ export function Analysis({
   }).sort((a, b) => b.balanceUsd - a.balanceUsd);
   const totalBalanceBy = combineByCurrency([{ rows: cash }, { rows: records.filter((x) => x.kind === "income" && x.cashAccount) }, { rows: records.filter((x) => x.kind === "expense" && x.cashAccount), sign: -1 }]);
   const totalBalanceUsd = kasaRows.reduce((t, k) => t + k.balanceUsd, 0);
-  const cashTotalBy = combineByCurrency([{ rows: cash }]);
+  const cashTotalBy = combineByCurrency([{ rows: flowCash }]);
   const negativeKasas = kasaRows.filter((k) => k.balanceUsd < -0.005);
   const emptyKasas = kasaRows.filter((k) => Math.abs(k.balanceUsd) < 0.005);
 
@@ -327,7 +334,7 @@ export function Analysis({
             <div className="lpMetric hero">
               <span className="lpLabel">{tx(language, "Toplam Kasa Gelirleri", "Total Cash Income", "Dahatên Giştî yên Qaseyê")}</span>
               <strong><MoneyStack by={cashTotalBy} /></strong>
-              <small>{cash.length} {tx(language, "kasa kaydı", "cash entries", "tomara qaseyê")} · {monthLabel(period)}: {moneyBreakdown(combineByCurrency([{ rows: curCash }]))}</small>
+              <small>{flowCash.length} {tx(language, "kasa kaydı", "cash entries", "tomara qaseyê")} · {monthLabel(period)}: {moneyBreakdown(combineByCurrency([{ rows: curCash }]))}</small>
             </div>
             <div className="lpMetric net">
               <span className="lpIcon">▣</span>

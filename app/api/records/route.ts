@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { records } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
@@ -91,6 +91,10 @@ export const POST = withErrorHandling(async (request: Request) => {
       if (!(await canAccessCashAccount(session.user, payload.debtCashAccountId, tx))) return { badDebt: "Karşı kasaya erişiminiz yok" };
       debtOther = { id: payload.debtCashAccountId, name: otherName };
       if (payload.amount <= 0) return { badDebt: "Borç tutarı sıfırdan büyük olmalıdır" };
+      // Aynı kasa çifti için borç işlemleri sırayla yapılır: aynı anda iki
+      // ödeme "kalan borç" kontrolünü birlikte geçip fazla ödeme yapabiliyordu.
+      const pairKey = `debt:${Math.min(link.cashAccountId, debtOther.id)}:${Math.max(link.cashAccountId, debtOther.id)}`;
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pairKey}))`);
       if (debtMode === "repay") {
         const remaining = await outstandingDebt(link.cashAccountId, debtOther.id, payload.currency, tx);
         if (remaining <= 0) return { badDebt: `Bu kasanın ${debtOther.name} kasasına ${payload.currency} cinsinden borcu yok` };

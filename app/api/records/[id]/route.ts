@@ -12,7 +12,10 @@ import { toClientArchiveItem } from "../../_lib/archive";
 import { parseBody, recordUpdateSchema } from "../../_lib/validate";
 import { deleteReason, formatAmount, logActivity, withReason } from "../../_lib/activity";
 import { restoreLentExpenses, type DebtMeta } from "../../_lib/debts";
-import { and, eq as eqOp, ne } from "drizzle-orm";
+import { and, eq as eqOp, ne, sql } from "drizzle-orm";
+import { reverseTransfer, TRANSFER_LOCKED_FIELDS, transferForRecord } from "../../_lib/transfers";
+
+class RecordConflictError extends Error {}
 
 function canAccessKind(user: { isAdmin: boolean; permissions: string[] }, kind: string): boolean {
   return user.isAdmin || user.permissions.includes(kind as Kind);
@@ -56,6 +59,13 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
     return json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Kasa aktarımı kayıtları çift olarak yaşar (gönderende −X, alanda +X):
+  // tutar/kasa/para birimi tek taraftan değişirse çift bozulur.
+  const transfer = await transferForRecord(id, db);
+  if (transfer && TRANSFER_LOCKED_FIELDS.some((field) => payload[field] !== undefined && payload[field] !== old[field])) {
+    return json({ error: "Kasa aktarımı kaydının tutarı, kasası ve para birimi değiştirilemez; aktarımı silip yeniden yapın" }, { status: 400 });
+  }
+
   // Borç kayıtlarının tutarı, kasası ve para birimi sabittir (borç bakiyesi buna bağlı): silip yeniden ekleyin.
   if (old.debtRole && ((payload.amount !== undefined && payload.amount !== old.amount) || (payload.currency !== undefined && payload.currency !== old.currency) || (payload.cashAccount !== undefined && payload.cashAccount !== old.cashAccount) || (payload.kind !== undefined && payload.kind !== old.kind))) {
     return json({ error: "Borç kaydının tutarı, kasası ve para birimi değiştirilemez; kaydı silip yeniden ekleyin" }, { status: 400 });
@@ -70,7 +80,9 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   if (kind !== "cash" && !cashAccountName?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
   const linkName = kind === "cash" ? source : cashAccountName;
 
-  const result = await db.transaction(async (tx) => {
+  let result;
+  try {
+  result = await db.transaction(async (tx) => {
     const link = await ensureCashAccountLink({ name: linkName, kind, user: session.user }, tx);
     if (link.forbidden) return { forbidden: true as const };
     if (kind === "cash" && payload.listKasa && link.cashAccountId != null) await markListKasa(link.cashAccountId, tx);
@@ -103,8 +115,14 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
         detailTableLayout: payload.detailTableLayout ?? old.detailTableLayout,
         updatedAt: new Date(),
       })
-      .where(eq(records.id, id))
+      // Optimistic lock, enforced atomically: the early updatedAt check above
+      // runs before the transaction, so two saves could both pass it. The
+      // row only updates if it is still at the version this request read
+      // (compared at millisecond precision — JS Dates carry no microseconds).
+      .where(payload.updatedAt ? and(eq(records.id, id), sql`date_trunc('milliseconds', ${records.updatedAt}) = ${old.updatedAt.toISOString()}::timestamptz`) : eq(records.id, id))
       .returning();
+    // Throwing rolls back everything this transaction already did.
+    if (!updatedRecord) throw new RecordConflictError();
 
     // Cascade: if a cash account's display name changed, keep every record
     // that referenced it by name pointing at the new name. The FK
@@ -125,6 +143,10 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
 
     return { forbidden: false as const, record: updatedRecord, archiveEntry: insertedArchive, ensuredCash: link.ensuredCashRecord };
   });
+  } catch (error) {
+    if (error instanceof RecordConflictError) return json({ error: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" }, { status: 409 });
+    throw error;
+  }
 
   if (result.forbidden) return json({ error: "Forbidden" }, { status: 403 });
   const changed = result.record;
@@ -159,6 +181,27 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
   }
   if (old.cashAccountId !== null && !(await canWriteCashAccount(session.user, old.cashAccountId, db))) {
     return json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Kasa aktarımının bir tarafını silmek tüm aktarımı geri alır: iki kayıt
+  // birlikte silinir (ikisi de Arşiv'e yazılır) ve aktarım "iptal" olur.
+  // Yalnız bir taraf silinseydi para bir kasadan çıkıp hiçbir yere varmazdı.
+  const transfer = await transferForRecord(id, db);
+  if (transfer) {
+    const reversed = await db.transaction((tx) => reverseTransfer(transfer, { userName: session.user.name, reason }, tx));
+    await logActivity(session.user, {
+      category: "cash",
+      action: "delete",
+      summary: withReason(`Kasa aktarımı iptal edildi: ${formatAmount(transfer.amount, transfer.currency)} (${reversed.removedRecordIds.length} kayıt Arşiv'e taşındı)`, reason),
+      kasa: old.kind === "cash" ? old.source : old.cashAccount,
+      meta: { id: old.id, transferId: transfer.id },
+    });
+    const own = reversed.archiveEntries.find((entry) => (entry.oldRecord as { id?: number })?.id === id) ?? reversed.archiveEntries[0];
+    return json({
+      archiveEntry: own ? toClientArchiveItem(own) : null,
+      archiveEntries: reversed.archiveEntries.map(toClientArchiveItem),
+      removedRecordIds: reversed.removedRecordIds,
+    });
   }
 
   // Borç kayıtları: alınan borç girişi doğrudan silinemez; verilen borç ödenmişse önce ödemeler silinmelidir.

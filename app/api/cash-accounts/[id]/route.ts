@@ -9,6 +9,7 @@ import { json, withErrorHandling } from "../../_lib/http";
 import { markListKasa, setRjKasa, unmarkListKasa } from "../../_lib/lists";
 import { clearAttempts, isRateLimited, recordFailedAttempt } from "../../_lib/rate-limit";
 import { parseBody } from "../../_lib/validate";
+import { reverseTransfersOfKasa } from "../../_lib/transfers";
 
 const kasaUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -101,6 +102,9 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
   clearAttempts(rateLimitKey);
 
   const deleted = await db.transaction(async (tx) => {
+    // Bu kasaya giren/çıkan aktarımların karşı kasadaki kayıtları da geri
+    // alınır; yoksa karşı kasada yalnız bir taraf kalırdı.
+    await reverseTransfersOfKasa(id, { userName: session.user.name, reason: `Kasa silindi: ${parsed.data.reason}` }, tx);
     const rows = await tx.select().from(records).where(eq(records.cashAccountId, id));
     if (rows.length > 0) {
       await tx.insert(archive).values(rows.map((old) => ({ action: "Silindi", userName: session.user.name, oldRecord: old, reason: `Kasa silindi: ${parsed.data.reason}` })));

@@ -385,11 +385,16 @@ export const dashboardScopeInputSchema = z.object({
 // GET /api/database/export produces exactly this shape; POST .../import
 // validates against it. Loose on id/createdAt/updatedAt (ignored on
 // import — the DB assigns fresh ones) but strict on the business fields.
-const exportedRecordSchema = recordInputSchema.extend({
-  id: z.number().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
-});
+const exportedRecordSchema = recordInputSchema
+  .extend({
+    id: z.number().optional(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
+    // Kasa aktarımının gönderen tarafı eksi tutarlı bir "cash" kaydıdır;
+    // dışa aktarılan yedekte bulunabilir. Eksi tutar yalnız kasa kaydında kabul edilir.
+    amount: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
+  })
+  .refine((r) => r.amount >= 0 || r.kind === "cash", { message: "Eksi tutar yalnız kasa kaydında olabilir", path: ["amount"] });
 const exportedArchiveSchema = z.object({
   id: z.number().optional(),
   action: z.string().max(100),

@@ -132,8 +132,37 @@ function toNumber(c: Cell): number | null {
   if (c === null || c === undefined || c === "") return null;
   if (typeof c === "number") return Number.isFinite(c) ? c : null;
   if (c instanceof Date) return null;
-  const m = String(c).replace(/,/g, ".").match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
+  return parseAmountText(String(c));
+}
+
+// Metin olarak yazılmış tutarı sayıya çevirir; binlik/ondalık ayırıcıyı
+// biçimden çıkarır (eskiden "1.250" → 1,25 ve "1,250.00" → 1,25 oluyordu):
+//  - Hem "." hem "," varsa sondaki ondalık ayırıcıdır: "1.250,50" → 1250.5, "1,250.50" → 1250.5
+//  - Tek tür ayırıcı, 3'lü gruplar halinde ("1.250", "12,500,000") → binlik: 1250, 12500000
+//  - Aksi halde ondalık: "12,5" → 12.5, "12.75" → 12.75
+// Para birimi işaretleri, harfler ve boşluklar yok sayılır ("$1,250", "1 250 TL").
+export function parseAmountText(text: string): number | null {
+  const negative = /^\s*[-−(]/.test(text) || /-\s*$/.test(text);
+  const cleaned = text.replace(/[^\d.,]/g, "");
+  if (!/\d/.test(cleaned)) return null;
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+  let normalized: string;
+  if (lastDot >= 0 && lastComma >= 0) {
+    const decimal = lastDot > lastComma ? "." : ",";
+    const thousands = decimal === "." ? "," : ".";
+    normalized = cleaned.split(thousands).join("").replace(decimal, ".");
+  } else if (lastDot >= 0 || lastComma >= 0) {
+    const sep = lastDot >= 0 ? "." : ",";
+    const parts = cleaned.split(sep);
+    const groupedThousands = parts.length > 1 && /^\d{1,3}$/.test(parts[0]) && parts.slice(1).every((p) => /^\d{3}$/.test(p));
+    normalized = groupedThousands ? parts.join("") : parts.length === 2 ? `${parts[0]}.${parts[1]}` : parts.join("");
+  } else {
+    normalized = cleaned;
+  }
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return null;
+  return negative ? -value : value;
 }
 
 export function parseDate(c: Cell): string | null {

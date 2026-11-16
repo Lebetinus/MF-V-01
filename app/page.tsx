@@ -510,8 +510,12 @@ export default function Home() {
         return;
       }
       const data = await response.json();
-      if (data.archiveEntry) setArchive((a) => [data.archiveEntry, ...a]);
-      setRecords((r) => r.filter((x) => x.id !== item.id));
+      // Kasa aktarımı silinince iki taraf birlikte silinir (removedRecordIds).
+      const removedIds = new Set<number>(Array.isArray(data.removedRecordIds) ? data.removedRecordIds : [item.id]);
+      const archived = Array.isArray(data.archiveEntries) ? data.archiveEntries : data.archiveEntry ? [data.archiveEntry] : [];
+      if (archived.length) setArchive((a) => [...archived, ...a]);
+      setRecords((r) => r.filter((x) => !removedIds.has(x.id)));
+      if (Array.isArray(data.removedRecordIds)) void refreshAfterCashTransfer();
       // Borç ödemesi/verilen borç silinince ilgili kayıtlar da değişir: listeyi yenile.
       if (item.debtRole) refreshRecords();
     } catch {
@@ -995,6 +999,7 @@ export default function Home() {
               initialTab={analysisFocus.tab}
               initialPeriod={analysisFocus.period}
               goTo={goPage}
+              cashTransfers={cashTransfers}
             />
           )}
           {page === "debts" && <DebtDetail records={dashboardRecords} language={language} />}

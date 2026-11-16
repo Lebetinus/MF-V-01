@@ -7,6 +7,7 @@ import { Title, PersonChip } from "./shared";
 import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, total } from "../lib/finance";
 import { isDebtLeg } from "../lib/debts";
+import { makeIsTransferLeg } from "../lib/transfers";
 import type { CashTransfer, Language, Page, RecordItem } from "../lib/types";
 import type { AnalysisTab } from "./Analysis";
 
@@ -87,21 +88,24 @@ export function Dashboard({
   onTransfersChanged?: () => void;
 }) {
   // Alınan borç girişi ve borç ödemesi kasa bakiyesine girer ama gelir/gider/net toplamlarına ve analize girmez.
+  // Kasa aktarımları da öyle: iki tarafı (−X kasa, +X gelir) bakiyeye girer, gelir/net/analiz toplamlarına girmez.
+  const isTransferLeg = makeIsTransferLeg(cashTransfers);
   const cashRows = records.filter((x) => x.kind === "cash");
-  const incomeRows = records.filter((x) => x.kind === "income" && !isDebtLeg(x));
+  const flowCashRows = cashRows.filter((x) => !isTransferLeg(x));
+  const incomeRows = records.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x));
   const expenseRows = records.filter((x) => x.kind === "expense" && !isDebtLeg(x));
   const linkedIncomeRows = records.filter((x) => x.kind === "income" && x.cashAccount);
   const linkedExpenseRows = records.filter((x) => x.kind === "expense" && x.cashAccount);
   const cashIn = total(cashRows);
-  const income = total(incomeRows) + cashIn,
+  const income = total(incomeRows) + total(flowCashRows),
     expense = total(expenseRows);
   const cashBalance = cashIn + total(linkedIncomeRows) - total(linkedExpenseRows);
   // Per-currency breakdowns for the card text (see combineByCurrency) — the
   // scalar values above stay blended and are only used for the bar chart's
   // relative widths, never shown to the user as a money figure.
-  const incomeByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: cashRows }]);
+  const incomeByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: flowCashRows }]);
   const expenseByCurrency = combineByCurrency([{ rows: expenseRows }]);
-  const netByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: cashRows }, { rows: expenseRows, sign: -1 }]);
+  const netByCurrency = combineByCurrency([{ rows: incomeRows }, { rows: flowCashRows }, { rows: expenseRows, sign: -1 }]);
   const cashBalanceByCurrency = combineByCurrency([
     { rows: cashRows },
     { rows: linkedIncomeRows },
@@ -113,8 +117,8 @@ export function Dashboard({
   const [picked, setPicked] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const analysisRecords = picked.length ? records.filter((x) => picked.includes(kasaOf(x))) : records;
-  const aCash = analysisRecords.filter((x) => x.kind === "cash");
-  const aIncome = analysisRecords.filter((x) => x.kind === "income" && !isDebtLeg(x));
+  const aCash = analysisRecords.filter((x) => x.kind === "cash" && !isTransferLeg(x));
+  const aIncome = analysisRecords.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x));
   const aExpense = analysisRecords.filter((x) => x.kind === "expense" && !isDebtLeg(x));
   const aIncomeTotal = total(aIncome) + total(aCash);
   const aExpenseTotal = total(aExpense);
@@ -133,8 +137,8 @@ export function Dashboard({
   // Dönem (ay) seçimi: dönem geliri / gideri yalnız seçili ayın kayıtlarını toplar.
   const monthOf = (x: RecordItem) => (x.date || "").slice(0, 7);
   const nowKey = new Date().toISOString().slice(0, 7);
-  const monthKeys = [...new Set([...records.filter((x) => (x.kind === "income" || x.kind === "expense") && !isDebtLeg(x)).map(monthOf).filter(Boolean), nowKey])].sort().reverse();
-  const hasData = (k: string) => records.some((x) => (x.kind === "income" || x.kind === "expense") && !isDebtLeg(x) && monthOf(x) === k);
+  const monthKeys = [...new Set([...records.filter((x) => (x.kind === "income" || x.kind === "expense") && !isDebtLeg(x) && !isTransferLeg(x)).map(monthOf).filter(Boolean), nowKey])].sort().reverse();
+  const hasData = (k: string) => records.some((x) => (x.kind === "income" || x.kind === "expense") && !isDebtLeg(x) && !isTransferLeg(x) && monthOf(x) === k);
   const defaultMonth = hasData(nowKey) ? nowKey : monthKeys.find(hasData) ?? nowKey;
   const [period, setPeriod] = useState<string | null>(null);
   const periodKey = period ?? defaultMonth;
@@ -147,7 +151,7 @@ export function Dashboard({
   const periodIncomeCount = incomeRows.filter((x) => monthOf(x) === periodKey).length;
   const periodExpenseCount = expenseRows.filter((x) => monthOf(x) === periodKey).length;
   // Toplam kasa gelirleri: kasalara girilen (Kasa kaydı) toplam tutarlar.
-  const cashIncomeBy = combineByCurrency([{ rows: cashRows }]);
+  const cashIncomeBy = combineByCurrency([{ rows: flowCashRows }]);
 
   // Bekleyen onaylar: bana gelen (onayımı bekleyen) ve gönderdiğim (karşı tarafın onayını bekleyen) kasa aktarımları.
   const [approvingId, setApprovingId] = useState<number | null>(null);

@@ -67,6 +67,7 @@ let reporterUserId;
 let reporterCookie;
 const createdRecordIds = [];
 const createdReportIds = [];
+const extraKasaIds = [];
 
 test("auth: rejects a wrong password", async () => {
   const res = await call("POST", "/api/auth/login", { body: { username: "admin", password: "definitely-wrong" } });
@@ -316,6 +317,78 @@ test("database: import/clear need a super admin and the password, checked on the
   assert.ok(records.json.records.some((r) => createdRecordIds.includes(r.id)));
 });
 
+async function makeKasa(name) {
+  const res = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "cash", date: "2026-01-15", source: name, amount: 0, currency: "USD" },
+  });
+  assert.equal(res.status, 201, `create kasa ${name}`);
+  createdRecordIds.push(res.json.record.id);
+  return res.json.record.cashAccountId;
+}
+
+async function transfer(fromId, toId, amount) {
+  const res = await call("POST", "/api/cash-transfers", {
+    cookie: adminCookie,
+    body: { fromCashAccountId: fromId, toCashAccountId: toId, amount, currency: "USD", date: "2026-01-20", recipientPerson: "Test" },
+  });
+  assert.equal(res.status, 201);
+  return res.json.cashTransfer;
+}
+
+async function recordExists(id) {
+  const res = await call("GET", "/api/records", { cookie: adminCookie });
+  return res.json.records.some((r) => r.id === id);
+}
+
+test("cash transfers: both legs live and die together", async () => {
+  const fromId = await makeKasa(`${RUN_TAG}_tA`);
+  const toId = await makeKasa(`${RUN_TAG}_tB`);
+  extraKasaIds.push(fromId, toId);
+  const t = await transfer(fromId, toId, 50);
+  assert.ok(t.fromRecordId && t.toRecordId);
+
+  // The money-defining fields of one leg cannot be edited on their own.
+  const edit = await call("PUT", `/api/records/${t.toRecordId}`, { cookie: adminCookie, body: { amount: 999 } });
+  assert.equal(edit.status, 400);
+  const noteEdit = await call("PUT", `/api/records/${t.toRecordId}`, { cookie: adminCookie, body: { note: "descriptive edits are fine" } });
+  assert.equal(noteEdit.status, 200);
+
+  // Deleting the receiving leg reverses the whole transfer.
+  const del = await call("DELETE", `/api/records/${t.toRecordId}?reason=test%20reverse`, { cookie: adminCookie });
+  assert.equal(del.status, 200);
+  assert.deepEqual([...del.json.removedRecordIds].sort(), [t.fromRecordId, t.toRecordId].sort());
+  assert.equal(await recordExists(t.fromRecordId), false, "sender leg is gone too");
+  const list = await call("GET", "/api/cash-transfers", { cookie: adminCookie });
+  assert.equal(list.json.cashTransfers.find((x) => x.id === t.id)?.status, "cancelled");
+});
+
+test("cash transfers: deleting a kasa also removes the counterpart leg on the other kasa", async () => {
+  const fromId = await makeKasa(`${RUN_TAG}_tC`);
+  const toId = await makeKasa(`${RUN_TAG}_tD`);
+  extraKasaIds.push(toId);
+  const t = await transfer(fromId, toId, 20);
+  const del = await call("DELETE", `/api/cash-accounts/${fromId}`, { cookie: adminCookie, body: { password: "admin123", reason: "test kasa delete" } });
+  assert.equal(del.status, 200);
+  assert.equal(await recordExists(t.toRecordId), false, "the receiver's +X leg does not survive alone");
+});
+
+test("records: two saves from the same version — exactly one wins", async () => {
+  await makeKasa(`${RUN_TAG}_race`);
+  const create = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "income", date: "2026-01-15", source: `${RUN_TAG}_raced`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_race` },
+  });
+  assert.equal(create.status, 201);
+  const rec = create.json.record;
+  createdRecordIds.push(rec.id);
+  const [a, b] = await Promise.all([
+    call("PUT", `/api/records/${rec.id}`, { cookie: adminCookie, body: { amount: 2, updatedAt: rec.updatedAt } }),
+    call("PUT", `/api/records/${rec.id}`, { cookie: adminCookie, body: { amount: 3, updatedAt: rec.updatedAt } }),
+  ]);
+  assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+});
+
 test("auth: repeated failed logins block the offending IP", async () => {
   const rateLimitIp = "203.0.113.251";
   const attempts = [];
@@ -365,7 +438,7 @@ test.after(async () => {
   if (reporterUserId) {
     await call("DELETE", `/api/users/${reporterUserId}`, { cookie: adminCookie }).catch(() => {});
   }
-  for (const kasaId of [adminKasaId, reporterKasaId]) {
+  for (const kasaId of [adminKasaId, reporterKasaId, ...extraKasaIds]) {
     if (kasaId) await call("DELETE", `/api/cash-accounts/${kasaId}`, { cookie: adminCookie }).catch(() => {});
   }
   if (testUserId) {

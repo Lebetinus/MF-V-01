@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, notLike, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, notLike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../../../../db";
 import { archive, records } from "../../../../db/schema";
@@ -7,6 +7,8 @@ import { canWriteCashAccount } from "../../_lib/cash-access";
 import { json, withErrorHandling } from "../../_lib/http";
 import { parseBody } from "../../_lib/validate";
 import { logActivity } from "../../_lib/activity";
+
+class ConsolidateConflictError extends Error {}
 
 // Önceki Excel aktarımlarını "aylık tek kalem"e toplar: aktarımdaki her (kasa, gelir/gider, ay, para birimi) grubu tek
 // kayıt olur; eski satırların hepsi o kaydın Detay tablosunda (tarih, başlık, kalem, adet, birim fiyat, kişi, proje, tutar) durur.
@@ -110,7 +112,18 @@ export const POST = withErrorHandling(async (request: Request) => {
   if (dryRun) return json({ dryRun: true, groups: summary });
 
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const applied = await db.transaction(async (tx) => {
+  let applied;
+  try {
+  applied = await db.transaction(async (tx) => {
+    // Aynı aktarım için iki istek (çift tıklama, iki kullanıcı) sırayla
+    // çalışsın; ikincisi, birincinin sildiği satırları bulamayınca durur.
+    // Aksi halde aynı aylık kayıt iki kez oluşuyordu.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`consolidate:${batchId}`}))`);
+    const sourceIds = groups.filter((g) => !g.skipped).flatMap((g) => g.sourceIds);
+    const stillThere = sourceIds.length
+      ? await tx.select({ id: records.id }).from(records).where(inArray(records.id, sourceIds)).for("update")
+      : [];
+    if (stillThere.length !== sourceIds.length) throw new ConsolidateConflictError();
     let created = 0;
     let removed = 0;
     for (const g of groups) {
@@ -142,6 +155,12 @@ export const POST = withErrorHandling(async (request: Request) => {
     }
     return { created, removed };
   });
+  } catch (error) {
+    if (error instanceof ConsolidateConflictError) {
+      return json({ error: "Bu aktarım az önce başka bir istekle toplandı; sayfayı yenileyin" }, { status: 409 });
+    }
+    throw error;
+  }
   await logActivity(session.user, { category: "report", action: "consolidate", summary: `Excel kayıtları aylığa toplandı: ${applied.removed} satır → ${applied.created} aylık kayıt`, kasa: rows[0]?.cashAccount ?? "", meta: { batchId } });
   return json({ dryRun: false, ...applied, groups: summary });
 });
