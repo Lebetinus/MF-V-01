@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import "./lacivert.css";
+import { Toaster } from "./components/Toaster";
 
 export const metadata: Metadata = {
   title: "Maliye-Finans",
@@ -29,7 +29,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: ASSET_RECOVERY_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

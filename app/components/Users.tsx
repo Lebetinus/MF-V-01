@@ -6,6 +6,7 @@ import { tx, nav } from "../lib/i18n";
 import type { CashAccountSummary, KasaSection, Language, Page, UserAccount } from "../lib/types";
 import { workspaceKeyOf, workspaceOptions } from "./KasaManage";
 import { restrictablePages } from "../lib/types";
+import { notify } from "../lib/notify";
 
 const accessPages = restrictablePages.filter((p) => p !== "lists");
 
@@ -137,14 +138,14 @@ export function Users({
               const response = await fetch(`/api/users/${input.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
               if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
-                alert(body.error || tx(language, "Bilgiler kaydedilemedi.", "The details could not be saved.", "Agahî nehat tomarkirin."));
+                notify(body.error || tx(language, "Bilgiler kaydedilemedi.", "The details could not be saved.", "Agahî nehat tomarkirin."));
                 return;
               }
               const data = await response.json();
               setUsers((current) => current.map((u) => (u.id === data.user.id ? data.user : u)));
               setSelectedId(null);
             } catch {
-              alert(tx(language, "Bilgiler kaydedilemedi.", "The details could not be saved.", "Agahî nehat tomarkirin."));
+              notify(tx(language, "Bilgiler kaydedilemedi.", "The details could not be saved.", "Agahî nehat tomarkirin."));
             }
           }}
         />
@@ -160,13 +161,13 @@ export function Users({
               const response = await fetch(`/api/users/${deleteTarget.id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
               if (!response.ok) {
                 const body = await response.json().catch(() => ({}));
-                alert(body.error || tx(language, "Kullanıcı silinemedi.", "The user could not be deleted.", "Bikarhêner nehat jêbirin."));
+                notify(body.error || tx(language, "Kullanıcı silinemedi.", "The user could not be deleted.", "Bikarhêner nehat jêbirin."));
                 return;
               }
               setUsers((current) => current.filter((u) => u.id !== deleteTarget.id));
               setSelectedId(null);
             } catch {
-              alert(tx(language, "Kullanıcı silinemedi.", "The user could not be deleted.", "Bikarhêner nehat jêbirin."));
+              notify(tx(language, "Kullanıcı silinemedi.", "The user could not be deleted.", "Bikarhêner nehat jêbirin."));
             }
             setDeleteTarget(null);
           }}

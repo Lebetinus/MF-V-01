@@ -22,6 +22,7 @@ import { tx, localizedProfileName, localizedRole, kbGroupLogo, nav } from "./lib
 import { normalizeRecord } from "./lib/finance";
 import { defaultTypography, typographyVariables } from "./lib/typography";
 import { adminOnlyPages } from "./lib/types";
+import { notify } from "./lib/notify";
 import type {
   ArchiveItem,
   CashAccountSummary,
@@ -348,14 +349,14 @@ export default function Home() {
       if (!response.ok) {
         if (response.status === 423) {
           const info = await response.json().catch(() => ({}));
-          alert(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından düzenleyin.", "This record was generated from a list; edit it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste biguherîne."));
+          notify(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından düzenleyin.", "This record was generated from a list; edit it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste biguherîne."));
           return;
         }
         if (response.status === 409) {
-          alert(tx(language, "Bu kayıt siz düzenlerken başka bir kullanıcı tarafından değiştirildi. Lütfen sayfayı yenileyip tekrar deneyin.", "This record was changed by another user while you were editing it. Please refresh and try again.", "Dema te ev qeyd sererast dikir, bikarhênerek din ew guherand. Ji kerema xwe rûpelê nûve bike û dîsa biceribîne."));
+          notify(tx(language, "Bu kayıt siz düzenlerken başka bir kullanıcı tarafından değiştirildi. Lütfen sayfayı yenileyip tekrar deneyin.", "This record was changed by another user while you were editing it. Please refresh and try again.", "Dema te ev qeyd sererast dikir, bikarhênerek din ew guherand. Ji kerema xwe rûpelê nûve bike û dîsa biceribîne."));
           return;
         }
-        alert(tx(language, "Kayıt kaydedilemedi. Lütfen tekrar deneyin.", "The record could not be saved. Please try again.", "Qeyd nehat tomarkirin. Ji kerema xwe dîsa biceribîne."));
+        notify(tx(language, "Kayıt kaydedilemedi. Lütfen tekrar deneyin.", "The record could not be saved. Please try again.", "Qeyd nehat tomarkirin. Ji kerema xwe dîsa biceribîne."));
         return;
       }
       const data = await response.json();
@@ -369,7 +370,7 @@ export default function Home() {
       // Borç verme/ödeme başka kasalardaki kayıtları da değiştirir (otomatik giriş, azalan gider): listeyi yenile.
       if (next.debtMode) refreshRecords();
     } catch {
-      alert(tx(language, "Kayıt kaydedilemedi. Lütfen tekrar deneyin.", "The record could not be saved. Please try again.", "Qeyd nehat tomarkirin. Ji kerema xwe dîsa biceribîne."));
+      notify(tx(language, "Kayıt kaydedilemedi. Lütfen tekrar deneyin.", "The record could not be saved. Please try again.", "Qeyd nehat tomarkirin. Ji kerema xwe dîsa biceribîne."));
     }
   }
   // Arka plan yenilemesi için ortak çekici. İki şeyi engeller:
@@ -392,7 +393,7 @@ export default function Home() {
     lastEtag.current = {};
     setProfileOpen(false);
     setSignedIn(false);
-    alert(tx(language, "Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "Your session has expired. Please sign in again.", "Danişîna te bi dawî bû. Ji kerema xwe dîsa têkeve."));
+    notify(tx(language, "Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "Your session has expired. Please sign in again.", "Danişîna te bi dawî bû. Ji kerema xwe dîsa têkeve."));
   }
   async function fetchChanged(key: string, url: string): Promise<Record<string, unknown> | null> {
     const epoch = writeEpoch.current;
@@ -525,10 +526,10 @@ export default function Home() {
       if (!response.ok) {
         if (response.status === 423) {
           const info = await response.json().catch(() => ({}));
-          alert(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından silin.", "This record was generated from a list; delete it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste jê bibe."));
+          notify(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından silin.", "This record was generated from a list; delete it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste jê bibe."));
           return;
         }
-        alert(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
+        notify(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
         return;
       }
       const data = await response.json();
@@ -541,7 +542,7 @@ export default function Home() {
       // Borç ödemesi/verilen borç silinince ilgili kayıtlar da değişir: listeyi yenile.
       if (item.debtRole) refreshRecords();
     } catch {
-      alert(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
+      notify(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
     }
   }
   async function importRecords(items: Omit<RecordItem, "id">[]) {
@@ -552,13 +553,13 @@ export default function Home() {
         body: JSON.stringify({ items }),
       });
       if (!response.ok) {
-        alert(tx(language, "Kayıtlar içe aktarılamadı. Lütfen tekrar deneyin.", "The records could not be imported. Please try again.", "Qeyd nehatin têxistin. Ji kerema xwe dîsa biceribîne."));
+        notify(tx(language, "Kayıtlar içe aktarılamadı. Lütfen tekrar deneyin.", "The records could not be imported. Please try again.", "Qeyd nehatin têxistin. Ji kerema xwe dîsa biceribîne."));
         return;
       }
       const data = await response.json();
       setRecords((r) => [...(data.records ?? []), ...r]);
     } catch {
-      alert(tx(language, "Kayıtlar içe aktarılamadı. Lütfen tekrar deneyin.", "The records could not be imported. Please try again.", "Qeyd nehatin têxistin. Ji kerema xwe dîsa biceribîne."));
+      notify(tx(language, "Kayıtlar içe aktarılamadı. Lütfen tekrar deneyin.", "The records could not be imported. Please try again.", "Qeyd nehatin têxistin. Ji kerema xwe dîsa biceribîne."));
     }
   }
   function uploadLogo(file?: File) {
@@ -577,12 +578,12 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      if (!response.ok) return alert(noteSaveError);
+      if (!response.ok) return notify(noteSaveError);
       const data = await response.json();
       markWrite();
       setNotes((n) => [data.note, ...n]);
     } catch {
-      alert(noteSaveError);
+      notify(noteSaveError);
     }
   }
   async function updateNote(note: FinanceNote & { addAttachments?: RecordAttachment[]; removeAttachmentIndexes?: number[] }) {
@@ -593,22 +594,22 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(note),
       });
-      if (!response.ok) return alert(noteSaveError);
+      if (!response.ok) return notify(noteSaveError);
       const data = await response.json();
       markWrite();
       setNotes((n) => n.map((x) => (x.id === note.id ? data.note : x)));
     } catch {
-      alert(noteSaveError);
+      notify(noteSaveError);
     }
   }
   async function deleteNote(id: number, reason: string) {
     markWrite();
     try {
       const response = await fetch(`/api/notes/${id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
-      if (!response.ok) return alert(noteSaveError);
+      if (!response.ok) return notify(noteSaveError);
       setNotes((n) => n.filter((x) => x.id !== id));
     } catch {
-      alert(noteSaveError);
+      notify(noteSaveError);
     }
   }
   // "Arşivle" (Notes.tsx) / "Geri Al" (Archive.tsx) — aynı not, sadece
@@ -639,11 +640,11 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(report),
       });
-      if (!response.ok) return alert(reportSaveError);
+      if (!response.ok) return notify(reportSaveError);
       const data = await response.json();
       setPreparedReports((current) => [data.preparedReport, ...current]);
     } catch {
-      alert(reportSaveError);
+      notify(reportSaveError);
     }
   }
   async function updatePreparedReport(report: PreparedReport) {
@@ -653,20 +654,20 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(report),
       });
-      if (!response.ok) return alert(reportSaveError);
+      if (!response.ok) return notify(reportSaveError);
       const data = await response.json();
       setPreparedReports((current) => current.map((x) => (x.id === report.id ? data.preparedReport : x)));
     } catch {
-      alert(reportSaveError);
+      notify(reportSaveError);
     }
   }
   async function deletePreparedReport(id: string, reason: string) {
     try {
       const response = await fetch(`/api/prepared-reports/${id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
-      if (!response.ok) return alert(reportSaveError);
+      if (!response.ok) return notify(reportSaveError);
       setPreparedReports((current) => current.filter((x) => x.id !== id));
     } catch {
-      alert(reportSaveError);
+      notify(reportSaveError);
     }
   }
 

@@ -10,6 +10,7 @@ import { isDebtLeg } from "../lib/debts";
 import { makeIsTransferLeg } from "../lib/transfers";
 import type { CashTransfer, Language, Page, RecordItem } from "../lib/types";
 import type { AnalysisTab } from "./Analysis";
+import { notify } from "../lib/notify";
 
 function Stat({
   label,
@@ -165,12 +166,12 @@ export function Dashboard({
       const response = await fetch(`/api/cash-transfers/${id}/confirm`, { method: "POST" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+        notify(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
         return;
       }
       onTransfersChanged?.();
     } catch {
-      alert(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+      notify(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
     } finally {
       setApprovingId(null);
     }

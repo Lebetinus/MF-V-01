@@ -6,6 +6,7 @@ import { parentWorkspaceOptions } from "./KasaManage";
 import { tx, kbGroupLogo } from "../lib/i18n";
 import { defaultTypography, typographyNames, colorSwatches } from "../lib/typography";
 import type { BlockedIp, KasaSection, NoteColumn, Language, SectionScope, TypographyKey, TypographyRule, TypographySettings } from "../lib/types";
+import { notify } from "../lib/notify";
 
 type SettingsTab = "general" | "typography" | "sections" | "rates" | "noteTasks" | "users" | "access" | "database";
 
@@ -105,12 +106,12 @@ export function Settings({
     try {
       const response = await fetch(`/api/admin/blocked-ips/${encodeURIComponent(ip)}`, { method: "DELETE" });
       if (!response.ok) {
-        alert(tx(language, "IP engeli kaldırılamadı.", "Could not remove the IP block.", "Astengiya IP nehat rakirin."));
+        notify(tx(language, "IP engeli kaldırılamadı.", "Could not remove the IP block.", "Astengiya IP nehat rakirin."));
         return;
       }
       setBlockedIps((current) => current.filter((x) => x.ip !== ip));
     } catch {
-      alert(tx(language, "IP engeli kaldırılamadı.", "Could not remove the IP block.", "Astengiya IP nehat rakirin."));
+      notify(tx(language, "IP engeli kaldırılamadı.", "Could not remove the IP block.", "Astengiya IP nehat rakirin."));
     }
   }
 
@@ -131,10 +132,10 @@ export function Settings({
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       } else {
-        alert(tx(language, "Ayarlar kaydedilemedi.", "Settings could not be saved.", "Mîheng nehatin tomarkirin."));
+        notify(tx(language, "Ayarlar kaydedilemedi.", "Settings could not be saved.", "Mîheng nehatin tomarkirin."));
       }
     } catch {
-      alert(tx(language, "Ayarlar kaydedilemedi.", "Settings could not be saved.", "Mîheng nehatin tomarkirin."));
+      notify(tx(language, "Ayarlar kaydedilemedi.", "Settings could not be saved.", "Mîheng nehatin tomarkirin."));
     }
     setSaving(false);
   }
@@ -168,7 +169,7 @@ export function Settings({
       link.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert(dbErrorMessage);
+      notify(dbErrorMessage);
     }
     setDbBusy(false);
   }
@@ -176,7 +177,7 @@ export function Settings({
   async function importDatabase(file?: File) {
     if (!file) return;
     if (!dbPassword) {
-      alert(tx(language, "İçe aktarmadan önce şifrenizi girin.", "Enter your password before importing.", "Berî têxistinê şîfreya xwe binivîse."));
+      notify(tx(language, "İçe aktarmadan önce şifrenizi girin.", "Enter your password before importing.", "Berî têxistinê şîfreya xwe binivîse."));
       return;
     }
     if (
@@ -202,7 +203,7 @@ export function Settings({
       });
       if (response.status === 403 || response.status === 429) {
         const info = await response.json().catch(() => ({}));
-        alert(
+        notify(
           info.code === "wrong_password"
             ? tx(language, "Şifre hatalı. İçe aktarma yapılmadı.", "Wrong password. Nothing was imported.", "Şîfre şaş e. Tiştek nehat têxistin.")
             : info.error || dbErrorMessage,
@@ -212,17 +213,19 @@ export function Settings({
       }
       if (!response.ok) throw new Error();
       setDbPassword("");
-      alert(
+      notify(
         tx(
           language,
           "Veriler içe aktarıldı. Sayfa yenileniyor.",
           "Data imported. Reloading the page.",
           "Daneyên hatin têxistin. Rûpel tê nûvekirin.",
         ),
+        "success",
       );
-      window.location.reload();
+      // Bildirim görünsün diye yenileme kısa bir süre bekletilir.
+      setTimeout(() => window.location.reload(), 1500);
     } catch {
-      alert(
+      notify(
         tx(
           language,
           "Dosya okunamadı veya içe aktarılamadı. Lütfen bu uygulamadan dışa aktarılmış bir yedek dosyası seçin.",

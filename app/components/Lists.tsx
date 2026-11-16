@@ -6,6 +6,7 @@ import { tx } from "../lib/i18n";
 import { PersonChip } from "./shared";
 import { TableTools } from "./TableTools";
 import type { Language } from "../lib/types";
+import { notify } from "../lib/notify";
 
 // Liste Kasaları (çalışma alanları): bir kasanın geliri, giderleri ve giderlerin kişilere dağılımı. Kasanın Gider
 // kayıtları (Gider sayfasından girilir) burada bir tabloda listelenir; her giderin kişilere dağıtılan kısmı kişinin
@@ -115,7 +116,7 @@ export function Lists({ language, onDataChanged }: { language: Language; onDataC
     const result = await api<{ workspace?: Workspace | null }>(url, method, body);
     setBusy(false);
     if (!result.ok) {
-      alert(result.error);
+      notify(result.error);
       return false;
     }
     if (id != null && "workspace" in result.data) apply(result.data.workspace, id);
@@ -493,7 +494,7 @@ function WorkspaceFormModal({
       ? await api<{ workspace: Workspace }>(`/api/list-workspaces/${workspace.cashAccountId}`, "PUT", { name: name.trim(), amount: value, note: note.trim() })
       : await api<{ workspace: Workspace }>("/api/list-workspaces", "POST", { cashAccountId: kasaId, name: name.trim(), amount: value, note: note.trim() });
     setSaving(false);
-    if (!result.ok) return alert(result.error);
+    if (!result.ok) return notify(result.error);
     onSaved(result.data.workspace);
   }
 

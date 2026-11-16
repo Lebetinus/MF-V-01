@@ -6,6 +6,7 @@ import { tx } from "../lib/i18n";
 import { PersonChip } from "./shared";
 import type { CashAccountSummary, KasaSection, Language } from "../lib/types";
 import { workspaceKeyOf, workspaceOptions, workspaceState } from "./KasaManage";
+import { notify } from "../lib/notify";
 import {
   aggregateMonthly,
   analyzeSheets,
@@ -162,7 +163,7 @@ export function ExcelImportModal({
     if (response.ok) {
       setUndone(true);
       onDone();
-    } else alert(tx(language, "Geri alınamadı.", "Could not undo.", "Nehat vegerandin."));
+    } else notify(tx(language, "Geri alınamadı.", "Could not undo.", "Nehat vegerandin."));
   }
 
   const kindLabel = (k: BlockKind) => (k === "income" ? tx(language, "Gelir", "Income", "Dahat") : k === "expense" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Yok say", "Ignore", "Paşguh bike"));

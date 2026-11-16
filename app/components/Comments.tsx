@@ -5,6 +5,7 @@ import { Title } from "./shared";
 import { tx, localizeData, nav } from "../lib/i18n";
 import { date, money } from "../lib/finance";
 import type { Language, RecordComment, RecordItem } from "../lib/types";
+import { notify } from "../lib/notify";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -326,13 +327,13 @@ export function RecordCommentsModal({
         body: JSON.stringify({ text, isAttention }),
       });
       if (!response.ok) {
-        alert(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
+        notify(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
         return;
       }
       const data = await response.json();
       setComments((current) => [...(current ?? []), data.comment]);
     } catch {
-      alert(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
+      notify(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
     } finally {
       setBusy(false);
     }
@@ -430,7 +431,7 @@ export function Comments({ language, records = [], onRead }: { language: Languag
         body: JSON.stringify({ text, isAttention }),
       });
       if (!response.ok) {
-        alert(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
+        notify(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
         return;
       }
       const data = await response.json();
@@ -438,7 +439,7 @@ export function Comments({ language, records = [], onRead }: { language: Languag
         (current ?? []).map((t) => (t.record.id === recordId ? { ...t, comments: [...t.comments, data.comment] } : t)),
       );
     } catch {
-      alert(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
+      notify(tx(language, "Yorum gönderilemedi.", "The comment could not be sent.", "Şîrove nehat şandin."));
     } finally {
       setBusyRecordId(null);
     }
@@ -451,12 +452,12 @@ export function Comments({ language, records = [], onRead }: { language: Languag
     try {
       const response = await fetch(`/api/records/${recordId}/comments/archive`, { method: "POST" });
       if (!response.ok) {
-        alert(tx(language, "Arşivlenemedi.", "Could not archive.", "Nehat arşîvkirin."));
+        notify(tx(language, "Arşivlenemedi.", "Could not archive.", "Nehat arşîvkirin."));
         return;
       }
       setThreads((current) => (current ?? []).filter((t) => t.record.id !== recordId));
     } catch {
-      alert(tx(language, "Arşivlenemedi.", "Could not archive.", "Nehat arşîvkirin."));
+      notify(tx(language, "Arşivlenemedi.", "Could not archive.", "Nehat arşîvkirin."));
     } finally {
       setBusyRecordId(null);
     }

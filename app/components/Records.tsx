@@ -15,6 +15,7 @@ import { tx, localizeData, noteRelationLabel } from "../lib/i18n";
 import { openAttachment } from "../lib/attachments";
 import { combineByCurrency, date, money, moneyBreakdown, normalizeRecord, parseImportDate, toUsd, total, type ExchangeRates } from "../lib/finance";
 import type { CashAccountSummary, CashTransfer, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordItem, UserAccount } from "../lib/types";
+import { notify } from "../lib/notify";
 
 // Gider detay tablosu sınırları — sunucudaki detailTableSchema ile aynı olmalı
 // (app/api/_lib/validate.ts); istemci bunlara göre kırpar, böylece kayıt 400 ile
@@ -546,7 +547,7 @@ function DetailTableModal({ language, record, onClose }: { language: Language; r
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      alert(tx(language, "Panoya kopyalanamadı.", "Could not copy to clipboard.", "Nehat kopîkirin."));
+      notify(tx(language, "Panoya kopyalanamadı.", "Could not copy to clipboard.", "Nehat kopîkirin."));
     }
   }
   async function exportToExcel() {
@@ -1421,12 +1422,12 @@ export function Records({
       const response = await fetch(`/api/cash-transfers/${transferId}/confirm`, { method: "POST" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+        notify(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
         return;
       }
       onTransfersChanged();
     } catch {
-      alert(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+      notify(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
     } finally {
       setApprovingId(null);
     }
@@ -1446,7 +1447,7 @@ export function Records({
           })
         : await fetch(`/api/cash-accounts/${cashAccountId}/access?userId=${userId}`, { method: "DELETE" });
       if (!response.ok) {
-        alert(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
+        notify(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
         return;
       }
       // Built from `shareTarget` itself (not the `cashAccounts` prop, which
@@ -1461,7 +1462,7 @@ export function Records({
       onCashAccountsChange((current) => current.map((a) => (a.id === cashAccountId ? updatedTarget : a)));
       setShareTarget(updatedTarget);
     } catch {
-      alert(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
+      notify(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
     } finally {
       setShareBusyKey(null);
     }
@@ -1478,14 +1479,14 @@ export function Records({
         body: JSON.stringify({ enabled }),
       });
       if (!response.ok) {
-        alert(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
+        notify(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
         return;
       }
       const updatedTarget: CashAccountSummary = { ...shareTarget, dashboardShareEnabled: enabled };
       onCashAccountsChange((current) => current.map((a) => (a.id === cashAccountId ? updatedTarget : a)));
       setShareTarget(updatedTarget);
     } catch {
-      alert(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
+      notify(tx(language, "İşlem tamamlanamadı.", "The operation could not be completed.", "Kirin nehat qedandin."));
     } finally {
       setDashboardShareBusy(false);
     }
@@ -2282,16 +2283,17 @@ export function Records({
             ` (${invalidDateRows.length} rêz ji ber tarîxa nederbasdar hatin derbasqilkirin: rêz ${invalidDateRows.join(", ")})`,
           )
         : "";
-      alert(
+      notify(
         tx(
           language,
           `${imported.length} kayıt Excel'den eklendi.${skippedNote}`,
           `${imported.length} records imported from Excel.${skippedNote}`,
           `${imported.length} qeyd ji Excelê hatin têxistin.${skippedNote}`,
         ),
+        "success",
       );
     } catch {
-      alert(
+      notify(
         tx(
           language,
           "Excel dosyası okunamadı. Lütfen ilk satırda sütun başlıkları bulunan .xlsx dosyası seçin.",
@@ -2417,12 +2419,12 @@ export function Records({
       const response = await fetch("/api/cash-order", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error || tx(language, "Sıralama kaydedilemedi.", "The order could not be saved.", "Rêz nehat tomarkirin."));
+        notify(body.error || tx(language, "Sıralama kaydedilemedi.", "The order could not be saved.", "Rêz nehat tomarkirin."));
         return;
       }
       onRefreshData?.();
     } catch {
-      alert(tx(language, "Sıralama kaydedilemedi.", "The order could not be saved.", "Rêz nehat tomarkirin."));
+      notify(tx(language, "Sıralama kaydedilemedi.", "The order could not be saved.", "Rêz nehat tomarkirin."));
     }
   }
   function editWorkspaceOrSection(key: string, name: string, kasaNames: string[]) {
@@ -4206,7 +4208,7 @@ export function RecordModal({
     if (!files || !files.length) return;
     const room = MAX_ATTACHMENTS - (form.attachments?.length ?? 0);
     if (room <= 0) {
-      alert(
+      notify(
         tx(
           language,
           `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir.`,
@@ -4219,7 +4221,7 @@ export function RecordModal({
     const selected = Array.from(files).slice(0, room);
     for (const file of selected) {
       if (file.size > MAX_ATTACHMENT_BYTES) {
-        alert(
+        notify(
           tx(
             language,
             `"${file.name}" çok büyük (en fazla 6MB).`,
@@ -4233,7 +4235,7 @@ export function RecordModal({
       setReadingFiles((n) => n + 1);
       reader.onerror = () => {
         setReadingFiles((n) => Math.max(0, n - 1));
-        alert(tx(language, `"${file.name}" okunamadı.`, `"${file.name}" could not be read.`, `"${file.name}" nehat xwendin.`));
+        notify(tx(language, `"${file.name}" okunamadı.`, `"${file.name}" could not be read.`, `"${file.name}" nehat xwendin.`));
       };
       // Functional update — birden çok dosya aynı anda seçildiğinde her
       // FileReader kendi temposunda tamamlanır; kapalı (closure) bir
@@ -5005,7 +5007,7 @@ function KasaTransferSection({
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error || tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
+        notify(body.error || tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
         return;
       }
       setTargetId("");
@@ -5022,7 +5024,7 @@ function KasaTransferSection({
       // immediately instead of only after the next full reload.
       onTransfersChanged();
     } catch {
-      alert(tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
+      notify(tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
     } finally {
       setSubmitting(false);
     }
@@ -5034,13 +5036,13 @@ function KasaTransferSection({
       const response = await fetch(`/api/cash-transfers/${id}/confirm`, { method: "POST" });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        alert(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+        notify(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
         return;
       }
       await loadTransfers();
       onTransfersChanged();
     } catch {
-      alert(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
+      notify(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
     } finally {
       setBusyId(null);
     }
