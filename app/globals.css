@@ -5112,3 +5112,9 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .dbProgressBar.indeterminate i { width: 35%; animation: dbProgressSlide 1.2s ease-in-out infinite; }
 @keyframes dbProgressSlide { from { left: -35%; } to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { .dbProgressBar.indeterminate i { animation: none; width: 100%; opacity: .45; } }
+
+/* "Kullanıcı gözüyle gör": salt okunur görünüm şeridi */
+.viewAsBanner { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #fff4d6; border: 1px solid #f0c75e; color: #5c4300; font-size: 13px; }
+.viewAsBanner b { font-weight: 700; }
+.viewAsBanner button { border: 1px solid #c99a1e; background: #fff; color: #5c4300; border-radius: 8px; padding: 6px 12px; font-weight: 600; cursor: pointer; }
+.viewAsBanner button:hover { background: #ffe9a8; }

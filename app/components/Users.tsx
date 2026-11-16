@@ -56,6 +56,25 @@ export function Users({
   const selected = typeof selectedId === "number" ? users.find((u) => u.id === selectedId) ?? null : null;
   const cardColors = ["#4f7d0f", "#f2c61b", "#315fe8", "#7b52bf", "#d85a30", "#d4537e", "#0f6e56", "#5f5e5a"];
 
+  // "Kullanıcı gözüyle gör": salt okunur görünüm oturumu açılır, uygulama o kullanıcı olarak yeniden yüklenir.
+  async function viewAs(u: UserAccount) {
+    try {
+      const response = await fetch("/api/admin/view-as", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: u.id }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        notify(body.error || tx(language, "Görünüm açılamadı.", "The view could not be opened.", "Dîtin nehat vekirin."));
+        return;
+      }
+      window.location.reload();
+    } catch {
+      notify(tx(language, "Görünüm açılamadı.", "The view could not be opened.", "Dîtin nehat vekirin."));
+    }
+  }
+
   async function unlock(u: UserAccount) {
     try {
       const response = await fetch(`/api/users/${u.id}/unlock`, { method: "POST" });
@@ -125,6 +144,7 @@ export function Users({
           }}
           onDelete={() => selected && setDeleteTarget(selected)}
           onUnlock={() => (selected ? unlock(selected) : Promise.resolve(false))}
+          onViewAs={selected && selected.username !== currentUsername ? () => void viewAs(selected) : undefined}
         />
       )}
       {selected && !currentUserIsSuperAdmin && (
@@ -263,6 +283,7 @@ function UserManagePanel({
   onSaved,
   onDelete,
   onUnlock,
+  onViewAs,
 }: {
   language: Language;
   initial: UserAccount | null;
@@ -273,6 +294,7 @@ function UserManagePanel({
   onSaved: (user: UserAccount, created: boolean) => void;
   onDelete: () => void;
   onUnlock: () => Promise<boolean>;
+  onViewAs?: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [username, setUsername] = useState(initial?.username ?? "");
@@ -502,6 +524,21 @@ function UserManagePanel({
       {error && <small className="formWarning" style={{ display: "block", marginTop: 8 }}>{error}</small>}
       <div className="userManageFoot">
         <div className="userManageFootLeft">
+          {onViewAs && (
+            <button
+              type="button"
+              className="light"
+              onClick={onViewAs}
+              title={tx(
+                language,
+                "Uygulamayı bu kullanıcının gördüğü gibi, salt okunur olarak gezin. Kullanıcı bunu görmez; hiçbir şey değiştirilemez.",
+                "Browse the app exactly as this user sees it, read-only. The user does not see this; nothing can be changed.",
+                "Sepanê wek ku ev bikarhêner dibîne, tenê-xwendin bigere. Bikarhêner vê nabîne; tiştek nayê guhertin.",
+              )}
+            >
+              👁 {tx(language, "Kullanıcı gözüyle gör", "View as this user", "Wek vî bikarhênerî bibîne")}
+            </button>
+          )}
           {initial?.locked && (
             <button type="button" className="light" onClick={() => void onUnlock()}>🔓 {tx(language, "Kilidi Aç", "Unlock", "Kilîtê Veke")}</button>
           )}

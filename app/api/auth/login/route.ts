@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
 import { verifyPassword } from "../../../../db/passwords";
-import { createSession, sessionCookieHeader } from "../../_lib/auth";
+import { clearViewCookieHeader, createSession, sessionCookieHeader } from "../../_lib/auth";
 import { json, withErrorHandling } from "../../_lib/http";
 import { clearAttempts, getClientIp, isRateLimited, recordFailedAttempt, UNKNOWN_IP } from "../../_lib/rate-limit";
 import { AUTO_LOCK_MINUTES, blockIp, IP_BLOCK_MINUTES, isIpBlocked, lockUserAccount, releaseExpiredAutoLock } from "../../_lib/security";
@@ -105,6 +105,7 @@ export const POST = withErrorHandling(async (request: Request) => {
         dashboardIncludedUserIds: (account.dashboardIncludedUserIds as number[]) ?? [],
       },
     },
-    { status: 200, headers: { "Set-Cookie": sessionCookieHeader(token, expiresAt) } },
+    // Yeni girişte varsa eski "kullanıcı gözüyle" görünüm çerezi de silinir.
+    { status: 200, headers: [["Set-Cookie", sessionCookieHeader(token, expiresAt)], ["Set-Cookie", clearViewCookieHeader()]] },
   );
 });

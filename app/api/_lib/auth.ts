@@ -1,9 +1,13 @@
-import { and, desc, eq, gt, inArray, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, lt, ne } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { sessions, users } from "../../../db/schema";
 import type { Page } from "./types";
 
 const COOKIE_NAME = "mfv01_session";
+// "Kullanıcı gözüyle gör" görünüm oturumunun çerezi. Yalnız süper adminin kendi
+// (normal) oturum çerezi de geçerliyken işe yarar; tek başına hiçbir şey açmaz.
+const VIEW_COOKIE_NAME = "mfv01_view";
+const VIEW_TTL_HOURS = 2;
 const TTL_HOURS = Number(process.env.SESSION_TTL_HOURS ?? 12);
 const SECURE = process.env.SESSION_COOKIE_SECURE !== "false";
 // Caps session rows per user (a stolen/never-logged-out token has a natural
@@ -21,6 +25,10 @@ export type SessionUser = {
   avatar: string;
   language: string;
   dashboardIncludedUserIds: number[];
+  // Süper adminin "kullanıcı gözüyle" salt okunur görünümü: true iken hiçbir değişiklik yapılamaz.
+  readOnly: boolean;
+  // Görünümü açan süper adminin adı (yalnız görünüm modunda).
+  viewerName: string | null;
 };
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -58,6 +66,39 @@ export function getSessionToken(request: Request): string | null {
   return parseCookies(request.headers.get("cookie")) [COOKIE_NAME] ?? null;
 }
 
+export function getViewToken(request: Request): string | null {
+  return parseCookies(request.headers.get("cookie"))[VIEW_COOKIE_NAME] ?? null;
+}
+
+export function viewCookieHeader(token: string, expiresAt: Date): string {
+  const parts = [`${VIEW_COOKIE_NAME}=${encodeURIComponent(token)}`, "Path=/", "HttpOnly", "SameSite=Lax", `Expires=${expiresAt.toUTCString()}`];
+  if (SECURE) parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function clearViewCookieHeader(): string {
+  const parts = [`${VIEW_COOKIE_NAME}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (SECURE) parts.push("Secure");
+  return parts.join("; ");
+}
+
+// Süper admin için, seçilen kullanıcı adına salt okunur görünüm oturumu açar.
+// lastSeenAt geçmişe yazılır ve onlineUserIds bu oturumları saymaz: kullanıcı
+// "çevrimiçi" görünmez. createSession'ın oturum sınırı da bunları saymaz, yani
+// kullanıcının gerçek oturumlarından hiçbiri kapanmaz.
+export async function createViewSession(viewerUserId: number, userId: number): Promise<{ token: string; expiresAt: Date }> {
+  const db = getDb();
+  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  const expiresAt = new Date(Date.now() + VIEW_TTL_HOURS * 60 * 60 * 1000);
+  await db.delete(sessions).where(and(eq(sessions.viewerUserId, viewerUserId), lt(sessions.expiresAt, new Date())));
+  await db.insert(sessions).values({ id: token, userId, viewerUserId, expiresAt, lastSeenAt: new Date(0) });
+  return { token, expiresAt };
+}
+
+export async function destroyViewSession(token: string): Promise<void> {
+  await getDb().delete(sessions).where(and(eq(sessions.id, token), gt(sessions.viewerUserId, 0)));
+}
+
 export async function createSession(userId: number): Promise<{ token: string; expiresAt: Date }> {
   const db = getDb();
   const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
@@ -71,7 +112,7 @@ export async function createSession(userId: number): Promise<{ token: string; ex
   const remaining = await db
     .select({ id: sessions.id })
     .from(sessions)
-    .where(eq(sessions.userId, userId))
+    .where(and(eq(sessions.userId, userId), isNull(sessions.viewerUserId)))
     .orderBy(desc(sessions.createdAt));
   if (remaining.length > MAX_SESSIONS_PER_USER) {
     const staleIds = remaining.slice(MAX_SESSIONS_PER_USER).map((row) => row.id);
@@ -105,6 +146,8 @@ function toSessionUser(user: typeof users.$inferSelect): SessionUser {
     avatar: user.avatar,
     language: user.language,
     dashboardIncludedUserIds: (user.dashboardIncludedUserIds as number[]) ?? [],
+    readOnly: false,
+    viewerName: null,
   };
 }
 
@@ -130,12 +173,27 @@ export async function getSessionUser(request: Request): Promise<SessionUser | nu
     .select({ user: users })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date())))
+    // Yalnız normal oturumlar: bir görünüm tokenı ana çereze konsa bile oturum açmaz.
+    .where(and(eq(sessions.id, token), gt(sessions.expiresAt, new Date()), isNull(sessions.viewerUserId)))
     .limit(1);
   const row = rows[0];
   if (!row) return null;
   bumpLastSeen(db, token);
-  return toSessionUser(row.user);
+  const real = toSessionUser(row.user);
+
+  // Süper admin bir kullanıcının gözüyle bakıyorsa istek o kullanıcı olarak, salt okunur yürür.
+  // Görünüm oturumu bu süper admine ait olmalı; görüntülenen kullanıcının lastSeenAt'i dokunulmaz.
+  const viewToken = getViewToken(request);
+  if (viewToken && real.isSuperAdmin) {
+    const [view] = await db
+      .select({ user: users })
+      .from(sessions)
+      .innerJoin(users, eq(sessions.userId, users.id))
+      .where(and(eq(sessions.id, viewToken), eq(sessions.viewerUserId, real.id), gt(sessions.expiresAt, new Date())))
+      .limit(1);
+    if (view) return { ...toSessionUser(view.user), readOnly: true, viewerName: real.name };
+  }
+  return real;
 }
 
 // "Online" = at least one session last seen within this window. Generous
@@ -145,13 +203,20 @@ export async function onlineUserIds(db: ReturnType<typeof getDb> = getDb()): Pro
   const rows = await db
     .selectDistinct({ userId: sessions.userId })
     .from(sessions)
-    .where(gt(sessions.lastSeenAt, new Date(Date.now() - ONLINE_WINDOW_MS)));
+    .where(and(gt(sessions.lastSeenAt, new Date(Date.now() - ONLINE_WINDOW_MS)), isNull(sessions.viewerUserId)));
   return rows.map((r) => r.userId);
 }
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export async function requireSession(request: Request): Promise<{ user: SessionUser } | { response: Response }> {
   const user = await getSessionUser(request);
   if (!user) return { response: Response.json({ error: "Unauthorized" }, { status: 401 }) };
+  // Salt okunur görünüm: veri değiştiren her istek burada durur. Tüm korumalı uçlar
+  // (requireAdmin/requireSuperAdmin/requirePermission dahil) bu fonksiyondan geçer.
+  if (user.readOnly && !READ_METHODS.has(request.method)) {
+    return { response: Response.json({ error: "Salt okunur görünümde değişiklik yapılamaz.", code: "read_only" }, { status: 403 }) };
+  }
   return { user };
 }
 

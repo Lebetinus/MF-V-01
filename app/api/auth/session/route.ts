@@ -16,5 +16,7 @@ export const GET = withErrorHandling(async (request: Request) => {
       language: user.language,
       dashboardIncludedUserIds: user.dashboardIncludedUserIds,
     },
+    // Süper admin bir kullanıcının gözüyle salt okunur bakıyorsa dolu (arayüz üst şeridi gösterir).
+    viewAs: user.readOnly ? { viewerName: user.viewerName } : null,
   });
 });

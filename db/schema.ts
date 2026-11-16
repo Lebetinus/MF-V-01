@@ -53,6 +53,11 @@ export const sessions = pgTable("sessions", {
   // Powers Kullanıcılar' online/offline dot: a user counts as online while
   // this is within the last couple of minutes.
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  // "Kullanıcı gözüyle gör" (Ayarlar > Kullanıcılar): doluysa bu, o süper adminin
+  // açtığı SALT OKUNUR görünüm oturumudur — userId görüntülenen kullanıcıdır.
+  // Böyle oturumlar hiçbir değişiklik yapamaz, çevrimiçi sayılmaz ve kullanıcının
+  // oturum sınırına girmez (bkz. app/api/_lib/auth.ts).
+  viewerUserId: integer("viewer_user_id").references(() => users.id, { onDelete: "cascade" }),
 }, (table) => [
   index("sessions_user_id_idx").on(table.userId),
   index("sessions_expires_at_idx").on(table.expiresAt),

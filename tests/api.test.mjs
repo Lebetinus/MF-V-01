@@ -476,6 +476,60 @@ test("auth: failed logins without a known client IP are throttled, never turned 
   assert.ok(!JSON.stringify(blocked.json).includes('"unknown"'), "the unknown bucket is not persisted as a block");
 });
 
+test("view as user: a super admin browses as another user, read-only and without a trace", async () => {
+  // A fresh user that never signs in, so "online" can only come from the view session.
+  const quiet = await call("POST", "/api/users", {
+    cookie: adminCookie,
+    body: { username: `${RUN_TAG}_viewed`, password: "ApiTest1234", name: "Viewed User", roleLabel: "Test", isAdmin: false, permissions: ["cash"] },
+  });
+  assert.equal(quiet.status, 201);
+  const viewedId = quiet.json.user.id;
+
+  // Only a (real) super admin can open a view.
+  assert.equal((await call("POST", "/api/admin/view-as", { cookie: testUserCookie, body: { userId: viewedId } })).status, 403);
+  assert.equal((await call("POST", "/api/admin/view-as", { cookie: adminCookie, body: { userId: 999999999 } })).status, 404);
+
+  const opened = await call("POST", "/api/admin/view-as", { cookie: adminCookie, body: { userId: viewedId } });
+  assert.equal(opened.status, 200);
+  assert.match(opened.cookie ?? "", /^mfv01_view=/);
+  const both = `${adminCookie}; ${opened.cookie}`;
+
+  // Requests now run as the viewed user, flagged read-only.
+  const session = await call("GET", "/api/auth/session", { cookie: both });
+  assert.equal(session.status, 200);
+  assert.equal(session.json.profile.username, `${RUN_TAG}_viewed`);
+  assert.equal(session.json.viewAs?.viewerName, "Admin");
+  assert.equal((await call("GET", "/api/records", { cookie: both })).status, 200);
+  assert.equal((await call("GET", "/api/users", { cookie: both })).status, 403, "sees only what the user may see");
+
+  // Nothing can be changed.
+  const write = await call("POST", "/api/records", { cookie: both, body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_viewwrite`, amount: 1, currency: "USD" } });
+  assert.equal(write.status, 403);
+  assert.equal(write.json?.code, "read_only");
+  assert.equal((await call("PUT", "/api/profile", { cookie: both, body: { name: "x", avatar: "", language: "en" } })).status, 403);
+  assert.equal((await call("POST", "/api/notes/read-all", { cookie: both })).status, 403);
+  assert.equal((await call("POST", "/api/admin/view-as", { cookie: both, body: { userId: testUserId } })).status, 403);
+
+  // Not shown as online.
+  const online = await call("GET", "/api/users/online", { cookie: adminCookie });
+  assert.ok(!online.json.onlineUserIds.includes(viewedId), "viewed user is not online");
+
+  // The view cookie alone, or next to someone else's session, opens nothing.
+  assert.equal((await call("GET", "/api/auth/session", { cookie: opened.cookie })).status, 401);
+  const other = await call("GET", "/api/auth/session", { cookie: `${testUserCookie}; ${opened.cookie}` });
+  assert.equal(other.json.profile.username, testUsername);
+  assert.equal(other.json.viewAs, null);
+
+  // "Çıkış" while viewing only ends the view; the admin stays signed in.
+  const out = await call("POST", "/api/auth/logout", { cookie: both });
+  assert.equal(out.json?.endedView, true);
+  const back = await call("GET", "/api/auth/session", { cookie: both });
+  assert.equal(back.json.profile.username, "admin");
+  assert.equal(back.json.viewAs, null);
+
+  assert.equal((await call("DELETE", `/api/users/${viewedId}`, { cookie: adminCookie })).status, 200);
+});
+
 test("database backup: the BACKUP_TOKEN bearer opens only the backup, and only when configured", async () => {
   const w = await loadWorker();
   const post = (path, token, body) =>

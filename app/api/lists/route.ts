@@ -21,7 +21,8 @@ export const GET = withErrorHandling(async (request: Request) => {
   if (!canUseLists(session.user)) return json({ error: "Forbidden" }, { status: 403 });
 
   const db = getDb();
-  await ensureFlaggedWorkspaces(session.user, db);
+  // Salt okunur görünümde veritabanına hiçbir şey yazılmaz.
+  if (!session.user.readOnly) await ensureFlaggedWorkspaces(session.user, db);
   const [workspaces, kasas] = await Promise.all([buildWorkspaces(session.user, null, db), writableKasas(session.user, db)]);
   return json({ workspaces, kasas });
 });

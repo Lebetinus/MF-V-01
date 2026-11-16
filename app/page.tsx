@@ -172,6 +172,8 @@ export default function Home() {
   const dashboardRecords = records;
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileModal, setProfileModal] = useState(false);
+  // Süper admin bir kullanıcının gözüyle salt okunur bakıyorsa dolu (bkz. /api/admin/view-as).
+  const [viewAs, setViewAs] = useState<{ viewerName: string | null } | null>(null);
   const [preparedReports, setPreparedReports] = useState<PreparedReport[]>([]);
   const [typography, setTypography] = useState<TypographySettings>(defaultTypography);
   const [uiZoom, setUiZoom] = useState(100);
@@ -194,6 +196,8 @@ export default function Home() {
   function changeLanguage(next: Language) {
     setLanguage(next);
     setLanguageChosen(true);
+    // Salt okunur görünümde dil yalnız bu ekranda değişir: ne kullanıcının hesabına ne tarayıcıya yazılır.
+    if (viewAs) return;
     try {
       localStorage.setItem("mf-language", next);
     } catch {}
@@ -215,14 +219,18 @@ export default function Home() {
         if (response.ok) {
           const data = await response.json();
           setProfile((current) => ({ ...current, ...data.profile }));
+          setViewAs(data.viewAs ?? null);
           setSignedIn(true);
           const savedLanguage = data.profile?.language;
           if (savedLanguage === "en" || savedLanguage === "ku" || savedLanguage === "tr") {
             setLanguage(savedLanguage);
             setLanguageChosen(true);
-            try {
-              localStorage.setItem("mf-language", savedLanguage);
-            } catch {}
+            // Görünüm modunda görüntülenen kullanıcının dili bu tarayıcının tercihine yazılmaz.
+            if (!data.viewAs) {
+              try {
+                localStorage.setItem("mf-language", savedLanguage);
+              } catch {}
+            }
           }
         } else {
           setSignedIn(false);
@@ -709,8 +717,20 @@ export default function Home() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {}
+    // Görünüm modunda Çıkış yalnız görünümü kapatır: süper adminin kendi oturumuna dönülür.
+    if (viewAs) {
+      window.location.reload();
+      return;
+    }
     setProfileOpen(false);
     setSignedIn(false);
+  }
+
+  async function exitViewAs() {
+    try {
+      await fetch("/api/admin/view-as", { method: "DELETE" });
+    } catch {}
+    window.location.reload();
   }
 
   if (!signedIn && !languageChosen) {
@@ -808,6 +828,23 @@ export default function Home() {
         </div>
       </aside>
       <main>
+        {viewAs && (
+          <div className="viewAsBanner" role="status">
+            <span>
+              👁{" "}
+              {tx(language, "Şu an", "You are viewing as", "Tu niha wek")} <b>{profile.name}</b>{" "}
+              {tx(
+                language,
+                "kullanıcısının gözüyle görüntülüyorsunuz. Salt okunur: hiçbir değişiklik kaydedilmez, kullanıcı bunu görmez.",
+                "— read-only: nothing is saved and the user does not see this.",
+                "dibînî. Tenê-xwendin: tiştek nayê tomarkirin û bikarhêner vê nabîne.",
+              )}
+            </span>
+            <button type="button" onClick={() => void exitViewAs()}>
+              {tx(language, "Görünümden çık", "Exit view", "Ji dîtinê derkeve")}
+            </button>
+          </div>
+        )}
         <header>
           <div className="headerTitleRow">
             {pageHistory.length > 0 && (
