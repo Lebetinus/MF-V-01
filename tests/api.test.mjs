@@ -1,6 +1,6 @@
 // API integration tests: exercise app/api/** by calling the built worker's
 // fetch() directly with real Request objects (same pattern as
-// rendered-html.test.mjs / desktop-assets.test.mjs), against a dedicated
+// rendered-html.test.mjs / build-assets.test.mjs), against a dedicated
 // local test database (DATABASE_URL from .env.test; name must end in
 // "_test", enforced below). Every test creates clearly-marked rows of its
 // own and removes them in an `after` hook. Requires the app to have been

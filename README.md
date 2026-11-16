@@ -1,71 +1,66 @@
-# MF-V-01 — Maliye/Finans Muhasebe
+# MF-V-01 — Maliye-Finans
 
-Çok kullanıcılı, sunucu tabanlı bir muhasebe uygulaması: kasa, gelir,
-gider, mali notlar, hazırlanan raporlar, arşiv ve kullanıcı/erişim
-yönetimi. Next.js uyumlu [vinext](https://github.com/cloudflare/vinext)
-framework'ü (Vite üzerinde) ile [Drizzle ORM](https://orm.drizzle.team)
-üzerinden **PostgreSQL**'e bağlanır; kendi sunucunuzda çalışacak şekilde
-tasarlanmıştır (Cloudflare Workers/D1 kullanmaz).
+KB Group için çok kullanıcılı, sunucu tabanlı muhasebe uygulaması: kasa,
+gelir, gider, kasa aktarımları, borçlar, listeler, mali notlar,
+hazırlanan raporlar, arşiv ve kullanıcı/erişim yönetimi. Arayüz Türkçe,
+İngilizce ve Kurmancî.
 
-> **Masaüstü (Electron) sürümü hakkında:** `desktop/` altındaki Electron
-> uygulaması bilinçli olarak ayrı, dondurulmuş bir offline araç olarak
-> bırakılmıştır ve bu README'nin kapsamı dışındadır. Ayrıntılar için
-> `MF-V-01-ANA-PROMPT-1.0.8.md`'ye bakın.
+Next.js uyumlu [vinext](https://github.com/cloudflare/vinext) (Vite
+üzerinde) + React 19, [Drizzle ORM](https://orm.drizzle.team) ile
+**PostgreSQL**. Canlıda Coolify üzerinde Docker ile çalışır
+(`kb-group.live`).
 
 ## Mimari özeti
 
-- **İstemci + sunucu**: `app/page.tsx` (tek sayfalık React arayüzü) ve
-  `app/api/**/route.ts` (REST API uçları), vinext'in App Router benzeri
-  yapısıyla tek bir Next.js projesinde bir arada.
-- **Veritabanı**: PostgreSQL, şema `db/schema.ts`'de Drizzle ile tanımlı,
-  migration'lar `drizzle/`'da.
-- **Kimlik doğrulama**: `scrypt` ile şifre hash'leme, httpOnly oturum
-  çerezi (`app/api/_lib/auth.ts`), kullanıcı bazlı sayfa/işlem izinleri.
-- **Güvenlik**: sunucu taraflı yetki denetimi, ardışık başarısız giriş
-  denemelerinde IP engelleme + hesap kilitleme (admin onayı gerektirir),
-  Zod ile girdi doğrulama, CSRF origin kontrolü (`app/api/_lib/http.ts`).
-- **Prod sunucu**: `server.mjs` — asıl sunmayı (statik dosyalar, SSR, API
-  yönlendirme) vinext'in kendi `startProdServer`'ına devreder; üstüne
-  migration çalıştırma ve süresi dolmuş oturumları temizleme ekler.
+- **İstemci + sunucu**: `app/page.tsx` (tek sayfalık React arayüzü, sayfalar
+  `app/components/`) ve `app/api/**/route.ts` (REST API uçları).
+- **Veritabanı**: şema `db/schema.ts`, migration'lar `drizzle/`.
+- **Kimlik doğrulama**: `scrypt` şifre hash'i, httpOnly oturum çerezi
+  (`app/api/_lib/auth.ts`), kullanıcı bazlı sayfa izinleri ve kasa bazlı
+  erişim (`app/api/_lib/cash-access.ts`).
+- **Güvenlik**: sunucu taraflı yetki denetimi, süreli IP engeli (60 dk) ve
+  hesap kilidi (15 dk), Zod ile girdi doğrulama, CSRF origin kontrolü
+  (`app/api/_lib/http.ts`), aktif içerikli (SVG/HTML) eklerin reddi.
+- **Prod sunucu**: `server.mjs` — sunmayı vinext'in `startProdServer`'ına
+  devreder; üstüne açılışta migration (advisory lock ile), her yanıtta
+  güvenlik başlıkları (CSP, HSTS, X-Frame-Options…), istek gövdesi boyut
+  sınırı, süresi dolan oturumların temizliği ve SIGTERM'de düzgün kapanma
+  ekler.
 
 ## Gereksinimler
 
 - Node.js `>=22.13.0`
-- PostgreSQL 16+ (yerelde native servis olarak veya bir konteyner içinde
-  çalışabilir; bu proje Docker'a bağımlı değildir)
+- PostgreSQL 16+ (canlıda 17)
 
-## Kurulum
+## Kurulum (yerel)
 
 ```bash
 npm ci
 cp .env.example .env.local
 ```
 
-`.env.local` içindeki alanları doldurun (bkz. `.env.example`'daki
-açıklamalar):
+`.env.local` içindeki alanları doldurun:
 
 | Değişken | Açıklama |
 |---|---|
 | `DATABASE_URL` | `postgres://kullanici:sifre@host:5432/veritabani` |
-| `SESSION_COOKIE_SECURE` | Prod'da `true` (HTTPS zorunlu), yerel HTTP testte `false` |
+| `SESSION_COOKIE_SECURE` | Prod'da `true` (HTTPS), yerel HTTP'de `false` |
 | `SESSION_TTL_HOURS` | Oturum süresi (varsayılan 12) |
-| `PGSSL` | Yönetilen/uzak Postgres TLS istiyorsa `require` |
-| `PGPOOL_MAX` | Node süreci başına bağlantı havuzu üst sınırı |
+| `PGSSL` | Uzak Postgres TLS istiyorsa `require` |
+| `PGPOOL_MAX` | Bağlantı havuzu üst sınırı |
 | `PORT`, `HOST` | `server.mjs`'in dinleyeceği adres |
-| `VINEXT_TRUST_PROXY`, `TRUSTED_PROXY_COUNT` | Reverse proxy arkasındaysanız `1`+ yapın (aşağıya bakın) |
-| `SEED_ADMIN_PASSWORD`, `SEED_MANAGER_PASSWORD`, `SEED_USER_PASSWORD` | `npm run db:seed` için — sabit varsayılan yok, siz belirlersiniz |
+| `VINEXT_TRUST_PROXY`, `TRUSTED_PROXY_COUNT` | Reverse proxy arkasında `1` (canlıda Traefik → ikisi de `1`) |
+| `SEED_ADMIN_PASSWORD`, `SEED_MANAGER_PASSWORD`, `SEED_USER_PASSWORD` | `npm run db:seed` için (en az 10 karakter) |
 
-## Veritabanı: migration ve seed
+## Veritabanı
 
 ```bash
-npm run db:generate   # şema değiştiğinde yeni migration üretir
-npm run db:migrate    # migration'ları uygular
-npm run db:seed       # SEED_*_PASSWORD ile admin/manager/user hesaplarını oluşturur
+npm run db:migrate    # migration'ları uygular (.env.local'ı okur)
+npm run db:generate   # şema değişince yeni migration üretir
+npm run db:seed       # boş bir veritabanında ilk admin/manager/user hesaplarını oluşturur
 ```
 
-`server.mjs` da açılışta migration'ları otomatik uygular; `db:migrate`'i
-elle çalıştırmak yalnız migration üretiminden hemen sonra doğrulamak
-istediğinizde gerekir.
+`server.mjs` açılışta migration'ları kendisi uygular.
 
 ## Geliştirme
 
@@ -73,26 +68,18 @@ istediğinizde gerekir.
 npm run dev
 ```
 
-Vite/vinext geliştirme sunucusunu başlatır (varsayılan `http://localhost:5173`).
-`.env.local` otomatik yüklenir.
+Geliştirme sunucusu yalnız bu bilgisayardan erişilebilir (`localhost`).
+Claude Code tarayıcı paneli `.claude/launch.json` ile 5190 portunu kullanır.
 
-## Prod dağıtım
+## Dağıtım (Coolify)
 
-```bash
-npm run build
-node --env-file=.env.local server.mjs
-```
-
-`server.mjs` yalnız `127.0.0.1` üzerinde dinlemek üzere tasarlanmıştır —
-**TLS sonlandırma, güvenlik başlıkları (CSP, HSTS, X-Frame-Options),
-istek gövdesi boyut sınırı ve genel erişim için önünde bir reverse proxy
-(nginx/caddy) çalıştırmanız gerekir.** Örnek systemd/pm2 yapılandırmaları
-için `deploy/` klasörüne bakın.
-
-Reverse proxy arkasındaysanız `.env.local`'da `VINEXT_TRUST_PROXY=1` ve
-`TRUSTED_PROXY_COUNT` değerini proxy sayınıza göre ayarlayın — aksi halde
-giriş denemesi hız sınırlama ve IP engelleme özellikleri gerçek istemci
-IP'sini göremez.
+- `main`'e her push, GitHub webhook'u ile Coolify'da otomatik deploy başlatır.
+- `Dockerfile` çok aşamalıdır; çalışma imajında `HEALTHCHECK` (`/api/health`)
+  vardır, Coolify yeni konteynere trafiği ancak o hazır olunca verir.
+- Ortam değişkenleri Coolify → uygulama → Environment Variables'ta tutulur.
+- Deploy sırasında eski/yeni konteyner birkaç saniye birlikte çalışır; bu
+  arada bir `/assets` dosyası yüklenemezse sayfa kendini bir kez yeniler
+  (`app/layout.tsx`).
 
 ## Test
 
@@ -100,14 +87,14 @@ IP'sini göremez.
 npm test
 ```
 
-Sırasıyla: tip kontrolü (`tsc --noEmit`), prod derlemesi, ardından
-`tests/*.test.mjs` (Excel tutar birim testi, render/varlık testleri ve
+Sırasıyla: tip kontrolü, prod derlemesi, ardından `tests/*.test.mjs`
+(Excel tutar birim testi, sayfa ve derleme çıktısı testleri,
 `tests/api.test.mjs`'deki API entegrasyon testleri).
 
 API testleri **ayrı bir yerel test veritabanında** çalışır: `npm test`
-`DATABASE_URL`'yi `.env.test` dosyasından okur (`.env.local`'dan değil) ve
-testler, adı `_test` ile bitmeyen ya da `localhost` dışındaki bir
-veritabanında çalışmayı reddeder. İlk kurulum:
+`DATABASE_URL`'yi `.env.test` dosyasından okur ve testler, adı `_test` ile
+bitmeyen ya da `localhost` dışındaki bir veritabanında çalışmayı reddeder.
+İlk kurulum:
 
 ```bash
 createdb mfv01_test   # veya: CREATE DATABASE mfv01_test OWNER <kullanıcı>;
@@ -116,38 +103,30 @@ node --env-file=.env.test node_modules/drizzle-kit/bin.cjs migrate
 node --env-file=.env.test tests/helpers/seed-test-admin.mjs   # admin / admin123
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) aynı adımları her `main`
-push'unda ve pull request'te geçici bir Postgres 17 ile çalıştırır.
-Coolify `main`'i CI sonucunu beklemeden deploy eder; kırmızı bir CI
-çalıştırması, yayındaki sürümün hemen kontrol edilmesi gerektiği anlamına
-gelir.
+GitHub Actions (`.github/workflows/ci.yml`) lint, tip kontrolü, derleme ve
+tüm testleri her `main` push'unda ve pull request'te geçici bir Postgres 17
+ile çalıştırır. Coolify CI sonucunu beklemeden deploy eder; kırmızı bir CI,
+yayındaki sürümün hemen kontrol edilmesi gerektiği anlamına gelir.
 
-## Yedekleme ve geri yükleme
+## Yedekleme
 
-İki yol var:
+- **Asıl yedek: Coolify** — `mfv01-postgres` için günlük `pg_dump` yedeği
+  (Coolify → veritabanı → Backups). Kullanıcılar, kasalar, listeler dahil
+  her şeyi kapsar; `pg_restore` ile geri yüklenir.
+- **Uygulama içi** (Ayarlar → Yedekleme ve veritabanı, yalnız süper admin):
+  kayıt/arşiv/not/rapor verisini JSON olarak dışa/içe aktarır. Kasaları,
+  listeleri ve aktarımları kapsamaz; tam yedek yerine geçmez.
 
-1. **Uygulama içinden** (`Ayarlar → Veri (Database) Ayarları`, admin):
-   kayıt/arşiv/not/rapor verisini JSON olarak dışa aktarır, aynı biçimden
-   içe aktarır (mevcut mali veriyi değiştirir; kullanıcı hesapları
-   etkilenmez), veya tüm mali veriyi siler (iki adımlı şifre onaylı).
-2. **`pg_dump`** ile tam veritabanı yedeği (kullanıcılar dahil):
-   ```bash
-   pg_dump "$DATABASE_URL" > yedek.sql
-   ```
+## Proje yapısı
 
-## Proje yapısı (özet)
-
-- `app/page.tsx` — tek dosyalık React arayüzü
-- `app/api/**/route.ts` — REST API uçları
-- `app/api/_lib/` — paylaşılan sunucu yardımcıları (auth, validate, http, rate-limit, security)
-- `db/schema.ts`, `drizzle/` — Postgres şeması ve migration'lar
+- `app/page.tsx` — uygulama kabuğu ve veri katmanı
+- `app/components/` — sayfalar (`records/` altında Gelir/Gider/Kasa tablosu parçaları)
+- `app/lib/` — istemci yardımcıları (finans hesapları, i18n, Excel, ekler, bildirimler)
+- `app/api/**/route.ts`, `app/api/_lib/` — API uçları ve sunucu yardımcıları
+- `db/schema.ts`, `drizzle/` — şema ve migration'lar
 - `server.mjs` — prod giriş noktası
-- `desktop/` — ayrı, dondurulmuş Electron uygulaması (bu README'nin kapsamı dışında)
-- `tests/` — `node --test` ile çalışan testler
+- `tests/` — `node --test` testleri
+- `docs/` — eski ürün spesifikasyonu ve 1.0.9 düzeltme planı (tarihçe)
 
-## Diğer belgeler
-
-- `MF-V-01-ANA-PROMPT-1.0.8.md` — masaüstü sürümünün orijinal ürün
-  spesifikasyonu ve web sürümüne dair durum notu
-- `MF-V-01-DUZELTME-PLANI-1.0.9.md` — bu göç ve sonrasındaki düzeltmelerin
-  planı (tamamlanan/kalan maddeler için doğrulama kapıları içerir)
+Masaüstü (Electron) sürümü 1.1.0'da kaldırıldı; uygulama yalnız web
+sürümü olarak geliştirilir.

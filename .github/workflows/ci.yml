@@ -30,8 +30,6 @@ jobs:
     env:
       DATABASE_URL: postgres://mfv01:mfv01@localhost:5432/mfv01_test
       SESSION_COOKIE_SECURE: "false"
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-      SITES_BUILD_TIMEOUT: 10m
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,5 +40,7 @@ jobs:
         run: node node_modules/drizzle-kit/bin.cjs migrate
       - name: Seed test admin
         run: node tests/helpers/seed-test-admin.mjs
+      - name: Lint
+        run: npm run lint
       - name: Type check, build and test
         run: npm test

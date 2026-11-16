@@ -3,11 +3,8 @@ import "./globals.css";
 import "./lacivert.css";
 
 export const metadata: Metadata = {
-  title: "Maliye-Finans Önizleme",
-  description: "Maliye ve finans yönetimi önizleme uygulaması.",
-  other: {
-    "codex-preview": "development",
-  },
+  title: "Maliye-Finans",
+  description: "KB Group maliye ve finans yönetimi uygulaması.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

@@ -1,29 +1,26 @@
 {
-  "name": "maliye-finans-onizleme",
-  "version": "1.0.8",
+  "name": "mf-v-01",
+  "version": "1.1.0",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "install:ci": "bash scripts/install-ci.sh",
     "dev": "vite",
-    "build": "bash scripts/build-verified.sh",
+    "build": "vinext build",
     "start": "node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && node --env-file-if-exists=.env.test --experimental-strip-types --test tests/excel-amount.test.mjs tests/rendered-html.test.mjs tests/desktop-assets.test.mjs tests/api.test.mjs",
-    "validate:artifact": "bash scripts/validate-artifact.sh",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
-    "db:migrate": "bash scripts/sites-env.sh -- drizzle-kit migrate",
-    "db:push": "bash scripts/sites-env.sh -- drizzle-kit push",
-    "db:seed": "node --env-file=.env.local scripts/seed-users.mjs",
-    "desktop:dist": "npm run build && electron-builder --win nsis --x64"
+    "test": "npm run typecheck && npm run build && node --env-file-if-exists=.env.test --experimental-strip-types --test tests/excel-amount.test.mjs tests/rendered-html.test.mjs tests/build-assets.test.mjs tests/api.test.mjs",
+    "lint": "eslint .",
+    "db:generate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
+    "db:push": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs push",
+    "db:seed": "node --env-file=.env.local scripts/seed-users.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
     "exceljs": "^4.4.0",
-    "next": "16.2.6",
     "pg": "^8.13.1",
     "react": "19.2.9",
     "react-dom": "19.2.9",
@@ -39,61 +36,19 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
-    "electron": "^37.2.6",
-    "electron-builder": "^26.0.12",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "next": "16.2.6",
     "react-server-dom-webpack": "19.2.9",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vite": "8.0.13"
-  },
-  "type": "module",
-  "main": "desktop/main.cjs",
-  "displayName": "MF-V-01",
-  "build": {
-    "appId": "com.kbgroup.mfv01",
-    "productName": "MF-V-01",
-    "artifactName": "MF-V-01-Setup-${version}.${ext}",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "desktop/**/*",
-      "dist/**/*",
-      "public/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "public/kb-logo.png",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "MF-V-01",
-      "displayLanguageSelector": true,
-      "installerLanguages": [
-        "en_US",
-        "tr_TR"
-      ],
-      "deleteAppDataOnUninstall": false,
-      "runAfterFinish": true
-    }
   },
   "allowScripts": {
     "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.0": true,
     "esbuild@0.27.3": true,
-    "electron@37.10.3": true,
-    "electron-winstaller@5.4.0": true,
     "sharp@0.34.5": true,
     "unrs-resolver@1.11.1": true
   }

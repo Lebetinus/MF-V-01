@@ -37,10 +37,3 @@ yarn-error.log*
 next-env.d.ts
 tsconfig.tsbuildinfo
 /dist/
-/.wrangler/
-/.sites-runtime/
-/outputs/
-/work/
-
-# electron-builder output
-/release/

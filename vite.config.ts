@@ -1,9 +1,5 @@
 import vinext from "vinext";
 import { defineConfig, loadEnv } from "vite";
-import { sites } from "./build/sites-vite-plugin";
-
-// macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
-const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 export default defineConfig(({ mode }) => {
   // Server-side route handlers read process.env directly (e.g. db/index.ts's
@@ -15,14 +11,10 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    server: {
-      host: "0.0.0.0",
-      allowedHosts: ["terminal.local"],
-      ...(isCodexSeatbeltSandbox
-        ? { watch: { useFsEvents: false, usePolling: true } }
-        : {}),
-    },
-    plugins: [vinext(), sites()],
+    // The dev server only listens on this machine: it runs with .env.local
+    // (database credentials) loaded and must not be reachable from the LAN.
+    server: { host: "localhost" },
+    plugins: [vinext()],
     // pg lazily requires the optional native "pg-native" addon in a try/catch
     // at runtime; Vite's static resolution doesn't know that, so it must be
     // excluded rather than bundled.

@@ -1,25 +1,11 @@
-// Production entry point for running MF-V-01 on a self-hosted Node server
-// (systemd, pm2, a plain `node server.mjs`, etc). Independent of the Electron
-// desktop app in desktop/main.cjs — this is the one that actually listens on
-// a network-reachable port and talks to Postgres.
+// Production entry point (the Docker image's CMD; deployed on Coolify).
 //
 // Serving itself (static assets, RSC/SSR rendering, API route dispatch,
-// compression) is delegated entirely to vinext's own production server
-// (see node_modules/vinext/dist/server/prod-server.js) rather than
-// reimplemented here: an earlier version of this file hand-rolled an HTTP
-// adapter that called `worker.fetch(request, env, ctx)` on dist/server/
-// index.js's default export, copying a pattern from desktop/main.cjs. That
-// assumption turned out to be wrong for a `vinext build` App Router output
-// — the default export can also be a plain `handler(request)` function
-// (this project's actual shape), which the hand-rolled adapter silently
-// couldn't call, only discovered once tests/api.test.mjs exercised a real
-// build. vinext's own `startProdServer` already handles both shapes
-// correctly (see resolveAppRouterHandler in prod-server.js) plus static
-// asset caching, compression, image optimization, etc. — reimplementing
-// that here would just be a worse copy of it.
-//
-// What this file adds on top of `vinext start`: running migrations before
-// the server accepts traffic, and a periodic sweep of expired sessions.
+// compression) is delegated to vinext's own production server
+// (startProdServer). What this file adds on top: migrations before the
+// server accepts traffic (under an advisory lock), security headers and
+// request body limits on every response, a periodic sweep of expired
+// sessions, and graceful shutdown on SIGTERM.
 //
 // Usage:
 //   npm run build

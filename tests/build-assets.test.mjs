@@ -7,9 +7,9 @@ import { callWorker } from "./helpers/call-worker.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("desktop package contains every script and stylesheet referenced by HTML", async () => {
+test("build output contains every script and stylesheet referenced by HTML", async () => {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("desktop-assets-test", `${process.pid}-${Date.now()}`);
+  workerUrl.searchParams.set("build-assets-test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
   const response = await callWorker(
     worker,
