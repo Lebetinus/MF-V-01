@@ -82,6 +82,8 @@ export function Settings({
   const [blockedIps, setBlockedIps] = useState<BlockedIp[]>([]);
   const [blockedIpsLoaded, setBlockedIpsLoaded] = useState(false);
   const [dbBusy, setDbBusy] = useState(false);
+  // Yedek alma / geri yükleme ilerlemesi: percent null → süre bilinmiyor (hareketli çubuk).
+  const [dbProgress, setDbProgress] = useState<{ label: string; percent: number | null } | null>(null);
   // İçe aktarma tüm mali veriyi değiştirir: sunucu süper adminin şifresini yeniden doğrular.
   const [dbPassword, setDbPassword] = useState("");
 
@@ -175,8 +177,10 @@ export function Settings({
     return info.error || dbErrorMessage;
   }
 
-  // Tam veritabanı yedeğini (.json.gz) indirir; başarılıysa true döner.
-  async function downloadBackup(): Promise<boolean> {
+  // Tam veritabanı yedeğini (.json.gz) indirir; başarılıysa true döner. İlerleme panelde gösterilir:
+  // sunucu yedeği hazırlarken belirsiz çubuk, ardından inen baytlara göre yüzde.
+  async function downloadBackup(step = ""): Promise<boolean> {
+    setDbProgress({ label: step + tx(language, "Yedek hazırlanıyor…", "Preparing the backup…", "Tomar tê amadekirin…"), percent: null });
     const response = await fetch("/api/database/backup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -189,8 +193,52 @@ export function Settings({
     const name =
       /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ??
       `mfv01-yedek-${new Date().toISOString().slice(0, 10)}.json.gz`;
-    downloadBlob(await response.blob(), name);
+    // X-Backup-Size: proxy yanıtı yeniden sıkıştırıp Content-Length'i kaldırsa da toplam boyut bilinir.
+    const total = Number(response.headers.get("x-backup-size") || response.headers.get("content-length")) || 0;
+    const downloading = step + tx(language, "Yedek indiriliyor…", "Downloading the backup…", "Tomar tê daxistin…");
+    let blob: Blob;
+    if (response.body && total > 0) {
+      const reader = response.body.getReader();
+      const chunks: BlobPart[] = [];
+      let received = 0;
+      setDbProgress({ label: downloading, percent: 0 });
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        setDbProgress({ label: downloading, percent: Math.min(100, Math.round((received / total) * 100)) });
+      }
+      blob = new Blob(chunks, { type: "application/gzip" });
+    } else {
+      setDbProgress({ label: downloading, percent: null });
+      blob = await response.blob();
+    }
+    downloadBlob(blob, name);
     return true;
+  }
+
+  // fetch yükleme ilerlemesini bildirmez; geri yükleme dosyası bu yüzden XMLHttpRequest ile gönderilir.
+  function sendWithProgress(url: string, body: FormData | string, onUploaded: () => void, label: string): Promise<{ ok: boolean; status: number; info: { code?: string; error?: string } }> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      if (typeof body === "string") xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) setDbProgress({ label, percent: Math.min(100, Math.round((e.loaded / e.total) * 100)) });
+      };
+      xhr.upload.onload = onUploaded;
+      xhr.onload = () => {
+        let info = {};
+        try {
+          info = JSON.parse(xhr.responseText);
+        } catch {}
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, info });
+      };
+      xhr.onerror = () => reject(new Error("network"));
+      setDbProgress({ label, percent: 0 });
+      xhr.send(body);
+    });
   }
 
   async function exportDatabase() {
@@ -204,6 +252,7 @@ export function Settings({
     } catch {
       notify(dbErrorMessage);
     }
+    setDbProgress(null);
     setDbBusy(false);
   }
 
@@ -244,29 +293,30 @@ export function Settings({
     setDbBusy(true);
     try {
       // Güvenlik için önce mevcut verinin yedeği: alınamazsa geri yükleme yapılmaz.
-      if (!(await downloadBackup())) {
+      if (!(await downloadBackup(tx(language, "1/3 · Mevcut veri: ", "1/3 · Current data: ", "1/3 · Daneyên heyî: ")))) {
+        setDbProgress(null);
         setDbBusy(false);
         return;
       }
-      let response: Response;
+      const uploading = tx(language, "2/3 · Yedek dosyası yükleniyor…", "2/3 · Uploading the backup file…", "2/3 · Pelê tomarê tê barkirin…");
+      const applying = () =>
+        setDbProgress({ label: tx(language, "3/3 · Veritabanı geri yükleniyor, lütfen bekleyin…", "3/3 · Restoring the database, please wait…", "3/3 · Danegeh tê vegerandin, ji kerema xwe bisekine…"), percent: null });
+      let result: { ok: boolean; status: number; info: { code?: string; error?: string } };
       if (legacyPayload) {
-        response = await fetch("/api/database/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...legacyPayload, confirmPassword: dbPassword }),
-        });
+        result = await sendWithProgress("/api/database/import", JSON.stringify({ ...legacyPayload, confirmPassword: dbPassword }), applying, uploading);
       } else {
         const form = new FormData();
         form.append("password", dbPassword);
         form.append("file", file);
-        response = await fetch("/api/database/restore", { method: "POST", body: form });
+        result = await sendWithProgress("/api/database/restore", form, applying, uploading);
       }
-      if (!response.ok) {
-        const info = await response.json().catch(() => ({}));
-        notify(response.status === 400 && legacyPayload && !info.code ? badFileMessage : dbErrorText(info));
+      if (!result.ok) {
+        notify(result.status === 400 && legacyPayload && !result.info.code ? badFileMessage : dbErrorText(result.info));
+        setDbProgress(null);
         setDbBusy(false);
         return;
       }
+      setDbProgress({ label: tx(language, "Tamamlandı. Sayfa yenileniyor…", "Done. Reloading the page…", "Qediya. Rûpel tê nûvekirin…"), percent: 100 });
       setDbPassword("");
       notify(
         legacyPayload
@@ -283,6 +333,7 @@ export function Settings({
       setTimeout(() => window.location.reload(), 2000);
     } catch {
       notify(dbErrorMessage);
+      setDbProgress(null);
       setDbBusy(false);
     }
   }
@@ -534,7 +585,17 @@ export function Settings({
                 />
               </label>
             </div>
-            {dbBusy && <small className="databaseHint">{tx(language, "İşlem sürüyor, lütfen bekleyin…", "Working, please wait…", "Tê kirin, ji kerema xwe bisekine…")}</small>}
+            {dbProgress && (
+              <div className="dbProgress" role="status" aria-live="polite">
+                <div className="dbProgressLabel">
+                  <span>{dbProgress.label}</span>
+                  {dbProgress.percent !== null && <b>%{dbProgress.percent}</b>}
+                </div>
+                <div className={`dbProgressBar${dbProgress.percent === null ? " indeterminate" : ""}`}>
+                  <i style={dbProgress.percent !== null ? { width: `${dbProgress.percent}%` } : undefined} />
+                </div>
+              </div>
+            )}
             <small className="databaseHint">
               {tx(
                 language,

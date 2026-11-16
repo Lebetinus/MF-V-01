@@ -27,6 +27,8 @@ export const POST = withErrorHandling(async (request: Request) => {
     status: 200,
     headers: {
       "Content-Type": "application/gzip",
+      // İstemcideki ilerleme yüzdesi için (proxy Content-Length'i kaldırabilir).
+      "X-Backup-Size": String(backup.body.length),
       "Content-Disposition": `attachment; filename="mfv01-yedek-${stamp}.json.gz"`,
       "Cache-Control": "private, no-store",
     },
