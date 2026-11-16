@@ -51,6 +51,38 @@ async function runMigrations() {
   }
 }
 
+// Security headers. Coolify's Traefik proxy adds none by default, so the app
+// sends them itself. (Set here rather than in next.config.ts headers():
+// vinext 0.0.50 does not apply config headers to App Router page responses.)
+// CSP notes:
+// - The app loads nothing from other origins (no fonts/CDNs/analytics).
+// - 'unsafe-inline' scripts: vinext/RSC inlines the page payload as
+//   <script> tags; needed until nonce support is wired up.
+// - data:/blob: images and frames: avatar/logo data URLs, PDF/image attachments.
+// HSTS is ignored by browsers over plain HTTP (local testing).
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "frame-src 'self' blob:",
+  "object-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+const SECURITY_HEADERS = [
+  ["Content-Security-Policy", CONTENT_SECURITY_POLICY],
+  ["X-Content-Type-Options", "nosniff"],
+  ["X-Frame-Options", "DENY"],
+  ["Referrer-Policy", "strict-origin-when-cross-origin"],
+  ["Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()"],
+  ["Strict-Transport-Security", "max-age=31536000"],
+];
+
 const SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
 // Belt-and-suspenders alongside the per-login trim in app/api/_lib/auth.ts:
@@ -74,10 +106,16 @@ async function main() {
   await runMigrations();
   startSessionCleanupTimer();
 
-  await startProdServer({
+  const { server } = await startProdServer({
     port: PORT,
     host: HOST,
     outDir: path.resolve(__dirname, "dist"),
+  });
+  // Runs before vinext's own request handler, so every response (pages,
+  // API, static files, errors) carries the security headers. Headers vinext
+  // sets later for the same name would win, but it sets none of these.
+  server.prependListener("request", (_req, res) => {
+    for (const [name, value] of SECURITY_HEADERS) res.setHeader(name, value);
   });
   console.log(`[server] MF-V-01 listening on http://${HOST}:${PORT}`);
   console.log(

@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { archive, financeNotes, preparedReports, records, settings } from "../../../../db/schema";
-import { requireAdmin } from "../../_lib/auth";
+import { requireSuperAdmin } from "../../_lib/auth";
+import { requireCurrentPassword } from "../../_lib/confirm-password";
 import { json, withErrorHandling } from "../../_lib/http";
 import { databaseImportSchema, parseBody } from "../../_lib/validate";
 import { dedupePeople } from "../../_lib/notes";
@@ -13,13 +14,17 @@ const SETTINGS_ID = 1;
 // are never touched. IDs from the export are dropped — the DB assigns
 // fresh ones — since preserving them risks colliding with the serial
 // sequence's next value.
+// Replaces data for EVERY kasa → super admin only, and the caller's password
+// is re-verified on the server (payload.confirmPassword).
 export const POST = withErrorHandling(async (request: Request) => {
-  const session = await requireAdmin(request);
+  const session = await requireSuperAdmin(request);
   if ("response" in session) return session.response;
 
   const parsed = await parseBody(request, databaseImportSchema);
   if ("response" in parsed) return parsed.response;
   const payload = parsed.data;
+  const denied = await requireCurrentPassword(session.user.id, payload.confirmPassword);
+  if (denied) return denied;
 
   const db = getDb();
   await db.transaction(async (tx) => {

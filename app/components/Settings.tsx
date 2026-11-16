@@ -66,7 +66,7 @@ export function Settings({
       { id: "noteTasks", label: tx(language, "Not görevleri", "Note tasks", "Erkên nîşeyan"), show: true },
     ] },
     { label: tx(language, "VERİ", "DATA", "DANE"), items: [
-      { id: "database", label: tx(language, "Yedekleme ve veritabanı", "Backup and database", "Paşvexistin û danegeh"), show: true },
+      { id: "database", label: tx(language, "Yedekleme ve veritabanı", "Backup and database", "Paşvexistin û danegeh"), show: isSuperAdmin },
     ] },
     { label: tx(language, "HESABIM", "MY ACCOUNT", "HESABÊ MIN"), items: [
       { id: "users", label: tx(language, "Kullanıcı ayarlarım", "My user settings", "Mîhengên min"), show: true },
@@ -80,6 +80,8 @@ export function Settings({
   const [blockedIps, setBlockedIps] = useState<BlockedIp[]>([]);
   const [blockedIpsLoaded, setBlockedIpsLoaded] = useState(false);
   const [dbBusy, setDbBusy] = useState(false);
+  // İçe aktarma tüm mali veriyi değiştirir: sunucu süper adminin şifresini yeniden doğrular.
+  const [dbPassword, setDbPassword] = useState("");
 
   useEffect(() => setTypographyDraft(typography), [typography]);
 
@@ -173,6 +175,22 @@ export function Settings({
 
   async function importDatabase(file?: File) {
     if (!file) return;
+    if (!dbPassword) {
+      alert(tx(language, "İçe aktarmadan önce şifrenizi girin.", "Enter your password before importing.", "Berî têxistinê şîfreya xwe binivîse."));
+      return;
+    }
+    if (
+      !window.confirm(
+        tx(
+          language,
+          `"${file.name}" içe aktarılacak ve mevcut TÜM kayıt/arşiv/not/rapor verisinin yerine geçecek. Devam edilsin mi?`,
+          `"${file.name}" will be imported and will replace ALL current record/archive/note/report data. Continue?`,
+          `"${file.name}" dê were têxistin û dê şûna HEMÛ daneyên qeyd/arşîv/nîşe/rapor ên heyî bigire. Bidomîne?`,
+        ),
+      )
+    ) {
+      return;
+    }
     setDbBusy(true);
     try {
       const text = await file.text();
@@ -180,9 +198,20 @@ export function Settings({
       const response = await fetch("/api/database/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, confirmPassword: dbPassword }),
       });
+      if (response.status === 403 || response.status === 429) {
+        const info = await response.json().catch(() => ({}));
+        alert(
+          info.code === "wrong_password"
+            ? tx(language, "Şifre hatalı. İçe aktarma yapılmadı.", "Wrong password. Nothing was imported.", "Şîfre şaş e. Tiştek nehat têxistin.")
+            : info.error || dbErrorMessage,
+        );
+        setDbBusy(false);
+        return;
+      }
       if (!response.ok) throw new Error();
+      setDbPassword("");
       alert(
         tx(
           language,
@@ -424,6 +453,16 @@ export function Settings({
                 "Daneyên darayî (qeyd, arşîv, nîşe, rapor) tomar bike, vegerîne, an ji nû ve saz bike",
               )}
             />
+            <label className="settingLabel">
+              {tx(language, "Şifreniz (içe aktarma için gerekli)", "Your password (required to import)", "Şîfreya te (ji bo têxistinê pêwîst e)")}
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={dbPassword}
+                onChange={(e) => setDbPassword(e.target.value)}
+                disabled={dbBusy}
+              />
+            </label>
             <div className="databaseActions">
               <button type="button" className="light" disabled={dbBusy} onClick={exportDatabase}>
                 ⇩ {tx(language, "Dışa Aktar", "Export", "Derxe")}

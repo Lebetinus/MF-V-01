@@ -34,8 +34,9 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// IPs auto-blocked after repeated failed login attempts. Presence of a row
-// means "blocked" — only an admin removing the row lifts it.
+// IPs auto-blocked after repeated failed login attempts. A row blocks the IP
+// for IP_BLOCK_MINUTES after created_at (app/api/_lib/security.ts); an admin
+// can also lift it early by removing the row.
 export const blockedIps = pgTable("blocked_ips", {
   ip: text("ip").primaryKey(),
   reason: text("reason").notNull().default(""),

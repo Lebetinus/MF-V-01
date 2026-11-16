@@ -55,12 +55,18 @@ const linkSchema = z.string().max(2000).transform(normalizeLink);
 // 5 dosya, DB'nin aşırı şişmesini önlemek için makul bir üst sınır.
 const MAX_ATTACHMENT_BASE64_LENGTH = 8_500_000;
 const MAX_ATTACHMENTS = 5;
+// Tarayıcıda açıldığında script çalıştırabilen ("aktif") türler. Bunlar ek
+// olarak kabul edilmez; istemci ayrıca yalnız PDF/raster resimleri satır
+// içi açar (app/lib/attachments.ts), bu sunucu kontrolü ikinci katmandır.
+// Office türleri (…openxmlformats…) "xml" içerir ama pasiftir, eşleşmemeli.
+const ACTIVE_CONTENT_MIME = /^\s*(text\/html|(text|application)\/xml|(text|application)\/(x-)?(java|ecma)script|application\/x-shockwave-flash|[\w.-]+\/[\w.-]*\+xml)\s*$/i;
 const attachmentSchema = z.object({
   name: z.string().max(255),
   data: z
     .string()
     .max(MAX_ATTACHMENT_BASE64_LENGTH, "Dosya çok büyük (en fazla ~6MB)")
-    .refine((v) => v.startsWith("data:"), "Geçersiz dosya verisi"),
+    .refine((v) => v.startsWith("data:"), "Geçersiz dosya verisi")
+    .refine((v) => !ACTIVE_CONTENT_MIME.test(/^data:([^;,]*)/i.exec(v)?.[1] ?? ""), "Bu dosya türü güvenlik nedeniyle eklenemez (SVG/HTML/XML/JS)"),
 });
 const attachmentsSchema = z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional().default([]);
 
@@ -401,6 +407,8 @@ const exportedReportSchema = preparedReportInputSchema.extend({
 });
 
 export const databaseImportSchema = z.object({
+  // İçe aktarmayı yapan süper adminin şifresi; sunucuda yeniden doğrulanır.
+  confirmPassword: z.string().max(200).optional(),
   version: z.number().optional(),
   exportedAt: z.string().optional(),
   records: z.array(exportedRecordSchema).max(50_000).optional().default([]),

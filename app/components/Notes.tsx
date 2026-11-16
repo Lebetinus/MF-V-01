@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Title } from "./shared";
 import { tx, noteRelationLabel } from "../lib/i18n";
+import { openAttachment } from "../lib/attachments";
 import type { FinanceNote, Language, NoteColumn, NoteComment, NoteRelation, NoteStatus, RecordAttachment, UserAccount } from "../lib/types";
 
 // Düzenleme penceresinden çıkan not: belgeler yeni eklenenler + kaldırılacak sıra numaraları olarak gider.
@@ -24,24 +25,10 @@ const shortLink = (u: string) => u.replace(/^https?:\/\//i, "").replace(/^www\./
 const MAX_NOTE_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024;
 
-// Pdf/resim yeni sekmede açılır, diğer dosyalar indirilir.
+// Pdf/resim yeni sekmede açılır, diğer dosyalar indirilir (bkz. lib/attachments).
 function openDataFile(attachment: { name: string; data: string }) {
   try {
-    const [header, base64] = attachment.data.split(",");
-    const mime = /data:([^;]+)/.exec(header)?.[1] ?? "application/octet-stream";
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    if (/^(application\/pdf|image\/)/.test(mime)) {
-      window.open(url, "_blank");
-    } else {
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = attachment.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    openAttachment(attachment);
   } catch {
     // Bozuk veri — sessizce geçilir.
   }

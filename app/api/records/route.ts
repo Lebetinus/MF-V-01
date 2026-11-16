@@ -2,7 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { records } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
-import { accessibleCashAccountIds } from "../_lib/cash-access";
+import { accessibleCashAccountIds, canAccessCashAccount } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
 import { ensureCashAccountLink, fallbackKasaNameFor } from "../_lib/records";
 import { markListKasa, resolveRecordList, setRjKasa, unmarkListKasa } from "../_lib/lists";
@@ -87,6 +87,8 @@ export const POST = withErrorHandling(async (request: Request) => {
       if (link.cashAccountId == null || payload.debtCashAccountId === link.cashAccountId) return { badDebt: "Karşı kasa, giderin kasasından farklı olmalıdır" };
       const otherName = await kasaName(payload.debtCashAccountId, tx);
       if (!otherName) return { badDebt: "Karşı kasa bulunamadı" };
+      // Borç kaydı karşı kasaya da satır yazar: kullanıcı o kasayı göremiyorsa oraya kayıt ekleyemez.
+      if (!(await canAccessCashAccount(session.user, payload.debtCashAccountId, tx))) return { badDebt: "Karşı kasaya erişiminiz yok" };
       debtOther = { id: payload.debtCashAccountId, name: otherName };
       if (payload.amount <= 0) return { badDebt: "Borç tutarı sıfırdan büyük olmalıdır" };
       if (debtMode === "repay") {

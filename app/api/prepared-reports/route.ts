@@ -4,14 +4,18 @@ import { preparedReports } from "../../../db/schema";
 import { requirePermission } from "../_lib/auth";
 import { json, withErrorHandling } from "../_lib/http";
 import { parseBody, preparedReportInputSchema } from "../_lib/validate";
+import { reportKasaFilter } from "../_lib/reports";
 
 export const GET = withErrorHandling(async (request: Request) => {
   const session = await requirePermission(request, "reportBuilder");
   if ("response" in session) return session.response;
 
   const db = getDb();
-  const rows = await db.select().from(preparedReports).orderBy(desc(preparedReports.createdAt));
-  return json({ preparedReports: rows });
+  const [rows, visible] = await Promise.all([
+    db.select().from(preparedReports).orderBy(desc(preparedReports.createdAt)),
+    reportKasaFilter(session.user, db),
+  ]);
+  return json({ preparedReports: rows.filter((row) => visible(row.cashAccount)) });
 });
 
 import { logActivity } from "../_lib/activity";
@@ -26,6 +30,9 @@ export const POST = withErrorHandling(async (request: Request) => {
   const id = payload.id?.trim() || crypto.randomUUID();
 
   const db = getDb();
+  if (!(await reportKasaFilter(session.user, db))(payload.cashAccount)) {
+    return json({ error: "Bu kasa için rapor hazırlama yetkiniz yok" }, { status: 403 });
+  }
   const [report] = await db
     .insert(preparedReports)
     .values({

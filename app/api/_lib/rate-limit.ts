@@ -55,9 +55,14 @@ function trustedProxyCount(): number {
 // front of the header) — this is the path that matters in production,
 // behind a reverse proxy with TRUSTED_PROXY_COUNT set. With no proxy
 // configured (local dev, or a direct-exposed deployment we don't
-// recommend), every request collapses to a shared "unknown" bucket;
-// tests/api.test.mjs sets x-mfv01-remote-addr directly to get distinct
-// per-test identities without needing a real proxy in front.
+// recommend), every request collapses to a shared UNKNOWN_IP bucket.
+//
+// x-mfv01-remote-addr is honoured ONLY when MFV01_TRUST_TEST_IP_HEADER=1
+// (set by tests/api.test.mjs to get distinct per-test identities). Nothing
+// in production sets that header, so trusting it unconditionally let any
+// client pick its own "IP" and dodge IP blocking.
+export const UNKNOWN_IP = "unknown";
+
 export function getClientIp(request: Request): string {
   const proxies = trustedProxyCount();
   if (proxies > 0) {
@@ -68,5 +73,9 @@ export function getClientIp(request: Request): string {
       if (index >= 0 && parts[index]) return parts[index];
     }
   }
-  return request.headers.get("x-mfv01-remote-addr") || "unknown";
+  if (process.env.MFV01_TRUST_TEST_IP_HEADER === "1") {
+    const testIp = request.headers.get("x-mfv01-remote-addr");
+    if (testIp) return testIp;
+  }
+  return UNKNOWN_IP;
 }

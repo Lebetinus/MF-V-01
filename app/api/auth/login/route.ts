@@ -4,12 +4,13 @@ import { users } from "../../../../db/schema";
 import { verifyPassword } from "../../../../db/passwords";
 import { createSession, sessionCookieHeader } from "../../_lib/auth";
 import { json, withErrorHandling } from "../../_lib/http";
-import { clearAttempts, getClientIp, isRateLimited, recordFailedAttempt } from "../../_lib/rate-limit";
-import { blockIp, isIpBlocked, lockUserAccount } from "../../_lib/security";
+import { clearAttempts, getClientIp, isRateLimited, recordFailedAttempt, UNKNOWN_IP } from "../../_lib/rate-limit";
+import { AUTO_LOCK_MINUTES, blockIp, IP_BLOCK_MINUTES, isIpBlocked, lockUserAccount, releaseExpiredAutoLock } from "../../_lib/security";
 import type { Page } from "../../_lib/types";
 import { logActivity } from "../../_lib/activity";
 
 const LOCK_REASON = "5 ardışık başarısız giriş denemesi";
+const AUTO_LOCK_MESSAGE = `Hesabınız çok fazla hatalı deneme nedeniyle ${AUTO_LOCK_MINUTES} dakikalığına kilitlendi. Daha sonra tekrar deneyin veya yöneticinizle iletişime geçin.`;
 
 export const POST = withErrorHandling(async (request: Request) => {
   const ip = getClientIp(request);
@@ -34,11 +35,19 @@ export const POST = withErrorHandling(async (request: Request) => {
 
   const db = getDb();
   const rows = await db.select().from(users).where(eq(users.username, username)).limit(1);
-  const account = rows[0];
+  let account = rows[0];
+
+  // Süresi dolan otomatik kilit kendiliğinden kalkar (bkz. security.ts).
+  if (account && (await releaseExpiredAutoLock(account, LOCK_REASON))) {
+    account = { ...account, locked: false, lockedAt: null, lockReason: "" };
+  }
 
   if (account?.locked) {
     return json(
-      { error: "Hesabınız güvenlik nedeniyle kilitlendi. Yönetici onayı bekleniyor.", code: "account_locked" },
+      {
+        error: account.lockReason === LOCK_REASON ? AUTO_LOCK_MESSAGE : "Hesabınız yönetici tarafından kilitlendi. Yöneticinizle iletişime geçin.",
+        code: "account_locked",
+      },
       { status: 403 },
     );
   }
@@ -52,18 +61,24 @@ export const POST = withErrorHandling(async (request: Request) => {
     recordFailedAttempt(ipKey);
     recordFailedAttempt(acctKey);
 
-    if (isRateLimited(ipKey) !== null) {
+    // Ortak "unknown" kovası (proxy ayarı yok) kalıcı engellenmez: bu,
+    // herkesi aynı anda dışarıda bırakırdı. Hesap sayacı yine çalışır.
+    const ipRetryAfter = isRateLimited(ipKey);
+    if (ipRetryAfter !== null && ip !== UNKNOWN_IP) {
       await blockIp(ip, LOCK_REASON);
       return json(
-        { error: "Bu IP adresinden çok fazla başarısız deneme yapıldı. Erişim engellendi.", code: "ip_blocked" },
+        { error: `Bu IP adresinden çok fazla başarısız deneme yapıldı. ${IP_BLOCK_MINUTES} dakika sonra tekrar deneyin.`, code: "ip_blocked" },
         { status: 403 },
       );
     }
     if (account && isRateLimited(acctKey) !== null) {
       await lockUserAccount(account.id, LOCK_REASON);
+      return json({ error: AUTO_LOCK_MESSAGE, code: "account_locked" }, { status: 403 });
+    }
+    if (ipRetryAfter !== null) {
       return json(
-        { error: "Hesabınız güvenlik nedeniyle kilitlendi. Yönetici onayı bekleniyor.", code: "account_locked" },
-        { status: 403 },
+        { error: "Çok fazla başarısız deneme. Lütfen biraz sonra tekrar deneyin.", code: "rate_limited" },
+        { status: 429, headers: { "Retry-After": String(ipRetryAfter) } },
       );
     }
 

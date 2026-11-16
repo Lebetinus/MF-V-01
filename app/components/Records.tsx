@@ -11,6 +11,7 @@ import { KasaDeleteModal, KasaEditModal, parentWorkspaceOptions, workspaceKeyOf,
 import { WorkspaceAccessModal, type AccessKasa } from "./WorkspaceAccess";
 import { TableTools } from "./TableTools";
 import { tx, localizeData, noteRelationLabel } from "../lib/i18n";
+import { openAttachment } from "../lib/attachments";
 import { combineByCurrency, date, money, moneyBreakdown, normalizeRecord, parseImportDate, toUsd, total, type ExchangeRates } from "../lib/finance";
 import type { CashAccountSummary, CashTransfer, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordItem, UserAccount } from "../lib/types";
 
@@ -3845,20 +3846,7 @@ function DocCell({ language, docs, tableRows, onOpen, onOpenDetail }: { language
       return;
     }
     try {
-      const [header, base64] = doc.data.split(",");
-      const mime = /data:(.*?);base64/.exec(header)?.[1] || "application/octet-stream";
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-      const link = document.createElement("a");
-      link.href = url;
-      if (/^(application\/pdf|image\/)/.test(mime)) link.target = "_blank";
-      else link.download = doc.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openAttachment(doc);
     } catch {
       onOpen();
     }
@@ -4132,16 +4120,12 @@ export function RecordModal({
   const [rjKasa, setRjKasa] = useState(() => (prefillWorkspaceKey && !initial && kind === "cash" ? workspaceState(prefillWorkspaceKey, { rjKasa: false, listKasa: false }).rjKasa : kind === "cash" && !!cashAccounts?.some((a) => a.name === base.source && a.isRjKasa)));
   const [listKasa, setListKasa] = useState(() => (prefillWorkspaceKey && !initial && kind === "cash" ? workspaceState(prefillWorkspaceKey, { rjKasa: false, listKasa: false }).listKasa : kind === "cash" && !!cashAccounts?.some((a) => a.name === base.source && a.isListWorkspace)));
   // Gider eklerken "Borç" işareti: lent = başka bir kasaya borç veriyorum, repay = borcumu ödüyorum (karşı kasa seçilir).
-  const [allKasas, setAllKasas] = useState<{ id: number; name: string }[]>([]);
+  // Karşı kasa yalnız kullanıcının erişebildiği kasalardan seçilir (sunucu da aynı kuralı uygular).
   const debtMode = form.debtMode ?? "";
-  useEffect(() => {
-    if (kind !== "expense" || initial || debtMode !== "lent" || allKasas.length) return;
-    fetch("/api/cash-accounts/all").then((r) => (r.ok ? r.json() : null)).then((d) => { if (d?.cashAccounts) setAllKasas(d.cashAccounts); }).catch(() => {});
-  }, [kind, initial, debtMode, allKasas.length]);
   const ownKasaId = cashAccounts.find((a) => a.name === form.cashAccount)?.id;
   // Borcumu öderken: bu kasanın borcu olduğu (seçili para biriminde kalan borcu bulunan) alacaklı kasalar.
   const repayOptions = debtPairs(records).filter((p) => p.debtorName === form.cashAccount && p.currency === form.currency && p.outstanding > 0.004);
-  const lentOptions = allKasas.filter((k) => k.id !== ownKasaId);
+  const lentOptions = cashAccounts.filter((k) => k.id !== ownKasaId).map((k) => ({ id: k.id, name: k.name }));
   const pickDebtKasa = (idText: string) => {
     const id = idText ? Number(idText) : null;
     let amount = form.amount;
@@ -4271,19 +4255,7 @@ export function RecordModal({
   // kullanılmıyor; bu yüzden hiçbir popup/engelleme sorunu yaşanmıyor.
   function downloadAttachment(attachment: { name: string; data: string }) {
     try {
-      const [header, base64] = attachment.data.split(",");
-      const mime = /data:(.*?);base64/.exec(header)?.[1] || "application/octet-stream";
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = attachment.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      openAttachment(attachment, { forceDownload: true });
     } catch {
       const link = document.createElement("a");
       link.href = attachment.data;
