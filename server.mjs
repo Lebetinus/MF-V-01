@@ -53,7 +53,7 @@ async function runMigrations() {
 const MB = 1024 * 1024;
 function bodyLimitFor(pathname) {
   if (pathname.startsWith("/api/auth/")) return 64 * 1024;
-  if (pathname === "/api/database/import") return 512 * MB;
+  if (pathname === "/api/database/import" || pathname === "/api/database/restore") return 512 * MB;
   return 64 * MB;
 }
 

@@ -156,80 +156,130 @@ export function Settings({
 
   const dbErrorMessage = tx(language, "İşlem tamamlanamadı. Lütfen tekrar deneyin.", "The operation could not be completed. Please try again.", "Kirin nehat qedandin. Ji kerema xwe dîsa biceribîne.");
 
+  const needPasswordMessage = tx(language, "Önce şifrenizi girin.", "Enter your password first.", "Pêşî şîfreya xwe binivîse.");
+  const badFileMessage = tx(
+    language,
+    "Dosya okunamadı. Lütfen bu uygulamadan alınmış bir yedek dosyası seçin.",
+    "The file could not be read. Please choose a backup file taken from this application.",
+    "Pel nehat xwendin. Ji kerema xwe pelek tomarê ku ji vê sepanê hatiye girtin hilbijêre.",
+  );
+
+  function dbErrorText(info: { code?: string; error?: string }): string {
+    if (info.code === "wrong_password") return tx(language, "Şifre hatalı. İşlem yapılmadı.", "Wrong password. Nothing was changed.", "Şîfre şaş e. Tiştek nehat guhertin.");
+    if (info.code === "password_required") return needPasswordMessage;
+    return info.error || dbErrorMessage;
+  }
+
+  // Tam veritabanı yedeğini (.json.gz) indirir; başarılıysa true döner.
+  async function downloadBackup(): Promise<boolean> {
+    const response = await fetch("/api/database/backup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: dbPassword }),
+    });
+    if (!response.ok) {
+      notify(dbErrorText(await response.json().catch(() => ({}))));
+      return false;
+    }
+    const name =
+      /filename="([^"]+)"/.exec(response.headers.get("content-disposition") ?? "")?.[1] ??
+      `mfv01-yedek-${new Date().toISOString().slice(0, 10)}.json.gz`;
+    downloadBlob(await response.blob(), name);
+    return true;
+  }
+
   async function exportDatabase() {
+    if (!dbPassword) {
+      notify(needPasswordMessage);
+      return;
+    }
     setDbBusy(true);
     try {
-      const response = await fetch("/api/database/export");
-      if (!response.ok) throw new Error();
-      const data = await response.json();
-      downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), `mf-v01-yedek-${new Date().toISOString().slice(0, 10)}.json`);
+      if (await downloadBackup()) notify(tx(language, "Veritabanı yedeği indirildi.", "Database backup downloaded.", "Tomara danegehê hat daxistin."), "success");
     } catch {
       notify(dbErrorMessage);
     }
     setDbBusy(false);
   }
 
-  async function importDatabase(file?: File) {
+  async function restoreDatabase(file?: File) {
     if (!file) return;
     if (!dbPassword) {
-      notify(tx(language, "İçe aktarmadan önce şifrenizi girin.", "Enter your password before importing.", "Berî têxistinê şîfreya xwe binivîse."));
+      notify(needPasswordMessage);
       return;
     }
-    if (
-      !window.confirm(
-        tx(
+    // Eski biçimdeki .json dışa aktarımları (yalnız kayıt/arşiv/not/rapor) eski içe aktarma ucuyla yüklenir.
+    const head = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    let legacyPayload: Record<string, unknown> | null = null;
+    if (!(head[0] === 0x1f && head[1] === 0x8b)) {
+      try {
+        const parsed = JSON.parse(await file.text());
+        if (!parsed || typeof parsed !== "object") throw new Error();
+        if (parsed.format !== "mfv01-db-backup") legacyPayload = parsed;
+      } catch {
+        notify(badFileMessage);
+        return;
+      }
+    }
+    const question = legacyPayload
+      ? tx(
           language,
-          `"${file.name}" içe aktarılacak ve mevcut TÜM kayıt/arşiv/not/rapor verisinin yerine geçecek. Devam edilsin mi?`,
-          `"${file.name}" will be imported and will replace ALL current record/archive/note/report data. Continue?`,
-          `"${file.name}" dê were têxistin û dê şûna HEMÛ daneyên qeyd/arşîv/nîşe/rapor ên heyî bigire. Bidomîne?`,
-        ),
-      )
-    ) {
-      return;
-    }
+          `"${file.name}" eski biçimde bir dışa aktarım. Yalnız kayıt/arşiv/not/rapor verisi yüklenecek ve mevcut kayıt/arşiv/not/rapor verisinin yerine geçecek. Önce mevcut verinin yedeği otomatik olarak indirilecek. Devam edilsin mi?`,
+          `"${file.name}" is an old-format export. Only record/archive/note/report data will be loaded, replacing the current record/archive/note/report data. A backup of the current data is downloaded first. Continue?`,
+          `"${file.name}" derxistineke bi şêwaza kevn e. Tenê daneyên qeyd/arşîv/nîşe/rapor dê werin barkirin û dê şûna yên heyî bigirin. Pêşî tomara daneyên heyî dê bixweber were daxistin. Bidomîne?`,
+        )
+      : tx(
+          language,
+          `"${file.name}" yedeği geri yüklenecek. Mevcut TÜM veriler (kullanıcılar, kasalar, kayıtlar, listeler, notlar, ayarlar) silinip yedektekilerle değiştirilecek ve herkesin oturumu kapanacak. Önce mevcut verinin yedeği otomatik olarak indirilecek. Devam edilsin mi?`,
+          `The backup "${file.name}" will be restored. ALL current data (users, cash accounts, records, lists, notes, settings) will be replaced with the backup's and everyone will be signed out. A backup of the current data is downloaded first. Continue?`,
+          `Tomara "${file.name}" dê were vegerandin. HEMÛ daneyên heyî (bikarhêner, qase, qeyd, lîste, nîşe, mîheng) dê werin jêbirin û bi yên tomarê werin guhertin, û hemû kes dê ji danişînê derkevin. Pêşî tomara daneyên heyî dê bixweber were daxistin. Bidomîne?`,
+        );
+    if (!window.confirm(question)) return;
+
     setDbBusy(true);
     try {
-      const text = await file.text();
-      const payload = JSON.parse(text);
-      const response = await fetch("/api/database/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, confirmPassword: dbPassword }),
-      });
-      if (response.status === 403 || response.status === 429) {
-        const info = await response.json().catch(() => ({}));
-        notify(
-          info.code === "wrong_password"
-            ? tx(language, "Şifre hatalı. İçe aktarma yapılmadı.", "Wrong password. Nothing was imported.", "Şîfre şaş e. Tiştek nehat têxistin.")
-            : info.error || dbErrorMessage,
-        );
+      // Güvenlik için önce mevcut verinin yedeği: alınamazsa geri yükleme yapılmaz.
+      if (!(await downloadBackup())) {
         setDbBusy(false);
         return;
       }
-      if (!response.ok) throw new Error();
+      let response: Response;
+      if (legacyPayload) {
+        response = await fetch("/api/database/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...legacyPayload, confirmPassword: dbPassword }),
+        });
+      } else {
+        const form = new FormData();
+        form.append("password", dbPassword);
+        form.append("file", file);
+        response = await fetch("/api/database/restore", { method: "POST", body: form });
+      }
+      if (!response.ok) {
+        const info = await response.json().catch(() => ({}));
+        notify(response.status === 400 && legacyPayload && !info.code ? badFileMessage : dbErrorText(info));
+        setDbBusy(false);
+        return;
+      }
       setDbPassword("");
       notify(
-        tx(
-          language,
-          "Veriler içe aktarıldı. Sayfa yenileniyor.",
-          "Data imported. Reloading the page.",
-          "Daneyên hatin têxistin. Rûpel tê nûvekirin.",
-        ),
+        legacyPayload
+          ? tx(language, "Veriler içe aktarıldı. Sayfa yenileniyor.", "Data imported. Reloading the page.", "Daneyên hatin têxistin. Rûpel tê nûvekirin.")
+          : tx(
+              language,
+              "Yedek geri yüklendi. Oturumunuz kapandı; yeniden giriş yapın.",
+              "Backup restored. You have been signed out; please sign in again.",
+              "Tomar hat vegerandin. Tu ji danişînê derketî; dîsa têkeve.",
+            ),
         "success",
       );
       // Bildirim görünsün diye yenileme kısa bir süre bekletilir.
-      setTimeout(() => window.location.reload(), 1500);
+      setTimeout(() => window.location.reload(), 2000);
     } catch {
-      notify(
-        tx(
-          language,
-          "Dosya okunamadı veya içe aktarılamadı. Lütfen bu uygulamadan dışa aktarılmış bir yedek dosyası seçin.",
-          "The file could not be read or imported. Please choose a backup file exported from this application.",
-          "Pel nehat xwendin an têxistin. Ji kerema xwe pelek ku ji vê sepanê hatiye derxistin hilbijêre.",
-        ),
-      );
+      notify(dbErrorMessage);
+      setDbBusy(false);
     }
-    setDbBusy(false);
   }
 
   return (
@@ -446,13 +496,13 @@ export function Settings({
               title={tx(language, "Veri (Database) Ayarları", "Database Settings", "Mîhengên Danegehê")}
               sub={tx(
                 language,
-                "Mali verileri (kayıt, arşiv, not, rapor) yedekleyin, geri yükleyin veya sıfırlayın",
-                "Back up, restore, or reset financial data (records, archive, notes, reports)",
-                "Daneyên darayî (qeyd, arşîv, nîşe, rapor) tomar bike, vegerîne, an ji nû ve saz bike",
+                "Tüm veritabanını (kullanıcılar, kasalar, kayıtlar ve ekleri, listeler, aktarımlar, notlar, ayarlar) tek dosya olarak yedekleyin veya bir yedekten geri yükleyin",
+                "Back up the whole database (users, cash accounts, records with attachments, lists, transfers, notes, settings) as one file, or restore it from a backup",
+                "Hemû danegehê (bikarhêner, qase, qeyd û pêvek, lîste, veguhastin, nîşe, mîheng) wek pelek tenê tomar bike an ji tomarekê vegerîne",
               )}
             />
             <label className="settingLabel">
-              {tx(language, "Şifreniz (içe aktarma için gerekli)", "Your password (required to import)", "Şîfreya te (ji bo têxistinê pêwîst e)")}
+              {tx(language, "Şifreniz (yedek almak ve geri yüklemek için gerekli)", "Your password (required to back up and restore)", "Şîfreya te (ji bo tomarkirin û vegerandinê pêwîst e)")}
               <input
                 type="password"
                 autoComplete="current-password"
@@ -463,28 +513,29 @@ export function Settings({
             </label>
             <div className="databaseActions">
               <button type="button" className="light" disabled={dbBusy} onClick={exportDatabase}>
-                ⇩ {tx(language, "Dışa Aktar", "Export", "Derxe")}
+                ⇩ {tx(language, "Yedek Al", "Back Up", "Tomar Bike")}
               </button>
-              <label className="light fileButton">
-                ⇧ {tx(language, "İçe Aktar", "Import", "Têxe")}
+              <label className={`light fileButton${dbBusy ? " disabled" : ""}`}>
+                ⇧ {tx(language, "Yedekten Geri Yükle", "Restore from Backup", "Ji Tomarê Vegerîne")}
                 <input
                   hidden
                   type="file"
-                  accept=".json,application/json"
+                  accept=".gz,.json,application/gzip,application/json"
                   disabled={dbBusy}
                   onChange={(e) => {
-                    importDatabase(e.target.files?.[0]);
+                    restoreDatabase(e.target.files?.[0]);
                     e.target.value = "";
                   }}
                 />
               </label>
             </div>
+            {dbBusy && <small className="databaseHint">{tx(language, "İşlem sürüyor, lütfen bekleyin…", "Working, please wait…", "Tê kirin, ji kerema xwe bisekine…")}</small>}
             <small className="databaseHint">
               {tx(
                 language,
-                "İçe aktarma, mevcut tüm kayıt/arşiv/not/rapor verilerinin yerine geçer. Kullanıcı hesapları ve şifreler bu işlemlerden etkilenmez.",
-                "Importing replaces all current record/archive/note/report data. User accounts and passwords are not affected by these operations.",
-                "Têxistin şûna hemû daneyên qeyd/arşîv/nîşe/rapor ên heyî digire. Hesabên bikarhêner û şîfre ji van kiryaran bandor nabin.",
+                "Geri yükleme mevcut TÜM verinin yerine geçer ve herkesin oturumunu kapatır; işlemden önce mevcut verinin yedeği otomatik olarak indirilir. Yedek yalnız aynı uygulama sürümünde alınmışsa geri yüklenebilir. Yedek dosyasında kullanıcı hesapları da bulunduğu için dosyayı güvenli bir yerde saklayın.",
+                "Restoring replaces ALL current data and signs everyone out; a backup of the current data is downloaded first. A backup can only be restored on the same application version it was taken with. The backup file contains user accounts too, so keep it somewhere safe.",
+                "Vegerandin şûna HEMÛ daneyên heyî digire û hemû kesan ji danişînê derdixe; pêşî tomara daneyên heyî bixweber tê daxistin. Tomar tenê di heman guhertoya sepanê de dikare were vegerandin. Di pelê tomarê de hesabên bikarhêneran jî hene, ji ber vê yekê wî li cihekî ewle biparêze.",
               )}
             </small>
           </div>

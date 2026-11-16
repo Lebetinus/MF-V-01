@@ -69,6 +69,25 @@ async function callRaw(method, path, { cookie, headers } = {}) {
   return callWorker(w, request, env, ctx);
 }
 
+// multipart/form-data POST (file uploads); `files` maps field → { bytes, name }.
+async function callForm(path, { cookie, fields = {}, files = {} } = {}) {
+  const w = await loadWorker();
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  for (const [k, f] of Object.entries(files)) form.append(k, new Blob([f.bytes]), f.name);
+  const request = new Request(`http://127.0.0.1${path}`, {
+    method: "POST",
+    headers: { "x-mfv01-remote-addr": TEST_IP, ...(cookie ? { cookie } : {}) },
+    body: form,
+  });
+  const response = await callWorker(w, request, env, ctx);
+  let json = null;
+  try {
+    json = await response.json();
+  } catch {}
+  return { status: response.status, json };
+}
+
 let adminCookie;
 let testUserId;
 let testUsername;
@@ -314,8 +333,10 @@ test("debts: the counter kasa must be one the user can access", async () => {
 test("database: import/clear need a super admin and the password, checked on the server", async () => {
   const notSuper = await call("POST", "/api/database/clear", { cookie: testUserCookie, body: { password: "ApiTest1234" } });
   assert.equal(notSuper.status, 403);
-  const exportNotSuper = await call("GET", "/api/database/export", { cookie: reporterCookie });
-  assert.equal(exportNotSuper.status, 403);
+  const backupNotSuper = await call("POST", "/api/database/backup", { cookie: reporterCookie, body: { password: "ApiTest1234" } });
+  assert.equal(backupNotSuper.status, 403);
+  const restoreNotSuper = await callForm("/api/database/restore", { cookie: reporterCookie, fields: { password: "ApiTest1234" } });
+  assert.equal(restoreNotSuper.status, 403);
 
   const noPassword = await call("POST", "/api/database/clear", { cookie: adminCookie, body: {} });
   assert.equal(noPassword.status, 400);
@@ -453,6 +474,80 @@ test("auth: failed logins without a known client IP are throttled, never turned 
   const blocked = await call("GET", "/api/admin/blocked-ips", { cookie: adminCookie });
   assert.equal(blocked.status, 200);
   assert.ok(!JSON.stringify(blocked.json).includes('"unknown"'), "the unknown bucket is not persisted as a block");
+});
+
+// Runs last: a restore signs everyone out (the test logs the admin back in for the cleanup hook).
+test("database backup: full backup round-trips through restore; bad files change nothing", async () => {
+  const wrong = await call("POST", "/api/database/backup", { cookie: adminCookie, body: { password: "definitely-wrong" } });
+  assert.equal(wrong.status, 403);
+
+  const w = await loadWorker();
+  const backupResponse = await callWorker(
+    w,
+    new Request("http://127.0.0.1/api/database/backup", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mfv01-remote-addr": TEST_IP, cookie: adminCookie },
+      body: JSON.stringify({ password: "admin123" }),
+    }),
+    env,
+    ctx,
+  );
+  assert.equal(backupResponse.status, 200);
+  assert.equal(backupResponse.headers.get("content-type"), "application/gzip");
+  assert.match(backupResponse.headers.get("content-disposition") ?? "", /attachment; filename="mfv01-yedek-.+\.json\.gz"/);
+  const backupBytes = Buffer.from(await backupResponse.arrayBuffer());
+  const { gunzipSync, gzipSync } = await import("node:zlib");
+  const doc = JSON.parse(gunzipSync(backupBytes).toString("utf8"));
+  assert.equal(doc.format, "mfv01-db-backup");
+  for (const table of ["users", "cash_accounts", "records", "lists", "cash_transfers", "finance_notes", "settings"]) {
+    assert.ok(Array.isArray(doc.tables[table]), `backup has ${table}`);
+  }
+  assert.ok(!("sessions" in doc.tables), "sessions are not backed up");
+  assert.ok(doc.tables.records.some((r) => createdRecordIds.includes(r.id)), "test records are in the backup");
+
+  // Broken uploads are rejected and leave the data alone.
+  const garbage = await callForm("/api/database/restore", { cookie: adminCookie, fields: { password: "admin123" }, files: { file: { bytes: Buffer.from("not a backup"), name: "x.json" } } });
+  assert.equal(garbage.status, 400);
+  assert.equal(garbage.json?.code, "bad_file");
+  const otherSchema = gzipSync(JSON.stringify({ ...doc, schema: "1:0" }));
+  const mismatch = await callForm("/api/database/restore", { cookie: adminCookie, fields: { password: "admin123" }, files: { file: { bytes: otherSchema, name: "old.json.gz" } } });
+  assert.equal(mismatch.status, 400);
+  assert.equal(mismatch.json?.code, "schema_mismatch");
+  const wrongPw = await callForm("/api/database/restore", { cookie: adminCookie, fields: { password: "definitely-wrong" }, files: { file: { bytes: backupBytes, name: "b.json.gz" } } });
+  assert.equal(wrongPw.status, 403);
+
+  // A record created after the backup must be gone after the restore.
+  const after = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_afterbackup`, amount: 7, currency: "USD" },
+  });
+  assert.equal(after.status, 201);
+  createdRecordIds.push(after.json.record.id);
+
+  const restored = await callForm("/api/database/restore", { cookie: adminCookie, fields: { password: "admin123" }, files: { file: { bytes: backupBytes, name: "b.json.gz" } } });
+  assert.equal(restored.status, 200, JSON.stringify(restored.json));
+  assert.ok(restored.json.rows > 0);
+
+  // Everyone is signed out.
+  const oldSession = await call("GET", "/api/auth/session", { cookie: adminCookie });
+  assert.equal(oldSession.status, 401);
+  const login = await call("POST", "/api/auth/login", { body: { username: "admin", password: "admin123" } });
+  assert.equal(login.status, 200);
+  adminCookie = login.cookie;
+
+  const records = await call("GET", "/api/records", { cookie: adminCookie });
+  const ids = records.json.records.map((r) => r.id);
+  assert.ok(!ids.includes(after.json.record.id), "post-backup record is gone");
+  assert.ok(createdRecordIds.slice(0, -1).some((id) => ids.includes(id)), "pre-backup records are back");
+
+  // Id counters were moved past the restored rows: a new record gets a fresh id.
+  const fresh = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_afterrestore`, amount: 1, currency: "USD" },
+  });
+  assert.equal(fresh.status, 201);
+  assert.ok(!ids.includes(fresh.json.record.id));
+  createdRecordIds.push(fresh.json.record.id);
 });
 
 test.after(async () => {
