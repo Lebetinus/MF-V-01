@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { downloadWorkbook, newWorkbook } from "../lib/excel";
 import { Title, DeleteConfirmModal, PersonChip } from "./shared";
 import { debtPairs, isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
@@ -164,6 +164,7 @@ export function Records({
   useEffect(() => {
     try {
       const saved = localStorage.getItem(rowOrderStorageKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage yalnız tarayıcıda okunabilir; ilk render sunucu çıktısıyla aynı kalmalı (hydration)
       setRowOrder(saved ? JSON.parse(saved) : []);
     } catch {
       setRowOrder([]);
@@ -187,6 +188,7 @@ export function Records({
   useEffect(() => {
     try {
       const saved = localStorage.getItem(sortModeStorageKey) as SortMode | null;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage yalnız tarayıcıda okunabilir; ilk render sunucu çıktısıyla aynı kalmalı (hydration)
       setSortMode(saved && ["dateDesc", "dateAsc", "addedDesc", "addedAsc"].includes(saved) ? saved : "dateDesc");
     } catch {
       setSortMode("dateDesc");
@@ -225,6 +227,7 @@ export function Records({
             const without: ColumnId[] = merged.filter((id) => id !== "debt");
             const at = without.indexOf("action");
             without.splice(at < 0 ? without.length : at, 0, "debt");
+            // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage yalnız tarayıcıda okunabilir; ilk render sunucu çıktısıyla aynı kalmalı (hydration)
             setColumnOrder(without);
           } else setColumnOrder(merged);
         }
@@ -647,11 +650,14 @@ export function Records({
   const [activeWs, setActiveWs] = useState<string | null>(null);
   // Gelir/Gider sayfalarında seçili çalışma alanı (kasa kutuları yalnız seçili alanın kasalarını gösterir).
   const [activeIeWs, setActiveIeWs] = useState<string | null>(null);
-  // Sayfa (Kasa/Gelir/Gider) değişince seçili çalışma alanı sıfırlanır.
-  useEffect(() => {
+  // Sayfa (Kasa/Gelir/Gider) değişince seçili çalışma alanı sıfırlanır. Render sırasında yapılır
+  // (React'in "önceki değeri sakla" deseni): eski seçim yeni sayfada bir kare bile görünmez.
+  const [wsKind, setWsKind] = useState(kind);
+  if (wsKind !== kind) {
+    setWsKind(kind);
     setActiveIeWs(null);
     setActiveWs(null);
-  }, [kind]);
+  }
   const [showAllLists, setShowAllLists] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterFrom, setFilterFrom] = useState("");
@@ -671,15 +677,17 @@ export function Records({
   };
   // "Liste Kasası" işaretli kasalar (Listeler ile ilişkili): üstteki kasa kartlarında değil, yalnızca "Tüm Liste Kasaları"
   // bölümünde görünür; kasanın kendi kayıtları listeli kayıt sayılır.
-  const kasaListNames = new Set(cashAccounts.filter((a) => a.isListWorkspace).map((a) => a.name));
+  // Kasa adı kümeleri yalnız kasalar/bölümler değişince yeniden kurulur; aşağıdaki useMemo'lar bunlara bağlıdır.
+  const kasaListNames = useMemo(() => new Set(cashAccounts.filter((a) => a.isListWorkspace).map((a) => a.name)), [cashAccounts]);
   // "RJ-Kasaları": üstteki kasa kartlarında değil, kendi renkli bölümlerinde görünür (Liste Kasaları gibi ayrı tutulur).
-  const kasaRjNames = new Set(cashAccounts.filter((a) => a.isRjKasa).map((a) => a.name));
-  const cashSections = sections.filter((x) => x.scope === "cash");
-  const kasaSectionNames = new Set(cashAccounts.filter((a) => a.sectionId != null && cashSections.some((x) => x.id === a.sectionId)).map((a) => a.name));
-  // Kasalar sayfasında "Tüm Kasalar" tüm çalışma alanlarındaki kasaları kapsar; ayrı bir hariç tutma yok.
-  const kasaSeparateNames = new Set<string>();
-  const listOf = (x: RecordItem) => x.listName || (x.kind === "cash" && kasaListNames.has(x.source) ? x.source : "");
-  const isListLinked = (x: RecordItem) => !!x.listName || kasaListNames.has(x.cashAccount);
+  const kasaRjNames = useMemo(() => new Set(cashAccounts.filter((a) => a.isRjKasa).map((a) => a.name)), [cashAccounts]);
+  const cashSections = useMemo(() => sections.filter((x) => x.scope === "cash"), [sections]);
+  const kasaSectionNames = useMemo(
+    () => new Set(cashAccounts.filter((a) => a.sectionId != null && cashSections.some((x) => x.id === a.sectionId)).map((a) => a.name)),
+    [cashAccounts, cashSections],
+  );
+  const listOf = useCallback((x: RecordItem) => x.listName || (x.kind === "cash" && kasaListNames.has(x.source) ? x.source : ""), [kasaListNames]);
+  const isListLinked = useCallback((x: RecordItem) => !!x.listName || kasaListNames.has(x.cashAccount), [kasaListNames]);
   const filterSourceOptions = [...new Set(records.map((x) => x.source).filter(Boolean))];
   const openList = (name: string) => {
     setActiveKasa("");
@@ -744,7 +752,7 @@ export function Records({
           ]),
         };
       }),
-    [records, allRecords, kind, cashAccounts],
+    [records, allRecords, kind, cashAccounts, kasaRjNames, kasaSectionNames, listOf],
   );
   // Kart satırı flex-wrap olduğu için genişlik yeterliyse zaten hepsi
   // görünür — önceden ilk 4'ten sonrasını "Diğer Kasalar" açılır menüsünde
@@ -914,17 +922,16 @@ export function Records({
   // arrays (not by summing groups' already-blended totals) so mixed
   // currencies show as separate amounts instead of one wrong number.
   // "Tüm Kasalar" toplamı: Listeler ile ilişkili (Liste Kasası) kasalar burada değil, "Tüm Liste Kasaları"nda sayılır.
-  const plainRecords = kind === "cash" ? records.filter((x) => !kasaSeparateNames.has(x.source)) : records;
   const overallByCurrency = useMemo(
     () =>
       combineByCurrency([
-        { rows: plainRecords },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount && !kasaSeparateNames.has(x.cashAccount)) : [] },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount && !kasaSeparateNames.has(x.cashAccount)) : [], sign: -1 },
+        { rows: records },
+        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount) : [] },
+        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount) : [], sign: -1 },
       ]),
-    [plainRecords, allRecords, kind, cashAccounts],
+    [records, allRecords, kind],
   );
-  const listedRecords = records.filter((x) => listOf(x));
+  const listedRecords = useMemo(() => records.filter((x) => listOf(x)), [records, listOf]);
   const listGroups = useMemo(
     () =>
       [...new Set(records.map((x) => listOf(x)).filter(Boolean))].map(
@@ -957,16 +964,16 @@ export function Records({
           };
         },
       ),
-    [records, allRecords, kind],
+    [records, allRecords, kind, kasaListNames, listOf],
   );
   // Kasa kutusu satırı (eskiden ayrı bir kasaBoxes hesabı vardı; yalnız türü kullanılıyordu).
   type KasaBox = { name: string; count: number; totalByCurrency: ReturnType<typeof combineByCurrency>; amount: number };
   // "Tüm Kasalar" / "Tüm Liste Kasaları" kutuları da tek tek kasa kartları gibi gelir ↗ ve gider ↘ satırını gösterir.
   const overallInOut = useMemo(() => {
-    const incomeRows = kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount && !kasaSeparateNames.has(x.cashAccount)) : [];
-    const expenseRows = kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount && !kasaSeparateNames.has(x.cashAccount)) : [];
-    return { inBy: combineByCurrency([{ rows: plainRecords }, { rows: incomeRows.filter((x) => !isDebtLeg(x)) }]), outBy: combineByCurrency([{ rows: expenseRows.filter((x) => !isDebtLeg(x)) }]) };
-  }, [plainRecords, allRecords, kind, cashAccounts]);
+    const incomeRows = kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount) : [];
+    const expenseRows = kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount) : [];
+    return { inBy: combineByCurrency([{ rows: records }, { rows: incomeRows.filter((x) => !isDebtLeg(x)) }]), outBy: combineByCurrency([{ rows: expenseRows.filter((x) => !isDebtLeg(x)) }]) };
+  }, [records, allRecords, kind]);
   // Gelir/Gider sayfalarında liste kayıtları, genel yönteme uygun olarak liste adına göre değil bağlı oldukları (Liste)
   // kasaya göre kutulanır: "DL-2026 Giderleri" gibi; kutuda o kasanın listeleri etiket olarak görünür.
   const listKasaBoxes = useMemo(() => {
@@ -987,7 +994,7 @@ export function Records({
       }))
       .filter((b) => Math.abs(b.amount) > 0.004)
       .sort((a, b) => b.amount - a.amount);
-  }, [records, kind, cashAccounts]);
+  }, [records, kind, isListLinked, listOf]);
   // Çalışma alanları (Kasalar sayfası): Genel Kasalar, Liste Kasaları, RJ-Kasaları ve Ayarlar > Çalışma Alanları'ndan oluşturulanlar.
   // Her kasa yalnızca bir alanda görünür: önce seçili çalışma alanı, yoksa Liste Kasası / RJ-Kasası işareti, yoksa Genel Kasalar.
   const cashWorkspaces = useMemo(() => {
@@ -1055,9 +1062,13 @@ export function Records({
         const allKasas = [...b.kasas, ...subs.flatMap((s) => s.kasas)];
         return { ...b, subs, allKasas, ...calc(allKasas) };
       });
-  }, [records, allRecords, kind, cashAccounts, sections, language, workspaceOrder]);
+  }, [records, allRecords, kind, cashAccounts, sections, cashSections, language, workspaceOrder]);
   const [activeSub, setActiveSub] = useState<string | null>(null);
-  useEffect(() => setActiveSub(null), [activeWs]);
+  const [subWs, setSubWs] = useState(activeWs);
+  if (subWs !== activeWs) {
+    setSubWs(activeWs);
+    setActiveSub(null);
+  }
   const activeWsObj = cashWorkspaces.find((w) => w.key === activeWs);
   const activeSubObj = activeSub ? activeWsObj?.subs.find((s) => s.key === activeSub) ?? null : null;
   const activeWsNames = new Set((activeSubObj ? activeSubObj.kasas : activeWsObj?.allKasas ?? []).map((k) => k.name));
@@ -1087,7 +1098,7 @@ export function Records({
         const rows = b.kasas.flatMap((k) => rowsByKasa.get(k.name) ?? []);
         return { ...b, kasas: [...b.kasas].sort((a, c) => c.amount - a.amount), count: rows.length, totalByCurrency: combineByCurrency([{ rows }]) };
       });
-  }, [records, kind, cashAccounts, sections, language]);
+  }, [records, kind, cashAccounts, cashSections, language]);
   const activeIeWorkspace = kind !== "cash" && activeIeWs ? ieWorkspaces.find((w) => w.key === activeIeWs) ?? null : null;
   const activeIeNames = new Set((activeIeWorkspace?.kasas ?? []).map((k) => k.name));
   // Gelir/Gider bölüm kutuları: her bölüm için bir kutu (o bölümdeki kayıtların toplamı).
@@ -1115,7 +1126,7 @@ export function Records({
     const incomeRows = kind === "cash" ? allRecords.filter((x) => x.kind === "income" && isListLinked(x)) : [];
     const expenseRows = kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && isListLinked(x)) : [];
     return { inBy: combineByCurrency([{ rows: listedRecords }, { rows: incomeRows }]), outBy: combineByCurrency([{ rows: expenseRows }]) };
-  }, [listedRecords, allRecords, kind, cashAccounts]);
+  }, [listedRecords, allRecords, kind, isListLinked]);
   const overallListByCurrency = useMemo(
     () =>
       combineByCurrency([
@@ -1123,7 +1134,7 @@ export function Records({
         { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "income" && isListLinked(x)) : [] },
         { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && isListLinked(x)) : [], sign: -1 },
       ]),
-    [listedRecords, allRecords, kind],
+    [listedRecords, allRecords, kind, isListLinked],
   );
   // Belirli bir kasa seçildiğinde (source !== "Tümü"), o kasanın kart
   // toplamına dahil edilen ama `records`'ta (sadece kind="cash" satırları)
@@ -1142,7 +1153,6 @@ export function Records({
       (!activeIeWorkspace || activeIeNames.has(x.cashAccount)) &&
       (activeSection === null || x.sectionId === activeSection) &&
       (activeWs === null || activeWs === "__all" || kind !== "cash" || activeWsNames.has(x.cashAccount || x.source)) &&
-      (source !== "Tümü" || showAllLists || search !== "" || !(kind === "cash" && kasaSeparateNames.has(x.cashAccount || x.source))) &&
       (source !== "__RJ" || kasaRjNames.has(x.cashAccount || x.source)) &&
       (!filterFrom || x.date >= filterFrom) &&
       (!filterTo || x.date <= filterTo) &&
@@ -1168,7 +1178,6 @@ export function Records({
       }
     });
     return copy;
-     
   }, [rows, sortMode]);
   const orderedRows = useMemo(() => {
     if (!rowOrder.length) return sortedRows;
@@ -1178,7 +1187,6 @@ export function Records({
       const bi = index.has(b.id) ? index.get(b.id)! : Number.MAX_SAFE_INTEGER;
       return ai - bi;
     });
-     
   }, [sortedRows, rowOrder]);
   // Satır sürükleme — native HTML5 drag-and-drop (draggable + onDragStart/
   // onDrop) tablo satırlarında (<tr>) tarayıcılar arasında güvenilir çalışmadığı
@@ -1246,6 +1254,7 @@ export function Records({
   // comment) — refetched whenever the visible row set changes, and again
   // right after the comment modal closes so a just-added comment shows up.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     refreshCommentSummaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowIdsKey]);
@@ -1486,6 +1495,7 @@ export function Records({
                   <span
                     className="colResizeHandle"
                     draggable={false}
+                    // eslint-disable-next-line react-hooks/refs -- ref yalnız fare olayında (startResize içinde) kullanılır, render sırasında değil
                     onMouseDown={(e) => startResize(e, id)}
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -1580,10 +1590,13 @@ export function Records({
   const kasaExpenseRows = kasaSplitActive ? orderedRows.filter((x) => x.kind === "expense") : [];
   // Satır seçimi: seçili satırlar Excel'e çıkarılabilir, kopyalanabilir veya toplu silinebilir.
   const selectedRows = orderedRows.filter((x) => selectedIds.has(x.id));
-  useEffect(() => {
+  // Görünüm (kasa, alan, sayfa) değişince satır seçimi temizlenir; render sırasında, eski seçim hiç görünmeden.
+  const selectionScope = JSON.stringify([source, activeWs, activeKasa, kind]);
+  const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
+  if (selectionScopeSeen !== selectionScope) {
+    setSelectionScopeSeen(selectionScope);
     setSelectedIds(new Set());
-     
-  }, [source, activeWs, activeKasa, kind]);
+  }
   function toggleMany(list: RecordItem[], on: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -1874,7 +1887,7 @@ export function Records({
               : kind === "income"
                 ? tx(language, "Tüm Gelirler", "All Income", "Hemû Dahat")
                 : tx(language, "Tüm Giderler", "All Expenses", "Hemû Mesref")}{" "}
-            <span className="groupCount">({kind === "cash" ? cashWorkspaces.reduce((acc, w) => acc + w.count, 0) : plainRecords.length})</span>
+            <span className="groupCount">({kind === "cash" ? cashWorkspaces.reduce((acc, w) => acc + w.count, 0) : records.length})</span>
           </b>
           <strong>
             {moneyBreakdown(overallByCurrency)}

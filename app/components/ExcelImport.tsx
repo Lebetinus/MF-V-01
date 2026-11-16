@@ -67,9 +67,8 @@ export function ExcelImportModal({
     .map((a) => a.name)
     .sort((a, b) => a.localeCompare(b));
   const isNewKasa = kasaChoice === "__new";
-  const options: BuildOptions = { defaultCurrency, projectFromSheet, groupInvoices, fixDates, kasaName };
-
   const built = useMemo(() => {
+    const options: BuildOptions = { defaultCurrency, projectFromSheet, groupInvoices, fixDates, kasaName };
     const out = new Map<string, ReturnType<typeof buildRecords>>();
     for (const b of blocks) {
       if (b.kind === "ignore" || !b.include) continue;
@@ -77,7 +76,6 @@ export function ExcelImportModal({
       if (sheet) out.set(b.id, buildRecords(sheet, b, options));
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks, sheets, defaultCurrency, projectFromSheet, groupInvoices, fixDates, kasaName]);
 
   const rawRecords: ImportRecord[] = useMemo(() => [...built.values()].flatMap((b) => b.records), [built]);

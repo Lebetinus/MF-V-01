@@ -85,7 +85,12 @@ export function Settings({
   // İçe aktarma tüm mali veriyi değiştirir: sunucu süper adminin şifresini yeniden doğrular.
   const [dbPassword, setDbPassword] = useState("");
 
-  useEffect(() => setTypographyDraft(typography), [typography]);
+  // Yazı ayarları dışarıdan değişince (ör. ilk yükleme) taslak da güncellenir; render sırasında.
+  const [typographySeen, setTypographySeen] = useState(typography);
+  if (typographySeen !== typography) {
+    setTypographySeen(typography);
+    setTypographyDraft(typography);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -579,10 +584,12 @@ function ExchangeRatesPanel({ language, info, onSaved }: { language: Language; i
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  useEffect(() => {
+  // Kurlar dışarıdan değişince (otomatik güncelleme) taslak da güncellenir — kullanıcı düzenlemiyorsa.
+  const [ratesSeen, setRatesSeen] = useState(rates);
+  if (ratesSeen !== rates) {
+    setRatesSeen(rates);
     if (!dirty) setDraft(toText(rates));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rates]);
+  }
   async function refreshNow() {
     setBusy(true);
     try {
@@ -664,10 +671,12 @@ function NoteColumnsPanel({ language, columns, onChanged }: { language: Language
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  useEffect(() => {
+  // Sütunlar dışarıdan değişince taslak da güncellenir — kullanıcı düzenlemiyorsa.
+  const [columnsSeen, setColumnsSeen] = useState(columns);
+  if (columnsSeen !== columns) {
+    setColumnsSeen(columns);
     if (!dirty) setDraft(toDraft(columns));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns]);
+  }
   const change = (next: Draft[]) => {
     setDraft(next);
     setDirty(true);

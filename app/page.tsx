@@ -120,6 +120,7 @@ export default function Home() {
   }
   useEffect(() => {
     if (!signedIn) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     refreshUnreadCommentsCount();
     const interval = setInterval(refreshUnreadCommentsCount, 45000);
     return () => clearInterval(interval);
@@ -138,6 +139,7 @@ export default function Home() {
   }
   useEffect(() => {
     if (!signedIn) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     refreshUnreadNotesCount();
     const interval = setInterval(refreshUnreadNotesCount, 45000);
     return () => clearInterval(interval);
@@ -158,6 +160,7 @@ export default function Home() {
   }
   useEffect(() => {
     if (!signedIn) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     refreshOnlineUsers();
     const interval = setInterval(refreshOnlineUsers, 45000);
     return () => clearInterval(interval);
@@ -177,6 +180,7 @@ export default function Home() {
   useEffect(() => {
     const saved = localStorage.getItem("mf-language");
     if (saved === "en" || saved === "ku" || saved === "tr") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage yalnız tarayıcıda okunabilir; ilk render sunucu çıktısıyla aynı kalmalı (hydration)
       setLanguage(saved);
       setLanguageChosen(true);
     } else {
@@ -272,10 +276,12 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnız oturum açılınca/kapanınca çalışır; refresh* fonksiyonları her render'da yeniden oluşur
   }, [signedIn]);
 
   useEffect(() => {
     const savedZoom = Number(localStorage.getItem("mf-ui-zoom") || "100");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage yalnız tarayıcıda okunabilir; ilk render sunucu çıktısıyla aynı kalmalı (hydration)
     if ([80, 90, 100, 110, 125].includes(savedZoom)) setUiZoom(savedZoom);
   }, []);
 
@@ -335,9 +341,9 @@ export default function Home() {
     return profile.permissions.includes(pageId);
   }
 
-  useEffect(() => {
-    if (signedIn && !canAccess(page)) setPage("dashboard");
-  }, [signedIn, page, profile]);
+  // Erişimi olmayan bir sayfada kalınmaz (ör. yetkisi değişen kullanıcı). Render sırasında yapılır:
+  // yetkisiz sayfa bir kare bile çizilmez, verisini de istemez.
+  if (signedIn && page !== "dashboard" && !canAccess(page)) setPage("dashboard");
 
   async function saveRecord(next: Omit<RecordItem, "id">, id?: number) {
     markWrite();

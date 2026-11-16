@@ -84,6 +84,7 @@ export function Notes({
   useEffect(() => {
     const fresh = notes.filter((n) => n.isUnread && !n.isArchived).map((n) => n.id);
     if (fresh.length) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- vurgu birikimlidir (gelen her yeni not eklenir) ve yanında sunucuya "okundu" bildirilir
       setHighlightIds((current) => {
         const next = new Set(current);
         for (const id of fresh) next.add(id);

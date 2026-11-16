@@ -166,9 +166,11 @@ export function RecordModal({
     if (kind !== "cash" || initial) return;
     const account = cashAccounts?.find((a) => a.name === form.source.trim());
     if (!account) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- yazılan kasa adına tepki; ilk açılışta da (önceden doldurulmuş ad) çalışmalı */
     setSectionId(account.sectionId ?? null);
     setRjKasa(!!account.isRjKasa);
     setListKasa(!!account.isListWorkspace);
+    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.source]);
   // "Gider Detaylarını Görüntüle" bölümü kayıt penceresi her açıldığında
@@ -964,9 +966,9 @@ export function KasaTransferSection({
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     loadTransfers();
     loadAllAccounts();
-     
   }, [kasa.source]);
 
   const outgoing = (transfers ?? []).filter((t) => t.fromCashAccountId === thisAccount?.id);

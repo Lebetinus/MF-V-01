@@ -6,17 +6,12 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    // These three rules come from eslint-plugin-react-hooks' React Compiler
-    // checks. This app does not use the React Compiler, and in this codebase
-    // they mostly flag legitimate patterns (reading localStorage on mount,
-    // starting a polling interval, refs used only inside event handlers) —
-    // e.g. react-hooks/refs reports `onMouseDown={(e) => startResize(e, id)}`
-    // although the ref is only touched inside the handler. Kept visible as
-    // warnings rather than errors so CI lint stays meaningful.
+    // react-hooks' React Compiler checks (set-state-in-effect, refs,
+    // preserve-manual-memoization) stay at their default "error" level. Where
+    // a flagged pattern is intentional (reading localStorage after hydration,
+    // fetch/polling effects, a ref used only inside an event handler), the
+    // line carries an eslint-disable comment with the reason.
     rules: {
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
       // next/image is not used under vinext; images here are mostly data: URLs
       // (avatars, company logo), which next/image would not optimise anyway.
       "@next/next/no-img-element": "off",

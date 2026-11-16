@@ -97,6 +97,7 @@ export function Lists({ language, onDataChanged }: { language: Language; onDataC
     setKasas(result.data.kasas);
   }, []);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
     load();
     // Giderler başka sayfalardan girildiği için ekran periyodik tazelenir.
     const interval = setInterval(load, 20000);

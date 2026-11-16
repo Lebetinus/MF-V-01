@@ -48,6 +48,7 @@ export function WorkspaceAccessModal({
   useEffect(() => {
     let cancelled = false;
     if (!idsKey) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
       setLoading(false);
       return;
     }

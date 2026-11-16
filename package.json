@@ -12,7 +12,7 @@
     "start": "node server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run build && node --env-file-if-exists=.env.test --experimental-strip-types --test tests/excel-amount.test.mjs tests/rendered-html.test.mjs tests/build-assets.test.mjs tests/api.test.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "db:generate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs generate",
     "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
     "db:push": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs push",

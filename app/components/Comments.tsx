@@ -389,7 +389,6 @@ export function Comments({ language, records = [], onRead }: { language: Languag
 
   useEffect(() => {
     load();
-     
   }, []);
 
   async function load() {
@@ -479,12 +478,9 @@ export function Comments({ language, records = [], onRead }: { language: Languag
   const unreadThreadCount = (threads ?? []).filter((t) => t.hasUnread).length;
   const unreadAttentionCount = attentionThreads.filter((t) => t.hasUnread).length;
   const visibleThreads = tab === "attention" ? attentionThreads : threads ?? [];
-  useEffect(() => {
-    if (!visibleThreads.some((t) => t.record.id === selectedId)) {
-      setSelectedId(visibleThreads[0]?.record.id ?? null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleThreads.map((t) => t.record.id).join(","), tab]);
+  // Seçili akış görünen listede yoksa ilk akış seçilir (render sırasında; boş bir ara durum çizilmez).
+  const fallbackId = visibleThreads.some((t) => t.record.id === selectedId) ? selectedId : visibleThreads[0]?.record.id ?? null;
+  if (fallbackId !== selectedId) setSelectedId(fallbackId);
   const selected = visibleThreads.find((t) => t.record.id === selectedId) ?? null;
 
   return (
