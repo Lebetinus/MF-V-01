@@ -19,7 +19,8 @@ test("build output contains every script and stylesheet referenced by HTML", asy
   );
   assert.equal(response.status, 200);
   const html = await response.text();
-  const assetUrls = [...html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\/assets\/[^"]+)"/gi)]
+  // vinext ≥1.x emits build output under /_next/static/ (0.0.x used /assets/).
+  const assetUrls = [...html.matchAll(/<(?:script|link)\b[^>]*(?:src|href)="(\/(?:_next\/static|assets)\/[^"]+)"/gi)]
     .map((match) => match[1]);
   assert.ok(assetUrls.length >= 2, "expected built JavaScript and CSS assets");
   for (const assetUrl of new Set(assetUrls)) {
