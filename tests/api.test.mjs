@@ -476,6 +476,50 @@ test("auth: failed logins without a known client IP are throttled, never turned 
   assert.ok(!JSON.stringify(blocked.json).includes('"unknown"'), "the unknown bucket is not persisted as a block");
 });
 
+test("database backup: the BACKUP_TOKEN bearer opens only the backup, and only when configured", async () => {
+  const w = await loadWorker();
+  const post = (path, token, body) =>
+    callWorker(
+      w,
+      new Request(`http://127.0.0.1${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-mfv01-remote-addr": "203.0.113.77", authorization: `Bearer ${token}` },
+        body: body ? JSON.stringify(body) : undefined,
+      }),
+      env,
+      ctx,
+    );
+  const token = `${RUN_TAG}_backup_token_0123456789abcdef`;
+
+  delete process.env.BACKUP_TOKEN;
+  assert.equal((await post("/api/database/backup", token)).status, 401, "no token configured → refused");
+
+  process.env.BACKUP_TOKEN = token;
+  try {
+    assert.equal((await post("/api/database/backup", `${token}x`)).status, 401, "wrong token");
+    const ok = await post("/api/database/backup", token);
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get("content-type"), "application/gzip");
+    assert.ok(Number(ok.headers.get("x-backup-size")) > 0);
+    const { gunzipSync } = await import("node:zlib");
+    assert.equal(JSON.parse(gunzipSync(Buffer.from(await ok.arrayBuffer())).toString("utf8")).format, "mfv01-db-backup");
+    // The token is not a session: it opens nothing else.
+    assert.equal((await post("/api/database/restore", token)).status, 401);
+    const records = await callWorker(w, new Request("http://127.0.0.1/api/records", { headers: { authorization: `Bearer ${token}` } }), env, ctx);
+    assert.equal(records.status, 401);
+  } finally {
+    delete process.env.BACKUP_TOKEN;
+  }
+
+  // A too-short configured token is ignored.
+  process.env.BACKUP_TOKEN = "short";
+  try {
+    assert.equal((await post("/api/database/backup", "short")).status, 401);
+  } finally {
+    delete process.env.BACKUP_TOKEN;
+  }
+});
+
 // Runs last: a restore signs everyone out (the test logs the admin back in for the cleanup hook).
 test("database backup: full backup round-trips through restore; bad files change nothing", async () => {
   const wrong = await call("POST", "/api/database/backup", { cookie: adminCookie, body: { password: "definitely-wrong" } });
