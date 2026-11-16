@@ -1,16 +1,18 @@
 // API integration tests: exercise app/api/** by calling the built worker's
 // fetch() directly with real Request objects (same pattern as
-// rendered-html.test.mjs / desktop-assets.test.mjs), against the real dev
-// Postgres database configured by DATABASE_URL. There is no separate
-// DATABASE_URL_TEST instance in this environment (the app's DB role has no
-// CREATEDB privilege here) — every test creates clearly-marked rows of its
-// own and removes them in an `after` hook instead of relying on database
-// isolation. Requires the app to have already been built (`npm run build`)
-// and the default seeded accounts (admin/admin123 etc.) to exist —
-// `npm test` handles both.
+// rendered-html.test.mjs / desktop-assets.test.mjs), against a dedicated
+// local test database (DATABASE_URL from .env.test; name must end in
+// "_test", enforced below). Every test creates clearly-marked rows of its
+// own and removes them in an `after` hook. Requires the app to have been
+// built (`npm test` does that) and the test admin (admin/admin123) to exist:
+// `node --env-file=.env.test tests/helpers/seed-test-admin.mjs`.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { callWorker } from "./helpers/call-worker.mjs";
+import { assertTestDatabase } from "./helpers/test-db-guard.mjs";
+
+// Never touch a real database (see helpers/test-db-guard.mjs).
+assertTestDatabase();
 
 // Lets the app trust the x-mfv01-remote-addr header for per-test client
 // IPs (see app/api/_lib/rate-limit.ts getClientIp). Never set in production.
@@ -55,6 +57,16 @@ async function call(method, path, { body, cookie, headers, ip = TEST_IP } = {}) 
     json = await response.json();
   } catch {}
   return { status: response.status, json, cookie: cookieFromSetCookie(response.headers.get("set-cookie")) };
+}
+
+// Like call(), but returns the raw Response (status, headers, body untouched).
+async function callRaw(method, path, { cookie, headers } = {}) {
+  const w = await loadWorker();
+  const request = new Request(`http://127.0.0.1${path}`, {
+    method,
+    headers: { "x-mfv01-remote-addr": TEST_IP, ...(cookie ? { cookie } : {}), ...headers },
+  });
+  return callWorker(w, request, env, ctx);
 }
 
 let adminCookie;
@@ -387,6 +399,21 @@ test("records: two saves from the same version — exactly one wins", async () =
     call("PUT", `/api/records/${rec.id}`, { cookie: adminCookie, body: { amount: 3, updatedAt: rec.updatedAt } }),
   ]);
   assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+});
+
+test("polling: an unchanged GET answers 304 to its ETag, a changed one sends the new body", async () => {
+  const first = await callRaw("GET", "/api/records", { cookie: adminCookie });
+  assert.equal(first.status, 200);
+  const etag = first.headers.get("etag");
+  assert.ok(etag, "GET responses carry an ETag");
+  const again = await callRaw("GET", "/api/records", { cookie: adminCookie, headers: { "if-none-match": etag } });
+  assert.equal(again.status, 304);
+  assert.equal(await again.text(), "");
+
+  await makeKasa(`${RUN_TAG}_etag`);
+  const changed = await callRaw("GET", "/api/records", { cookie: adminCookie, headers: { "if-none-match": etag } });
+  assert.equal(changed.status, 200, "data changed → full body again");
+  assert.notEqual(changed.headers.get("etag"), etag);
 });
 
 test("auth: repeated failed logins block the offending IP", async () => {

@@ -42,13 +42,33 @@ async function runMigrations() {
     throw new Error("DATABASE_URL is not set.");
   }
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  pool.on("error", (err) => console.error("[migrate] idle client error", err));
+  // During a rolling deploy the old and the new container can start at the
+  // same time; a session-level advisory lock makes their migration runs take
+  // turns instead of racing on the same tables.
+  const lockClient = await pool.connect();
   try {
+    await lockClient.query("SELECT pg_advisory_lock(hashtext('mfv01:migrations'))");
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
     console.log("[migrate] up to date");
   } finally {
+    await lockClient.query("SELECT pg_advisory_unlock(hashtext('mfv01:migrations'))").catch(() => {});
+    lockClient.release();
     await pool.end();
   }
+}
+
+// Request body limits (bytes, by Content-Length). The app's own validators
+// cap individual fields, but nothing stopped a client from sending a huge
+// body that the route then buffers in memory — including the unauthenticated
+// login route. Attachments are base64 (5 × ~6 MB per record), and the
+// database import carries the whole backup, hence the larger allowances.
+const MB = 1024 * 1024;
+function bodyLimitFor(pathname) {
+  if (pathname.startsWith("/api/auth/")) return 64 * 1024;
+  if (pathname === "/api/database/import") return 512 * MB;
+  return 64 * MB;
 }
 
 // Security headers. Coolify's Traefik proxy adds none by default, so the app
@@ -88,7 +108,10 @@ const SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 // Belt-and-suspenders alongside the per-login trim in app/api/_lib/auth.ts:
 // this catches sessions left behind by users who never log back in.
 function startSessionCleanupTimer() {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
+  // Without this, an idle connection dropped by a Postgres restart emits an
+  // unhandled "error" event and crashes the whole process.
+  pool.on("error", (err) => console.error("[sessions] idle client error", err));
   async function sweep() {
     try {
       const result = await pool.query("DELETE FROM sessions WHERE expires_at < now()");
@@ -100,29 +123,70 @@ function startSessionCleanupTimer() {
   sweep();
   const timer = setInterval(sweep, SESSION_CLEANUP_INTERVAL_MS);
   timer.unref();
+  return {
+    async stop() {
+      clearInterval(timer);
+      await pool.end().catch(() => {});
+    },
+  };
 }
+
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 async function main() {
   await runMigrations();
-  startSessionCleanupTimer();
+  const sessionCleanup = startSessionCleanupTimer();
 
   const { server } = await startProdServer({
     port: PORT,
     host: HOST,
     outDir: path.resolve(__dirname, "dist"),
   });
-  // Runs before vinext's own request handler, so every response (pages,
-  // API, static files, errors) carries the security headers. Headers vinext
-  // sets later for the same name would win, but it sets none of these.
-  server.prependListener("request", (_req, res) => {
+
+  // Wrap vinext's request handler so we run first on every request: security
+  // headers on every response (pages, API, static files, errors), the body
+  // size limit, and "Connection: close" while shutting down.
+  const vinextHandlers = server.listeners("request");
+  server.removeAllListeners("request");
+  let shuttingDown = false;
+  server.on("request", (req, res) => {
     for (const [name, value] of SECURITY_HEADERS) res.setHeader(name, value);
+    if (shuttingDown) res.setHeader("Connection", "close");
+    const length = Number(req.headers["content-length"] ?? 0);
+    const pathname = (req.url ?? "/").split("?")[0];
+    if (length > bodyLimitFor(pathname)) {
+      res.writeHead(413, { "Content-Type": "application/json", Connection: "close" });
+      res.end(JSON.stringify({ error: "İstek çok büyük" }));
+      req.destroy();
+      return;
+    }
+    for (const handler of vinextHandlers) handler.call(server, req, res);
   });
+
+  // Graceful shutdown: Coolify/Docker send SIGTERM on every redeploy. Stop
+  // accepting new connections, let in-flight requests (a save, an import)
+  // finish, then exit — instead of being SIGKILLed mid-write after the
+  // timeout. A hard deadline still guarantees the process exits.
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[server] ${signal} received, finishing in-flight requests…`);
+    setTimeout(() => {
+      console.warn("[server] shutdown timeout, exiting");
+      process.exit(0);
+    }, SHUTDOWN_TIMEOUT_MS).unref();
+    server.close(async () => {
+      await sessionCleanup.stop();
+      console.log("[server] closed cleanly");
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+
   console.log(`[server] MF-V-01 listening on http://${HOST}:${PORT}`);
-  console.log(
-    "[server] Reminder: run this behind a reverse proxy (nginx/caddy) for TLS, " +
-      "security headers (CSP, X-Frame-Options, HSTS), request body size limits, " +
-      "and cross-origin request filtering — see deploy/ for examples.",
-  );
+  console.log("[server] Security headers and body size limits are applied here; TLS is the reverse proxy's job.");
 }
 
 main().catch((error) => {

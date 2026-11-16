@@ -36,4 +36,11 @@ COPY server.mjs ./
 COPY scripts/seed-users.mjs ./scripts/
 
 EXPOSE 8080
+# Lets Docker (and Coolify's rolling update) know when the new container is
+# actually serving: traffic is switched to it only once /api/health answers,
+# instead of the moment the process starts. Uses node because the slim image
+# has no curl/wget. start-period covers the migrations run at startup.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# node runs as PID 1 and handles SIGTERM itself (graceful shutdown in server.mjs).
 CMD ["node", "server.mjs"]

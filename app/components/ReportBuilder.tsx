@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import ExcelJS from "exceljs";
+// exceljs (~1 MB) yalnız Excel dışa/içe aktarılırken yüklenir; ana sayfa paketine girmez.
+const loadExcelJS = async () => (await import("exceljs")).default;
 import { Title, DeleteConfirmModal, PersonChip } from "./shared";
 import { TableTools } from "./TableTools";
 import { tx, localizeData } from "../lib/i18n";
@@ -414,7 +415,7 @@ function ReportBuilderModal({
 }
 
 async function downloadPreparedReport(report: PreparedReport, language: Language) {
-  const workbook = new ExcelJS.Workbook();
+  const workbook = new (await loadExcelJS()).Workbook();
   workbook.creator = "Maliye-Finans Online";
   workbook.created = new Date();
   const sheet = workbook.addWorksheet(tx(language, "Rapor", "Report", "Rapor"), {

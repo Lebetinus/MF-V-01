@@ -101,13 +101,26 @@ npm test
 ```
 
 Sırasıyla: tip kontrolü (`tsc --noEmit`), prod derlemesi, ardından
-`tests/*.test.mjs` (render/varlık testleri + `tests/api.test.mjs`'deki
-API entegrasyon testleri). API testleri **gerçek `DATABASE_URL`
-veritabanına karşı** çalışır — bu ortamda ayrı bir test veritabanı
-oluşturmak için gereken `CREATEDB` yetkisi mevcut değildi, bu yüzden
-testler oluşturdukları veriyi açıkça işaretleyip kendi sonlarında
-temizler. Prod verisi olan bir veritabanına karşı `npm test`
-çalıştırmadan önce bunu göz önünde bulundurun.
+`tests/*.test.mjs` (Excel tutar birim testi, render/varlık testleri ve
+`tests/api.test.mjs`'deki API entegrasyon testleri).
+
+API testleri **ayrı bir yerel test veritabanında** çalışır: `npm test`
+`DATABASE_URL`'yi `.env.test` dosyasından okur (`.env.local`'dan değil) ve
+testler, adı `_test` ile bitmeyen ya da `localhost` dışındaki bir
+veritabanında çalışmayı reddeder. İlk kurulum:
+
+```bash
+createdb mfv01_test   # veya: CREATE DATABASE mfv01_test OWNER <kullanıcı>;
+echo "DATABASE_URL=postgres://kullanici:sifre@localhost:5432/mfv01_test" > .env.test
+node --env-file=.env.test node_modules/drizzle-kit/bin.cjs migrate
+node --env-file=.env.test tests/helpers/seed-test-admin.mjs   # admin / admin123
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) aynı adımları her `main`
+push'unda ve pull request'te geçici bir Postgres 17 ile çalıştırır.
+Coolify `main`'i CI sonucunu beklemeden deploy eder; kırmızı bir CI
+çalıştırması, yayındaki sürümün hemen kontrol edilmesi gerektiği anlamına
+gelir.
 
 ## Yedekleme ve geri yükleme
 

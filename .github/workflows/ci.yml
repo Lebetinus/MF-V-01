@@ -1,0 +1,46 @@
+# Runs on every push to main and on pull requests: type check, production
+# build and the full test suite against a throwaway Postgres 17.
+# Note: Coolify deploys main on push regardless of this result — a red run
+# here means the deployed version should be checked/fixed right away.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mfv01
+          POSTGRES_PASSWORD: mfv01
+          POSTGRES_DB: mfv01_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mfv01"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://mfv01:mfv01@localhost:5432/mfv01_test
+      SESSION_COOKIE_SECURE: "false"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      SITES_BUILD_TIMEOUT: 10m
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: Migrate test database
+        run: node node_modules/drizzle-kit/bin.cjs migrate
+      - name: Seed test admin
+        run: node tests/helpers/seed-test-admin.mjs
+      - name: Type check, build and test
+        run: npm test

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import ExcelJS from "exceljs";
+// exceljs (~1 MB) yalnız Excel dışa/içe aktarılırken yüklenir; ana sayfa paketine girmez.
+const loadExcelJS = async () => (await import("exceljs")).default;
 import { Title, ConfirmModal, DeleteConfirmModal, PersonChip } from "./shared";
 import { debtPairs, isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
@@ -549,7 +550,7 @@ function DetailTableModal({ language, record, onClose }: { language: Language; r
     }
   }
   async function exportToExcel() {
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new (await loadExcelJS()).Workbook();
     const sheet = workbook.addWorksheet("Detay");
     table.forEach((row, index) => {
       const added = sheet.addRow(Array.from({ length: columnCount }, (_, c) => row[c] ?? ""));
@@ -2139,7 +2140,7 @@ export function Records({
       tx(language, "Tür", "Type", "Cure"),
       tx(language, "Kasa", "Cash Account", "Qase"),
     ];
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new (await loadExcelJS()).Workbook();
     const sheet = workbook.addWorksheet("Kayitlar");
     sheet.addRow(columns);
     for (const x of rowsToExport) {
@@ -2172,7 +2173,7 @@ export function Records({
   async function importExcel(file?: File) {
     if (!file) return;
     try {
-      const workbook = new ExcelJS.Workbook();
+      const workbook = new (await loadExcelJS()).Workbook();
       await workbook.xlsx.load(await file.arrayBuffer());
       const sheet = workbook.worksheets[0];
       if (!sheet) throw new Error();
@@ -3529,7 +3530,7 @@ function KasaResultModal({
   }
 
   async function exportToExcel() {
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new (await loadExcelJS()).Workbook();
     workbook.creator = "Maliye-Finans Online";
     workbook.created = new Date();
     const headers = isMulti

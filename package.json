@@ -11,7 +11,7 @@
     "build": "bash scripts/build-verified.sh",
     "start": "node server.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && node --env-file=.env.local --experimental-strip-types --test tests/excel-amount.test.mjs tests/rendered-html.test.mjs tests/desktop-assets.test.mjs tests/api.test.mjs",
+    "test": "npm run typecheck && npm run build && node --env-file-if-exists=.env.test --experimental-strip-types --test tests/excel-amount.test.mjs tests/rendered-html.test.mjs tests/desktop-assets.test.mjs tests/api.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",

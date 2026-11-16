@@ -377,16 +377,38 @@ export default function Home() {
   //     yeniden çizilmesi (Chrome'da yazarken/kaydederken takılma) olmaz.
   //  2) İstek uçuştayken yerelde bir kayıt/güncelleme yapıldıysa (writeEpoch değişti) eski yanıt atılır → kaydedilen
   //     değişiklik eski veriyle ezilmez, ekran geri sıçramaz.
+  //  3) Sunucu her GET yanıtına bir ETag koyar; bir önceki ETag gönderilir ve veri değişmediyse sunucu
+  //     gövdesiz 304 döner → her 5 sn'de tüm kayıtların (ekleriyle) yeniden indirilmesi önlenir.
+  //  4) 401 = oturum sona ermiş: bayat veri göstermek yerine kullanıcı uyarılıp giriş ekranına alınır.
   const lastSig = useRef<Record<string, string>>({});
+  const lastEtag = useRef<Record<string, string>>({});
   const writeEpoch = useRef(0);
   const markWrite = () => { writeEpoch.current += 1; };
+  const sessionExpiredShown = useRef(false);
+  function handleSessionExpired() {
+    if (sessionExpiredShown.current) return;
+    sessionExpiredShown.current = true;
+    lastSig.current = {};
+    lastEtag.current = {};
+    setProfileOpen(false);
+    setSignedIn(false);
+    alert(tx(language, "Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "Your session has expired. Please sign in again.", "Danişîna te bi dawî bû. Ji kerema xwe dîsa têkeve."));
+  }
   async function fetchChanged(key: string, url: string): Promise<Record<string, unknown> | null> {
     const epoch = writeEpoch.current;
     try {
-      const response = await fetch(url);
+      const etag = lastEtag.current[key];
+      const response = await fetch(url, etag ? { headers: { "If-None-Match": etag } } : undefined);
+      if (response.status === 304) return null;
+      if (response.status === 401) {
+        handleSessionExpired();
+        return null;
+      }
       if (!response.ok) return null;
       const text = await response.text();
       if (epoch !== writeEpoch.current) return null;
+      const nextEtag = response.headers.get("ETag");
+      if (nextEtag) lastEtag.current[key] = nextEtag;
       if (lastSig.current[key] === text) return null;
       lastSig.current[key] = text;
       return JSON.parse(text);
@@ -660,6 +682,7 @@ export default function Home() {
         return data.error || tx(language, "Kullanıcı adı veya şifre hatalı.", "Incorrect username or password.", "Navê bikarhêner an şîfre şaş e.");
       }
       setProfile((current) => ({ ...current, ...data.profile }));
+      sessionExpiredShown.current = false;
       setSignedIn(true);
       const savedLanguage = data.profile?.language;
       if (savedLanguage === "en" || savedLanguage === "ku" || savedLanguage === "tr") {

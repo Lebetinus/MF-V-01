@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Shared response/request helpers for app/api/**/route.ts.
 // See MF-V-01-DUZELTME-PLANI-1.0.9.md 1.5 (no-store) and 1.6 (origin check).
 
@@ -33,12 +35,35 @@ function assertSameOrigin(request: Request): Response | null {
 // Also applies the CSRF origin check above to every mutating request.
 type RouteHandler<C> = (request: Request, ctx: C) => Promise<Response>;
 
+// Conditional GET: the client polls several endpoints every few seconds
+// (app/page.tsx fetchChanged). Each successful JSON GET gets a weak ETag of
+// its body; when the client sends it back in If-None-Match and nothing
+// changed, the answer is an empty 304 instead of the full payload (records
+// carry their attachments, so this is most of the traffic). Responses stay
+// "no-store" — the client keeps the last body itself, nothing is written to
+// the browser's HTTP cache.
+async function withEtag(request: Request, response: Response): Promise<Response> {
+  if (request.method !== "GET" || response.status !== 200) return response;
+  if (!(response.headers.get("content-type") ?? "").includes("application/json")) return response;
+  const body = await response.text();
+  const etag = `W/"${createHash("sha1").update(body).digest("base64url")}"`;
+  const headers = new Headers(response.headers);
+  headers.set("ETag", etag);
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatch && ifNoneMatch.split(",").some((tag) => tag.trim() === etag)) {
+    headers.delete("content-type");
+    headers.delete("content-length");
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(body, { status: 200, headers });
+}
+
 export function withErrorHandling<C = undefined>(handler: RouteHandler<C>): RouteHandler<C> {
   return async (request: Request, ctx: C) => {
     try {
       const originError = assertSameOrigin(request);
       if (originError) return originError;
-      return await handler(request, ctx);
+      return await withEtag(request, await handler(request, ctx));
     } catch (error) {
       const { pathname } = new URL(request.url);
       console.error(`[api] ${request.method} ${pathname} failed`, error);
