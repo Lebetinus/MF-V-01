@@ -62,6 +62,7 @@ export function Records({
   onRefreshData,
   sections = [],
   workspaceOrder = [],
+  loading = false,
   isSuperAdmin = false,
   onGoUpload,
 }: {
@@ -90,6 +91,8 @@ export function Records({
   sections?: KasaSection[];
   // Kasa Kontrol Merkezi: çalışma alanlarının elle sıralaması (anahtar listesi).
   workspaceOrder?: string[];
+  // İlk veri henüz gelmedi (kasa panosu "Yükleniyor…" gösterir).
+  loading?: boolean;
   isSuperAdmin?: boolean;
   onGoUpload?: () => void;
 }) {
@@ -587,6 +590,7 @@ export function Records({
           cashAccounts={cashAccounts}
           allRecords={allRecords}
           exchangeRates={exchangeRates}
+          loading={loading}
           summary={{ total: overallByCurrency, inBy: overallInOut.inBy, outBy: overallInOut.outBy }}
           onOpen={(name) => { setSource(name); setActiveKasa(""); }}
           actionsFor={boardActions}

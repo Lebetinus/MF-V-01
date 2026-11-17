@@ -35,6 +35,7 @@ export function KasaBoard({
   cashAccounts,
   allRecords,
   exchangeRates,
+  loading = false,
   summary,
   onOpen,
   actionsFor,
@@ -52,6 +53,9 @@ export function KasaBoard({
   cashAccounts: CashAccountSummary[];
   allRecords: RecordItem[];
   exchangeRates: Record<string, number>;
+  // İlk veri henüz gelmedi: pano "Gösterilecek kasa yok" ya da yarım liste yerine "Yükleniyor…" der. (Kayıtlar kasa
+  // listesinden önce gelirse kasalar bir an "Çalışma alanı yok" altında ve eksik sayıyla görünüyordu.)
+  loading?: boolean;
   summary: { total: Record<string, number>; inBy: Record<string, number>; outBy: Record<string, number> };
   onOpen: (name: string) => void;
   actionsFor: (name: string) => BoardAction[];
@@ -265,7 +269,7 @@ export function KasaBoard({
         <div className="kbStat hero">
           <span>{tx(language, "Toplam kasa", "Total cash", "Qaseya giştî")}</span>
           <strong><MoneyStack by={summary.total} /></strong>
-          <small>{all.length} {tx(language, "kasa", "cash accounts", "qase")}</small>
+          <small>{loading ? tx(language, "Yükleniyor…", "Loading…", "Tê barkirin…") : `${all.length} ${tx(language, "kasa", "cash accounts", "qase")}`}</small>
         </div>
         <div className="kbStat">
           <span>{tx(language, "Gelir", "Income", "Dahat")}</span>
@@ -301,7 +305,9 @@ export function KasaBoard({
         </div>
       </div>
 
-      {shownCount === 0 ? (
+      {loading ? (
+        <p className="lpEmpty" role="status" aria-live="polite">{tx(language, "Kasalar yükleniyor…", "Loading cash accounts…", "Qase tên barkirin…")}</p>
+      ) : shownCount === 0 ? (
         <p className="lpEmpty">{tx(language, "Gösterilecek kasa yok.", "No cash accounts to show.", "Qase tune ne.")}</p>
       ) : (
         <div className="kbTree">

@@ -68,6 +68,9 @@ export default function Home() {
     setPage(previous);
   }
   const [records, setRecords] = useState<RecordItem[]>([]);
+  // İlk veri (kayıtlar + kasalar + çalışma alanları) geldi mi: gelene kadar Kasa Kontrol Merkezi "Gösterilecek kasa yok"
+  // yerine "Yükleniyor…" gösterir.
+  const [dataReady, setDataReady] = useState(false);
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [notes, setNotes] = useState<FinanceNote[]>([]);
   const [noteColumns, setNoteColumns] = useState<NoteColumn[]>([]);
@@ -266,8 +269,6 @@ export default function Home() {
         ));
         if (Array.isArray(data.preparedReports)) setPreparedReports(data.preparedReports);
         if (Array.isArray(data.users)) setUsers(data.users);
-        refreshCashAccounts();
-        refreshSections();
         refreshCashTransfers();
         refreshNotes();
         if (Array.isArray(data.noteColumns)) setNoteColumns(data.noteColumns);
@@ -279,7 +280,11 @@ export default function Home() {
           // default and is intentionally not applied here.
           setTypography({ ...defaultTypography, ...(data.settings.typography ?? {}) });
         }
-      } catch {}
+        await Promise.all([refreshCashAccounts(), refreshSections()]);
+      } catch {
+      } finally {
+        if (!cancelled) setDataReady(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -398,6 +403,7 @@ export default function Home() {
     lastEtag.current = {};
     setProfileOpen(false);
     setSignedIn(false);
+    setDataReady(false);
     notify(tx(language, "Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "Your session has expired. Please sign in again.", "Danişîna te bi dawî bû. Ji kerema xwe dîsa têkeve."));
   }
   async function fetchChanged(key: string, url: string): Promise<Record<string, unknown> | null> {
@@ -709,6 +715,7 @@ export default function Home() {
     }
     setProfileOpen(false);
     setSignedIn(false);
+    setDataReady(false);
   }
 
   async function exitViewAs() {
@@ -995,6 +1002,7 @@ export default function Home() {
               onRefreshData={() => { refreshRecords(); refreshCashAccounts(); refreshSections(); }}
               sections={sections}
               workspaceOrder={workspaceOrder}
+              loading={!dataReady}
               isSuperAdmin={profile.isSuperAdmin}
               onGoUpload={() => { setReportTab("upload"); goPage("reportBuilder"); }}
               checkPassword={checkPassword}
