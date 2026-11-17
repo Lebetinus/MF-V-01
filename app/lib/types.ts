@@ -1,7 +1,15 @@
-export type Kind = "cash" | "income" | "expense";
+// Kayıt türü: kasadaki her kayıt ya gelir ya giderdir (eski "kasa kaydı"
+// türü 0050 göçüyle kaldırıldı; kasa kendi başına açılır).
+export type Kind = "income" | "expense";
+// Kasa Kontrol Merkezi / Gelir / Gider kayıt sayfalarının kimliği ("cash" =
+// Kasa Kontrol Merkezi sayfası, bir kayıt türü değil).
+export type RecordsView = "cash" | Kind;
+// Arşivdeki anlık görüntülerin türü: 0050 öncesinden kalan eski "kasa kaydı"
+// görüntüleri (kind "cash") geçmiş olarak okunmaya devam eder.
+export type ArchivedKind = Kind | "cash";
 export type Page =
   | "dashboard"
-  | Kind
+  | RecordsView
   | "reportBuilder"
   | "notes"
   | "debts"
@@ -33,10 +41,7 @@ export type RecordItem = {
   listName: string;
   // Proje Aşaması 2: bağlı liste (Listeler sayfası).
   listId?: number | null;
-  // Kasa kaydı gönderilirken "Liste Kasası" işareti (sunucu kasayı çalışma alanı yapar).
-  listKasa?: boolean;
-  rjKasa?: boolean;
-  // Gelir/Gider bölümü (Ayarlar > Bölümler); kasa kaydında seçilen kasa bölümü kasaya yazılır.
+  // Gelir/Gider bölümü (Ayarlar > Bölümler).
   sectionId?: number | null;
   // Excel aktarımıyla gelen kayıtların aktarım numarası (kasa kutusunda toplanır, başlık kutusu oluşturmaz).
   importBatch?: string | null;
@@ -71,7 +76,7 @@ export type ArchiveItem = {
   action: "Düzenlendi" | "Silindi";
   at: string;
   user: string;
-  old: RecordItem;
+  old: Omit<RecordItem, "kind"> & { kind: ArchivedKind };
   reason?: string;
 };
 // Not sütununun anahtarı (note_columns.key) — Ayarlar > Not Görevleri'nde düzenlenebilir; varsayılanlar: important / urgent / pending / completed.

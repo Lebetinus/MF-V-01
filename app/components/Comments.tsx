@@ -205,7 +205,7 @@ function CreateCommentModal({
           <div className="commentChosenRecord">
             <div>
               <strong>{localizeData(chosen.source, language)}</strong>
-              <small>{date(chosen.date, language)} · {kindLabel(chosen.kind)}{chosen.kind !== "cash" && chosen.cashAccount ? ` · ${chosen.cashAccount}` : ""}</small>
+              <small>{date(chosen.date, language)} · {kindLabel(chosen.kind)}{chosen.cashAccount ? ` · ${chosen.cashAccount}` : ""}</small>
             </div>
             <span className="amount">{money(chosen.amount, chosen.currency)}</span>
             <button type="button" className="light compact" onClick={() => setRecordId(null)}>{tx(language, "Değiştir", "Change", "Biguherîne")}</button>
@@ -227,7 +227,7 @@ function CreateCommentModal({
                   <button type="button" key={r.id} className="commentRecordOption" onClick={() => setRecordId(r.id)}>
                     <span>
                       <strong>{localizeData(r.source, language)}</strong>
-                      <small>{date(r.date, language)} · {kindLabel(r.kind)}{r.kind !== "cash" && r.cashAccount ? ` · ${r.cashAccount}` : ""}</small>
+                      <small>{date(r.date, language)} · {kindLabel(r.kind)}{r.cashAccount ? ` · ${r.cashAccount}` : ""}</small>
                     </span>
                     <span className="amount">{money(r.amount, r.currency)}</span>
                   </button>

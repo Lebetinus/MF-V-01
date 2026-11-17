@@ -5,9 +5,8 @@ import { requirePermission } from "../_lib/auth";
 import { accessibleCashAccountIds } from "../_lib/cash-access";
 import { reactionsByCommentId, unreadRecordIds } from "../_lib/comments";
 import { json, withErrorHandling } from "../_lib/http";
-import type { Kind } from "../_lib/types";
+import { RECORD_KINDS, type Kind } from "../_lib/types";
 
-const RECORD_KINDS: Kind[] = ["cash", "income", "expense"];
 
 function allowedKinds(user: { isAdmin: boolean; permissions: string[] }): Kind[] {
   if (user.isAdmin) return RECORD_KINDS;

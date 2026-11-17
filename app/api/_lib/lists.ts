@@ -1,17 +1,27 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { getDb, type DbClient } from "../../../db";
-import { cashAccounts, expenseAllocations, listAllocations, listWorkspaces, lists, records, users, workspaceRecipients } from "../../../db/schema";
+import { cashAccounts, cashTransfers, expenseAllocations, listAllocations, listWorkspaces, lists, records, users, workspaceRecipients } from "../../../db/schema";
 import type { SessionUser } from "./auth";
 import { accessibleCashAccountIds, canWriteCashAccount } from "./cash-access";
 
 // Proje Aşaması 2 — Liste defteri. Çalışma alanı = kasa (cash_accounts):
-// kasanın geliri (kasa + gelir kayıtları) alıcılara dağıtılır; kasanın altında
+// kasanın geliri (gelir kayıtları) alıcılara dağıtılır; kasanın altında
 // kodlu listeler vardır; bir listenin ürünleri alıcılara yazılır ve her
 // alıcının listelerdeki harcaması çıkar. Okuma kasa erişimine, yazma kasanın
 // sahibine / süper admine bağlıdır (bkz. cash-access.ts).
 type Actor = Pick<SessionUser, "id" | "isSuperAdmin">;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Kasa aktarımlarının gönderen tarafı (cash_transfers.from_record_id). 0050
+// göçünden önce bu, kasanın "kasa + gelir" toplamına eksi tutarla giren bir
+// kasa kaydıydı; artık pozitif bir Gider kaydı. Liste/çalışma alanı rakamları
+// (gelir, gider, dağıtılmamış, kasada kalan) eskisiyle aynı kalsın diye bu
+// kayıtlar burada gider kalemi sayılmaz, kasanın gelirinden düşülür.
+async function transferOutLegIds(db: DbClient): Promise<Set<number>> {
+  const rows = await db.select({ id: cashTransfers.fromRecordId }).from(cashTransfers).where(isNotNull(cashTransfers.fromRecordId));
+  return new Set(rows.map((r) => r.id as number));
+}
 
 export type WorkspaceAccess = { canRead: boolean; canWrite: boolean };
 
@@ -35,12 +45,17 @@ export async function loadListForUser(listId: number, user: Actor, db: DbClient 
 export async function writableKasas(user: Actor, db: DbClient = getDb()) {
   const rows = await db.select({ id: cashAccounts.id, name: cashAccounts.name, ownerUserId: cashAccounts.ownerUserId }).from(cashAccounts).orderBy(cashAccounts.name);
   const mine = rows.filter((k) => user.isSuperAdmin || k.ownerUserId === user.id);
-  // Yeni çalışma alanı penceresinde "kasadaki tutarı getir" için kasanın mevcut geliri (kasa + gelir kayıtları).
+  // Yeni çalışma alanı penceresinde "kasadaki tutarı getir" için kasanın mevcut geliri (gelir kayıtları − giden aktarımlar).
+  const outLegs = mine.length ? await transferOutLegIds(db) : new Set<number>();
   const sums = mine.length
-    ? await db
-        .select({ cashAccountId: records.cashAccountId, amount: records.amount })
-        .from(records)
-        .where(and(inArray(records.cashAccountId, mine.map((k) => k.id)), inArray(records.kind, ["cash", "income"])))
+    ? (
+        await db
+          .select({ id: records.id, kind: records.kind, cashAccountId: records.cashAccountId, amount: records.amount })
+          .from(records)
+          .where(and(inArray(records.cashAccountId, mine.map((k) => k.id)), inArray(records.kind, ["income", "expense"])))
+      )
+        .filter((r) => r.kind === "income" || outLegs.has(r.id))
+        .map((r) => ({ cashAccountId: r.cashAccountId, amount: r.kind === "income" ? r.amount : -r.amount }))
     : [];
   return mine.map((k) => ({
     id: k.id,
@@ -59,7 +74,7 @@ export async function buildWorkspaces(user: Actor, only: number[] | null = null,
   if (only) kasaIds = kasaIds.filter((id) => only.includes(id));
   if (!kasaIds.length) return [];
 
-  const [kasaRows, listRows, recipientRows, incomeRows, expenseRows] = await Promise.all([
+  const [kasaRows, listRows, recipientRows, plainIncomeRows, allExpenseRows, outLegs] = await Promise.all([
     db
       .select({ id: cashAccounts.id, name: cashAccounts.name, ownerUserId: cashAccounts.ownerUserId, ownerName: users.name })
       .from(cashAccounts)
@@ -70,20 +85,29 @@ export async function buildWorkspaces(user: Actor, only: number[] | null = null,
     db
       .select({ id: records.id, cashAccountId: records.cashAccountId, date: records.date, source: records.source, amount: records.amount, currency: records.currency })
       .from(records)
-      .where(and(inArray(records.cashAccountId, kasaIds), inArray(records.kind, ["cash", "income"]))),
+      .where(and(inArray(records.cashAccountId, kasaIds), eq(records.kind, "income"))),
     db
       .select({ id: records.id, cashAccountId: records.cashAccountId, date: records.date, source: records.source, detail: records.detail, note: records.note, person: records.person, listName: records.listName, amount: records.amount, currency: records.currency })
       .from(records)
       .where(and(inArray(records.cashAccountId, kasaIds), eq(records.kind, "expense")))
       .orderBy(records.date, records.id),
+    transferOutLegIds(db),
   ]);
+  // Giden aktarımlar eskisi gibi gelirden düşülür (eksi gelir kalemi), gider kalemi sayılmaz — bkz. transferOutLegIds.
+  const incomeRows = [
+    ...plainIncomeRows,
+    ...allExpenseRows
+      .filter((e) => outLegs.has(e.id))
+      .map((e) => ({ id: e.id, cashAccountId: e.cashAccountId, date: e.date, source: e.source, amount: -e.amount, currency: e.currency })),
+  ];
+  const expenseRows = allExpenseRows.filter((e) => !outLegs.has(e.id));
   // Eski "Liste Kaydı" etiketiyle başka kasada girilmiş gelirler de (kayıt başına bir kez) çalışma alanının gelirine katılır.
   const legacyNames = [...new Set(listRows.map((l) => l.name).filter(Boolean))];
   const taggedRows = legacyNames.length
     ? await db
         .select({ id: records.id, cashAccountId: records.cashAccountId, date: records.date, source: records.source, amount: records.amount, currency: records.currency, listName: records.listName })
         .from(records)
-        .where(and(inArray(records.listName, legacyNames), inArray(records.kind, ["cash", "income"])))
+        .where(and(inArray(records.listName, legacyNames), eq(records.kind, "income")))
     : [];
   const expenseIds = expenseRows.map((r) => r.id);
   const allocRows = expenseIds.length ? await db.select().from(expenseAllocations).where(inArray(expenseAllocations.recordId, expenseIds)) : [];
@@ -246,11 +270,14 @@ export async function syncListExpense(tx: DbClient, listId: number): Promise<voi
     if (list.expenseRecordId != null) await tx.update(lists).set({ expenseRecordId: null }).where(eq(lists.id, listId));
     return;
   }
-  // Para birimi: kasanın gelir kayıtlarında en çok kullanılan birim (yoksa USD).
-  const incomeRows = await tx
-    .select({ currency: records.currency })
-    .from(records)
-    .where(and(eq(records.cashAccountId, kasa.id), inArray(records.kind, ["cash", "income"])));
+  // Para birimi: kasanın gelir kayıtlarında (giden aktarımlar dahil, eskisi gibi) en çok kullanılan birim (yoksa USD).
+  const outLegs = await transferOutLegIds(tx);
+  const incomeRows = (
+    await tx
+      .select({ id: records.id, kind: records.kind, currency: records.currency })
+      .from(records)
+      .where(and(eq(records.cashAccountId, kasa.id), inArray(records.kind, ["income", "expense"])))
+  ).filter((r) => r.kind === "income" || outLegs.has(r.id));
   const counts = new Map<string, number>();
   for (const r of incomeRows) counts.set(r.currency, (counts.get(r.currency) ?? 0) + 1);
   const currency = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";

@@ -5,8 +5,7 @@ import { requireSession } from "../../_lib/auth";
 import { json, withErrorHandling } from "../../_lib/http";
 import { canWriteCashAccount } from "../../_lib/cash-access";
 import { ensureCashAccountLink } from "../../_lib/records";
-import { markListKasa, resolveRecordList, setRjKasa, unmarkListKasa } from "../../_lib/lists";
-import { cashAccounts } from "../../../../db/schema";
+import { resolveRecordList } from "../../_lib/lists";
 import type { Kind } from "../../_lib/types";
 import { toClientArchiveItem } from "../../_lib/archive";
 import { parseBody, recordUpdateSchema } from "../../_lib/validate";
@@ -59,7 +58,7 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
     return json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // Kasa aktarımı kayıtları çift olarak yaşar (gönderende −X, alanda +X):
+  // Kasa aktarımı kayıtları çift olarak yaşar (gönderende X gider, alanda X gelir):
   // tutar/kasa/para birimi tek taraftan değişirse çift bozulur.
   const transfer = await transferForRecord(id, db);
   if (transfer && TRANSFER_LOCKED_FIELDS.some((field) => payload[field] !== undefined && payload[field] !== old[field])) {
@@ -75,21 +74,15 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   if ("error" in listLink) return json({ error: listLink.error }, { status: 400 });
 
   const source = payload.source ?? old.source;
-  const cashAccountName = payload.cashAccount ?? old.cashAccount;
+  const cashAccount = payload.cashAccount ?? old.cashAccount;
   // Hiçbir gelir/gider kasadan kopuk olamaz.
-  if (kind !== "cash" && !cashAccountName?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
-  const linkName = kind === "cash" ? source : cashAccountName;
+  if (!cashAccount?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
 
   let result;
   try {
   result = await db.transaction(async (tx) => {
-    const link = await ensureCashAccountLink({ name: linkName, kind, user: session.user }, tx);
+    const link = await ensureCashAccountLink({ name: cashAccount, kind, user: session.user }, tx);
     if (link.forbidden) return { forbidden: true as const };
-    if (kind === "cash" && payload.listKasa && link.cashAccountId != null) await markListKasa(link.cashAccountId, tx);
-    if (kind === "cash" && payload.listKasa === false && link.cashAccountId != null) await unmarkListKasa(link.cashAccountId, tx);
-    if (kind === "cash" && payload.rjKasa !== undefined && link.cashAccountId != null) await setRjKasa(link.cashAccountId, payload.rjKasa, tx);
-    if (kind === "cash" && payload.sectionId !== undefined && link.cashAccountId != null) await tx.update(cashAccounts).set({ sectionId: payload.sectionId }).where(eq(cashAccounts.id, link.cashAccountId));
-    const cashAccount = kind === "cash" ? source : (cashAccountName || "");
 
     const [updatedRecord] = await tx
       .update(records)
@@ -107,7 +100,7 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
         link: payload.link ?? old.link,
         cashAccount,
         cashAccountId: link.cashAccountId,
-        sectionId: kind === "cash" ? null : payload.sectionId === undefined ? old.sectionId : payload.sectionId,
+        sectionId: payload.sectionId === undefined ? old.sectionId : payload.sectionId,
         listName: listLink.listName ?? old.listName,
         listId: listLink.listId === undefined ? old.listId : listLink.listId,
         attachments: payload.attachments ?? old.attachments,
@@ -124,14 +117,6 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
     // Throwing rolls back everything this transaction already did.
     if (!updatedRecord) throw new RecordConflictError();
 
-    // Cascade: if a cash account's display name changed, keep every record
-    // that referenced it by name pointing at the new name. The FK
-    // (cashAccountId) already stays correct through a rename on its own —
-    // this only refreshes the display-text copy on linked records.
-    if (old.kind === "cash" && old.source !== source) {
-      await tx.update(records).set({ cashAccount: source }).where(eq(records.cashAccount, old.source));
-    }
-
     const [insertedArchive] = await tx
       .insert(archive)
       .values({
@@ -141,7 +126,7 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
       })
       .returning();
 
-    return { forbidden: false as const, record: updatedRecord, archiveEntry: insertedArchive, ensuredCash: link.ensuredCashRecord };
+    return { forbidden: false as const, record: updatedRecord, archiveEntry: insertedArchive };
   });
   } catch (error) {
     if (error instanceof RecordConflictError) return json({ error: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" }, { status: 409 });
@@ -153,11 +138,11 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   await logActivity(session.user, {
     category: changed.kind,
     action: "update",
-    summary: `${({ income: "Gelir", expense: "Gider", cash: "Kasa" } as Record<string, string>)[changed.kind]} düzenlendi: ${changed.source} — ${formatAmount(changed.amount, changed.currency)}`,
-    kasa: changed.kind === "cash" ? changed.source : changed.cashAccount,
+    summary: `${changed.kind === "income" ? "Gelir" : "Gider"} düzenlendi: ${changed.source} — ${formatAmount(changed.amount, changed.currency)}`,
+    kasa: changed.cashAccount,
     meta: { id: changed.id },
   });
-  return json({ record: result.record, archiveEntry: toClientArchiveItem(result.archiveEntry), ensuredCash: result.ensuredCash });
+  return json({ record: result.record, archiveEntry: toClientArchiveItem(result.archiveEntry) });
 });
 
 export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(async (request, { params }) => {
@@ -193,7 +178,7 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
       category: "cash",
       action: "delete",
       summary: withReason(`Kasa aktarımı iptal edildi: ${formatAmount(transfer.amount, transfer.currency)} (${reversed.removedRecordIds.length} kayıt Arşiv'e taşındı)`, reason),
-      kasa: old.kind === "cash" ? old.source : old.cashAccount,
+      kasa: old.cashAccount,
       meta: { id: old.id, transferId: transfer.id },
     });
     const own = reversed.archiveEntries.find((entry) => (entry.oldRecord as { id?: number })?.id === id) ?? reversed.archiveEntries[0];
@@ -236,8 +221,8 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
   await logActivity(session.user, {
     category: old.kind,
     action: "delete",
-    summary: withReason(`${({ income: "Gelir", expense: "Gider", cash: "Kasa" } as Record<string, string>)[old.kind]} silindi: ${old.source} — ${formatAmount(old.amount, old.currency)}`, reason),
-    kasa: old.kind === "cash" ? old.source : old.cashAccount,
+    summary: withReason(`${old.kind === "income" ? "Gelir" : "Gider"} silindi: ${old.source} — ${formatAmount(old.amount, old.currency)}`, reason),
+    kasa: old.cashAccount,
     meta: { id: old.id },
   });
   return json({ archiveEntry: toClientArchiveItem(archiveEntry) });

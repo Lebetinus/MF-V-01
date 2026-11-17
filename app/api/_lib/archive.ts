@@ -13,3 +13,12 @@ export function toClientArchiveItem(row: typeof archive.$inferSelect) {
     reason: row.reason,
   };
 }
+
+// Arşivdeki bir anlık görüntünün (archive.old_record) kasa adı. 0050 göçünden
+// önce arşive düşen "kasa kaydı" görüntülerinde (eski kind "cash") kasa adı
+// `source`'tadır; geçmiş olduğu gibi saklandığından okumaya devam edilir.
+// Bugünkü gelir/gider görüntülerinde kasa adı `cashAccount`'tur.
+export const LEGACY_KASA_SNAPSHOT_KIND = "cash";
+export function archivedKasaName(oldRecord: { kind?: string; source?: string; cashAccount?: string }): string {
+  return (oldRecord.kind === LEGACY_KASA_SNAPSHOT_KIND ? oldRecord.source : oldRecord.cashAccount) ?? "";
+}

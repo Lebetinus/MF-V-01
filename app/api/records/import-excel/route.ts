@@ -1,11 +1,11 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { cashAccounts, records } from "../../../../db/schema";
 import { requireSession } from "../../_lib/auth";
 import { canWriteCashAccount } from "../../_lib/cash-access";
 import { json, withErrorHandling } from "../../_lib/http";
 import { markListKasa, setRjKasa } from "../../_lib/lists";
-import { ensureCashAccountLink } from "../../_lib/records";
+import { ensureWritableKasa } from "../../_lib/records";
 import { excelImportSchema, parseBody } from "../../_lib/validate";
 
 // Excel aktarım sihirbazı: seçilen kasaya gelir/gider kayıtlarını (isteğe bağlı detay tablosuyla) toplu ekler.
@@ -29,26 +29,9 @@ export const POST = withErrorHandling(async (request: Request) => {
 
   const db = getDb();
   const result = await db.transaction(async (tx) => {
-    // Kasa: yoksa oluştur (kasa kaydı 0 tutarla açılır ki Kasalar sayfasında görünsün).
-    const link = await ensureCashAccountLink({ name: payload.kasaName, kind: "cash", user: session.user }, tx);
-    if (link.forbidden || link.cashAccountId == null) return { forbidden: true as const };
-    const [hasCashRecord] = await tx
-      .select({ id: records.id })
-      .from(records)
-      .where(and(eq(records.kind, "cash"), eq(records.source, payload.kasaName)))
-      .limit(1);
-    if (!hasCashRecord) {
-      await tx.insert(records).values({
-        kind: "cash",
-        date: new Date().toISOString().slice(0, 10),
-        source: payload.kasaName,
-        cashAccount: payload.kasaName,
-        cashAccountId: link.cashAccountId,
-        amount: 0,
-        currency: "USD",
-        note: "Excel aktarımı için açıldı",
-      });
-    }
+    // Kasa: yoksa oluştur (kasa kendi başına açılır; yer tutucu kayıt yazılmaz).
+    const link = await ensureWritableKasa(payload.kasaName, session.user, tx);
+    if (link.forbidden) return { forbidden: true as const };
     if (payload.listKasa) await markListKasa(link.cashAccountId, tx);
     if (payload.rjKasa) await setRjKasa(link.cashAccountId, true, tx);
     if (payload.sectionId !== undefined) await tx.update(cashAccounts).set({ sectionId: payload.sectionId }).where(eq(cashAccounts.id, link.cashAccountId));

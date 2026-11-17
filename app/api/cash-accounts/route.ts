@@ -1,9 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { cashAccountAccess, cashAccounts, users } from "../../../db/schema";
+import { cashAccountAccess, cashAccounts, kasaSections, records, users } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
-import { accessibleCashAccountIds } from "../_lib/cash-access";
+import { accessibleCashAccountIds, canCreateCashAccounts } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
+import { createCashAccount, findCashAccountByName } from "../_lib/records";
+import { cashAccountCreateSchema, parseBody } from "../_lib/validate";
+import { formatAmount, logActivity } from "../_lib/activity";
 
 // GET /api/cash-accounts — kasa listesi.
 // - Süper admin: hepsi, sahibi ve kaç kullanıcıyla paylaşıldığı bilgisiyle
@@ -93,4 +96,78 @@ export const GET = withErrorHandling(async (request: Request) => {
         sharedWithUserIds: accessByKasa.get(row.id) ?? [],
       })),
   });
+});
+
+class KasaNameTakenError extends Error {}
+const KASA_NAME_TAKEN = "Bu isimde bir kasa zaten var";
+
+// POST /api/cash-accounts — Yeni Kasa. Kasa artık bir "kasa kaydı" ile değil,
+// kendi başına açılır: yetki kuralları eskisiyle aynıdır (canCreateCashAccounts
+// = yönetici / süper yönetici / Kasa Kontrol Merkezi izni), açan kişi kasanın
+// sahibi olur ve hemen görür. Ad benzersizdir (409). Açılış bakiyesi verilirse
+// kasaya "Açılış bakiyesi" başlıklı bir Gelir kaydı yazılır (Gelir izni gerekir).
+export const POST = withErrorHandling(async (request: Request) => {
+  const session = await requireSession(request);
+  if ("response" in session) return session.response;
+  if (!canCreateCashAccounts(session.user)) return json({ error: "Forbidden" }, { status: 403 });
+
+  const parsed = await parseBody(request, cashAccountCreateSchema);
+  if ("response" in parsed) return parsed.response;
+  const payload = parsed.data;
+  const withOpening = payload.openingAmount > 0;
+  if (withOpening && !session.user.isAdmin && !session.user.permissions.includes("income")) {
+    return json({ error: "Açılış bakiyesi bir Gelir kaydıdır; Gelir yetkiniz yok" }, { status: 403 });
+  }
+
+  const db = getDb();
+  if (payload.sectionId != null) {
+    const [section] = await db.select({ id: kasaSections.id }).from(kasaSections).where(and(eq(kasaSections.id, payload.sectionId), eq(kasaSections.scope, "cash"))).limit(1);
+    if (!section) return json({ error: "Çalışma alanı bulunamadı" }, { status: 400 });
+  }
+  if (await findCashAccountByName(payload.name, db)) return json({ error: KASA_NAME_TAKEN }, { status: 409 });
+
+  let result;
+  try {
+    result = await db.transaction(async (tx) => {
+      // Aynı anda aynı adla iki istek: ikincisi benzersizlik kısıtına takılır.
+      if (await findCashAccountByName(payload.name, tx)) throw new KasaNameTakenError();
+      const account = await createCashAccount(tx, {
+        name: payload.name,
+        ownerUserId: session.user.id,
+        sectionId: payload.sectionId ?? null,
+        listKasa: payload.listKasa,
+        rjKasa: payload.rjKasa,
+      });
+      const [opening] = withOpening
+        ? await tx
+            .insert(records)
+            .values({
+              kind: "income",
+              date: payload.date ?? new Date().toISOString().slice(0, 10),
+              source: "Açılış bakiyesi",
+              amount: payload.openingAmount,
+              currency: payload.currency,
+              cashAccount: account.name,
+              cashAccountId: account.id,
+            })
+            .returning()
+        : [null];
+      return { account, opening };
+    });
+  } catch (error) {
+    const e = error as { code?: string; cause?: { code?: string } };
+    if (error instanceof KasaNameTakenError || (e?.cause?.code ?? e?.code) === "23505") return json({ error: KASA_NAME_TAKEN }, { status: 409 });
+    throw error;
+  }
+
+  await logActivity(session.user, {
+    category: "cash",
+    action: "create",
+    summary: result.opening
+      ? `Kasa oluşturuldu: ${result.account.name} (açılış bakiyesi ${formatAmount(result.opening.amount, result.opening.currency)})`
+      : `Kasa oluşturuldu: ${result.account.name}`,
+    kasa: result.account.name,
+    meta: { id: result.account.id, ...(result.opening ? { recordId: result.opening.id } : {}) },
+  });
+  return json({ cashAccount: result.account, record: result.opening }, { status: 201 });
 });

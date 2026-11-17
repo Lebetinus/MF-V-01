@@ -281,15 +281,16 @@ export const records = pgTable("records", {
   index("records_cash_account_idx").on(table.cashAccount),
   index("records_import_key_idx").on(table.importKey),
   index("records_import_batch_idx").on(table.importBatch),
-  check("records_kind_check", sql`${table.kind} IN ('cash', 'income', 'expense')`),
+  // Her kasa kaydı ya gelir ya giderdir; eski "kasa kaydı" türü 0050 göçüyle gelir/gidere çevrildi.
+  check("records_kind_check", sql`${table.kind} IN ('income', 'expense')`),
 ]);
 
-// A pending money movement between two kasas. Creating one does NOT touch
-// either kasa's balance — only when the recipient side confirms (POST
-// /api/cash-transfers/:id/confirm) do the two ledger `records` rows
-// (fromRecordId/toRecordId) get created, which is what actually moves the
-// amount out of the sender's kasa and into the target one. See "Kasa
-// Aktarımı" in the kasa edit modal (app/components/Records.tsx).
+// A money movement between two kasas ("Kasa Aktarımı"). Creating one moves
+// the money right away: the two ledger `records` rows (fromRecordId /
+// toRecordId) are written immediately; `status` only tracks whether the
+// recipient side has confirmed it (POST /api/cash-transfers/:id/confirm).
+// Created from the "Kasalar arası aktarım" window of a kasa card
+// (app/components/records/KasaTransfer.tsx).
 export const cashTransfers = pgTable("cash_transfers", {
   id: serial("id").primaryKey(),
   fromCashAccountId: integer("from_cash_account_id").notNull().references(() => cashAccounts.id, { onDelete: "cascade" }),
@@ -305,8 +306,10 @@ export const cashTransfers = pgTable("cash_transfers", {
   status: text("status").notNull().default("pending"),
   confirmedByUserId: integer("confirmed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
-  // The two ledger rows created on confirm — a negative "cash" record on the
-  // source kasa, a positive one on the target kasa. Null while pending.
+  // The two ledger rows written when the transfer is created: an "expense"
+  // row on the source kasa and an "income" row on the target kasa, both for
+  // the same positive amount and titled "Kasa Aktarımı". Set null if a leg is
+  // deleted (the transfer is then cancelled — see app/api/_lib/transfers.ts).
   fromRecordId: integer("from_record_id").references(() => records.id, { onDelete: "set null" }),
   toRecordId: integer("to_record_id").references(() => records.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

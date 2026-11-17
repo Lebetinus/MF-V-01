@@ -164,6 +164,7 @@ export function ReportBuilder({
         <ReportBuilderModal
           language={language}
           records={records}
+          cashAccounts={cashAccounts}
           onClose={() => setCreating(false)}
           onSave={(report) => {
             onCreateReport(report);
@@ -176,6 +177,7 @@ export function ReportBuilder({
         <ReportBuilderModal
           language={language}
           records={records}
+          cashAccounts={cashAccounts}
           initial={editingReport}
           onClose={() => setEditingReport(null)}
           onSave={(report) => {
@@ -205,17 +207,23 @@ export function ReportBuilder({
 function ReportBuilderModal({
   language,
   records,
+  cashAccounts,
   initial,
   onClose,
   onSave,
 }: {
   language: Language;
   records: RecordItem[];
+  cashAccounts: CashAccountSummary[];
   initial?: PreparedReport;
   onClose: () => void;
   onSave: (report: PreparedReport) => void;
 }) {
-  const knownCashAccounts = useMemo(() => [...new Set(records.filter((x) => x.kind === "cash").map((x) => x.source).filter(Boolean))], [records]);
+  // Kasa seçicisi: kullanıcının erişebildiği kasalar (+ kayıtlarda adı geçen kasalar).
+  const knownCashAccounts = useMemo(
+    () => [...new Set([...cashAccounts.map((a) => a.name), ...records.map((x) => x.cashAccount)].filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [cashAccounts, records],
+  );
   // Birden fazla kasa seçilebilir; hiçbiri seçili değilse tüm kasalar listelenir. Rapora "Kasa1, Kasa2" olarak yazılır.
   const [kasas, setKasas] = useState<Set<string>>(
     () => new Set(initial?.cashAccount ? knownCashAccounts.filter((n) => initial.cashAccount.split(/\s*,\s*/).includes(n)) : []),
@@ -226,9 +234,9 @@ function ReportBuilderModal({
   const [to, setTo] = useState("");
   const [query, setQuery] = useState("");
   const q = query.trim().toLocaleLowerCase("tr");
-  const ofKasa = (x: RecordItem) => !kasas.size || (x.kind === "cash" ? kasas.has(x.source) : kasas.has(x.cashAccount || ""));
+  const ofKasa = (x: RecordItem) => !kasas.size || kasas.has(x.cashAccount || "");
   const visibleFilter = (x: RecordItem) => ofKasa(x) && (!from || x.date >= from) && (!to || x.date <= to) && (!q || [x.source, x.detail, x.person, x.cashAccount].join(" ").toLocaleLowerCase("tr").includes(q));
-  const incomeRecords = useMemo(() => records.filter((x) => x.kind === "income" || x.kind === "cash").sort((a, b) => b.date.localeCompare(a.date)), [records]);
+  const incomeRecords = useMemo(() => records.filter((x) => x.kind === "income").sort((a, b) => b.date.localeCompare(a.date)), [records]);
   const expenseRecords = useMemo(() => records.filter((x) => x.kind === "expense").sort((a, b) => b.date.localeCompare(a.date)), [records]);
   const lineMatches = (line: ReportLine, record: RecordItem) => line.date === record.date && line.title === record.source && line.amount === record.amount;
 

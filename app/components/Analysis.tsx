@@ -89,15 +89,12 @@ export function Analysis({
   cashTransfers?: CashTransfer[];
 }) {
   const usd = (x: RecordItem) => toUsd(x.amount, x.currency, exchangeRates) ?? 0;
-  const kasaOf = (x: RecordItem) => (x.kind === "cash" ? x.source : x.cashAccount);
+  const kasaOf = (x: RecordItem) => x.cashAccount;
 
-  // Kasa aktarımları (iki taraf) gelir/akış toplamlarına girmez, bakiyelere girer (bkz. lib/transfers).
+  // Kasa aktarımları (iki taraf: gönderende gider, alanda gelir) gelir/gider toplamlarına girmez, bakiyelere girer (bkz. lib/transfers).
   const isTransferLeg = useMemo(() => makeIsTransferLeg(cashTransfers), [cashTransfers]);
   const inc = useMemo(() => records.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x)), [records, isTransferLeg]);
-  const exp = useMemo(() => records.filter((x) => x.kind === "expense" && !isDebtLeg(x)), [records]);
-  // cash: bakiyeler için tüm kasa kayıtları; flowCash: kasa girişi toplamları için aktarımsız hali.
-  const cash = useMemo(() => records.filter((x) => x.kind === "cash"), [records]);
-  const flowCash = useMemo(() => cash.filter((x) => !isTransferLeg(x)), [cash, isTransferLeg]);
+  const exp = useMemo(() => records.filter((x) => x.kind === "expense" && !isDebtLeg(x) && !isTransferLeg(x)), [records, isTransferLeg]);
   const missingRate = records.some((x) => x.amount !== 0 && toUsd(x.amount, x.currency, exchangeRates) === null);
 
   const withData = (k: string) => inc.some((x) => monthOf(x) === k) || exp.some((x) => monthOf(x) === k);
@@ -125,24 +122,22 @@ export function Analysis({
   const curExp = exp.filter((x) => monthOf(x) === period);
   const prevInc = inc.filter((x) => monthOf(x) === prev);
   const prevExp = exp.filter((x) => monthOf(x) === prev);
-  const curCash = flowCash.filter((x) => monthOf(x) === period);
   const incUsd = sum(curInc), expUsd = sum(curExp), prevIncUsd = sum(prevInc), prevExpUsd = sum(prevExp);
   const netUsd = incUsd - expUsd, prevNetUsd = prevIncUsd - prevExpUsd;
   const prevName = monthName(prev);
 
-  // Kasa durumu (Ana Sayfa ile aynı kural: kasa kaydı + bağlı gelir − bağlı gider; borç hareketleri bakiyeye dahildir).
+  // Kasa durumu (Ana Sayfa ile aynı kural: kasadaki gelir − gider; aktarım ve borç hareketleri bakiyeye dahildir).
   const kasaNames = [...new Set(records.map(kasaOf).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const kasaRows = kasaNames.map((name) => {
     const all = records.filter((x) => kasaOf(x) === name);
-    const balanceBy = combineByCurrency([{ rows: all.filter((x) => x.kind !== "expense") }, { rows: all.filter((x) => x.kind === "expense"), sign: -1 }]);
-    const balanceUsd = sum(all.filter((x) => x.kind !== "expense")) - sum(all.filter((x) => x.kind === "expense"));
+    const balanceBy = combineByCurrency([{ rows: all.filter((x) => x.kind === "income") }, { rows: all.filter((x) => x.kind === "expense"), sign: -1 }]);
+    const balanceUsd = sum(all.filter((x) => x.kind === "income")) - sum(all.filter((x) => x.kind === "expense"));
     const pi = curInc.filter((x) => kasaOf(x) === name), pe = curExp.filter((x) => kasaOf(x) === name);
     const ppi = prevInc.filter((x) => kasaOf(x) === name);
     return { name, balanceBy, balanceUsd, incBy: combineByCurrency([{ rows: pi }]), expBy: combineByCurrency([{ rows: pe }]), incUsd: sum(pi), expUsd: sum(pe), prevIncUsd: sum(ppi) };
   }).sort((a, b) => b.balanceUsd - a.balanceUsd);
-  const totalBalanceBy = combineByCurrency([{ rows: cash }, { rows: records.filter((x) => x.kind === "income" && x.cashAccount) }, { rows: records.filter((x) => x.kind === "expense" && x.cashAccount), sign: -1 }]);
+  const totalBalanceBy = combineByCurrency([{ rows: records.filter((x) => x.kind === "income" && x.cashAccount) }, { rows: records.filter((x) => x.kind === "expense" && x.cashAccount), sign: -1 }]);
   const totalBalanceUsd = kasaRows.reduce((t, k) => t + k.balanceUsd, 0);
-  const cashTotalBy = combineByCurrency([{ rows: flowCash }]);
   const negativeKasas = kasaRows.filter((k) => k.balanceUsd < -0.005);
   const emptyKasas = kasaRows.filter((k) => Math.abs(k.balanceUsd) < 0.005);
 
@@ -330,17 +325,12 @@ export function Analysis({
 
       {tab === "kasa" && (
         <>
-          <div className="lpMetrics anMetrics">
-            <div className="lpMetric hero">
-              <span className="lpLabel">{tx(language, "Toplam Kasa Gelirleri", "Total Cash Income", "Dahatên Giştî yên Qaseyê")}</span>
-              <strong><MoneyStack by={cashTotalBy} /></strong>
-              <small>{flowCash.length} {tx(language, "kasa kaydı", "cash entries", "tomara qaseyê")} · {monthLabel(period)}: {moneyBreakdown(combineByCurrency([{ rows: curCash }]))}</small>
-            </div>
+          <div className="lpMetrics anMetrics metrics3">
             <div className="lpMetric net">
               <span className="lpIcon">▣</span>
               <span className="lpLabel">{tx(language, "Mevcut Kasa Bakiyesi", "Current Cash Balance", "Balansa Qaseyê")}</span>
               <strong><MoneyStack by={totalBalanceBy} /></strong>
-              <small>≈ {money(totalBalanceUsd, "USD")}</small>
+              <small>≈ {money(totalBalanceUsd, "USD")} · {kasaRows.length} {tx(language, "kasa", "cash accounts", "qase")}</small>
             </div>
             <div className="lpMetric">
               <span className="lpIcon expense">!</span>

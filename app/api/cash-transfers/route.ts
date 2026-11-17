@@ -2,9 +2,9 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { cashAccounts, cashTransfers, records, users } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
-import { accessibleCashAccountIds, canCreateCashAccounts, canWriteCashAccount, grantCashAccountAccess } from "../_lib/cash-access";
+import { accessibleCashAccountIds, canCreateCashAccounts, canWriteCashAccount } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { createCashAccount, ensureFallbackKasa, findCashAccountByName } from "../_lib/records";
+import { createCashAccount, findCashAccountByName } from "../_lib/records";
 import { parseBody, cashTransferInputSchema } from "../_lib/validate";
 
 // A "Kasa Aktarımı": money movement between two kasas. Listed here so both
@@ -109,13 +109,10 @@ export const POST = withErrorHandling(async (request: Request) => {
       } else {
         if (!canCreateCashAccounts(session.user)) return { forbidden: true as const };
         const ownerId = payload.recipientUserId ?? session.user.id;
-        const created = await createCashAccount(name, ownerId, tx);
-        await grantCashAccountAccess(created.id, ownerId, tx);
-        if (ownerId !== session.user.id) await grantCashAccountAccess(created.id, session.user.id, tx);
-        // A zero-balance placeholder "cash" record so the new kasa shows up
-        // as a card in Kasalar right away — otherwise the recipient has no
-        // way to find and open it to confirm the pending transfer.
-        await ensureFallbackKasa(name, created.id, tx);
+        // The kasa row alone makes it show up as a card in Kasa Kontrol
+        // Merkezi right away (cards come from cash_accounts), so the
+        // recipient can find and open it to confirm the pending transfer.
+        const created = await createCashAccount(tx, { name, ownerUserId: ownerId, grantUserIds: [session.user.id] });
         toId = created.id;
         toName = created.name;
       }
@@ -124,22 +121,25 @@ export const POST = withErrorHandling(async (request: Request) => {
     const fromKasa = await tx.select({ name: cashAccounts.name }).from(cashAccounts).where(eq(cashAccounts.id, payload.fromCashAccountId)).limit(1);
 
     // The money moves right now, not when the recipient acknowledges it:
-    // a negative "cash" ledger row leaves the sender's kasa immediately,
-    // and a positive "income" row lands in the target kasa immediately too
-    // (so it's visible right away) — `status` below only tracks whether the
-    // recipient has confirmed it yet, shown client-side as a lighter tone
-    // until they do.
+    // an "expense" ledger row leaves the sender's kasa immediately, and an
+    // "income" row lands in the target kasa immediately too (so it's visible
+    // right away) — `status` below only tracks whether the recipient has
+    // confirmed it yet, shown client-side as a lighter tone until they do.
+    // Both legs are "Kasa Aktarımı": they move balances but are left out of
+    // income/expense totals (see app/lib/transfers.ts).
+    const fromName = fromKasa[0]?.name ?? "";
     const [fromRecord] = await tx
       .insert(records)
       .values({
-        kind: "cash",
+        kind: "expense",
         date: payload.date,
-        source: fromKasa[0]?.name ?? "",
-        detail: payload.detail,
+        source: "Kasa Aktarımı",
+        detail: payload.detail || `Kasa aktarımı → ${toName}`,
         note: payload.note || `Kasa aktarımı — alıcı: ${payload.recipientPerson}`.trim(),
         person: payload.recipientPerson,
-        amount: -payload.amount,
+        amount: payload.amount,
         currency: payload.currency,
+        cashAccount: fromName,
         cashAccountId: payload.fromCashAccountId,
       })
       .returning();

@@ -7,16 +7,15 @@ import type { Kind, Language, RecordItem } from "../../lib/types";
 import { notify } from "../../lib/notify";
 
 // Kasalar/Gelir/Gider tablosunu Excel'e çıkarır ("Excel ve Rapor" menüsü ve seçili satırlar).
+// Her satır bir gelir ya da gider kaydıdır; "Kasa" sütunu kaydın kasasıdır.
 export async function exportRecordsExcel(
   rowsToExport: RecordItem[],
   suffix: string,
-  { language, kind, source, title }: { language: Language; kind: Kind; source: string; title: string },
+  { language, source, title }: { language: Language; source: string; title: string },
 ) {
   const columns = [
     tx(language, "Tarih", "Date", "Tarîx"),
-    kind === "cash"
-      ? tx(language, "Kasa Adı", "Cash Account", "Navê Qaseyê")
-      : tx(language, "Ana Başlık", "Category", "Sernav"),
+    tx(language, "Ana Başlık", "Category", "Sernav"),
     tx(language, "Detay", "Detail", "Hûragahî"),
     tx(language, "Not", "Note", "Nîşe"),
     tx(language, "Kişi", "Person", "Kes"),
@@ -41,15 +40,16 @@ export async function exportRecordsExcel(
       x.currency,
       x.project,
       x.tags.join(", "),
-      x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : x.kind === "expense" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Kasa", "Cash", "Qase"),
-      x.kind === "cash" ? x.source : x.cashAccount,
+      x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref"),
+      x.cashAccount,
     ]);
   }
   const safeName = (source === "Tümü" ? title : source).replace(/[\\/:*?"<>|]/g, "-");
   await downloadWorkbook(workbook, `${safeName}${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
-// Bu tablonun biçimindeki .xlsx dosyasını kayıt olarak içe aktarır.
+// Bu tablonun biçimindeki .xlsx dosyasını Gelir/Gider sayfasına kayıt olarak içe aktarır (Kasa Kontrol Merkezi'nde
+// bu içe aktarma yoktur: kasalar "Yeni Kasa" ile açılır, Excel raporları "Rapor yükle" ile kasaya işlenir).
 export async function importRecordsExcel(
   file: File | undefined,
   {
@@ -108,9 +108,6 @@ export async function importRecordsExcel(
             ? source
             : String(
                 get(
-                  "Kasa Adı",
-                  "Cash Account",
-                  "Navê Qaseyê",
                   "Ana Başlık",
                   "Category",
                   "Sernav",
@@ -139,7 +136,7 @@ export async function importRecordsExcel(
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean),
-          cashAccount: kind === "cash" ? "" : resolvedSource,
+          cashAccount: resolvedSource,
           listName: "",
         };
       })

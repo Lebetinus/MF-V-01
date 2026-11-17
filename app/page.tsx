@@ -39,6 +39,7 @@ import type {
   PreparedReport,
   Profile,
   RecordItem,
+  RecordsView,
   TypographySettings,
   UserAccount,
   KasaSection,
@@ -76,7 +77,7 @@ export default function Home() {
   const [noteDeleteId, setNoteDeleteId] = useState<number | null>(null);
   const [logo, setLogo] = useState("");
   const [company, setCompany] = useState("Maliye-Finans");
-  const [modal, setModal] = useState<{ kind: Kind; item?: RecordItem; cashAccount?: string; workspaceKey?: string } | null>(
+  const [modal, setModal] = useState<{ kind: Kind; item?: RecordItem; cashAccount?: string } | null>(
     null,
   );
   const [recordsSearch, setRecordsSearch] = useState("");
@@ -376,10 +377,7 @@ export default function Home() {
       }
       const data = await response.json();
       markWrite();
-      setRecords((r) => {
-        const next = id ? r.map((x) => (x.id === id ? data.record : x)) : [data.record, ...r];
-        return data.ensuredCash ? [data.ensuredCash, ...next] : next;
-      });
+      setRecords((r) => (id ? r.map((x) => (x.id === id ? data.record : x)) : [data.record, ...r]));
       if (data.archiveEntry) setArchive((a) => [data.archiveEntry, ...a]);
       setModal(null);
       // Borç verme/ödeme başka kasalardaki kayıtları da değiştirir (otomatik giriş, azalan gider): listeyi yenile.
@@ -999,14 +997,11 @@ export default function Home() {
           {(["cash", "income", "expense"] as Page[]).includes(page) && (
             <Records
               language={language}
-              kind={page as Kind}
-              records={contextRecords.filter(
-                (x) =>
-                  x.kind === page ||
-                  (page === "income" && x.kind === "cash"),
-              )}
+              kind={page as RecordsView}
+              // Kasa Kontrol Merkezi tüm gelir/gider kayıtlarını kasalarına göre gösterir; Gelir/Gider sayfaları yalnız kendi türünü.
+              records={page === "cash" ? contextRecords : contextRecords.filter((x) => x.kind === page)}
               allRecords={contextRecords}
-              onAdd={(addKind, cashAccount, workspaceKey) => setModal({ kind: addKind ?? (page as Kind), cashAccount, workspaceKey })}
+              onAdd={(addKind, cashAccount) => setModal({ kind: addKind, cashAccount })}
               onEdit={(item) => setModal({ kind: item.kind, item })}
               onDelete={removeRecord}
               onImport={importRecords}
@@ -1088,7 +1083,7 @@ export default function Home() {
           {page === "comments" && <Comments language={language} records={records} onRead={refreshUnreadCommentsCount} />}
           {page === "activity" && <Activity language={language} />}
           {page === "archive" && (
-            <Archive language={language} rows={archive} notes={notes} preparedReports={preparedReports} onUnarchiveNote={(id) => archiveNote(id, false)} />
+            <Archive language={language} rows={archive} cashAccounts={contextCashAccounts} notes={notes} preparedReports={preparedReports} onUnarchiveNote={(id) => archiveNote(id, false)} />
           )}
           {page === "users" && (
             <Users
@@ -1146,16 +1141,12 @@ export default function Home() {
           kind={modal.kind}
           initial={modal.item}
           prefillCashAccount={modal.cashAccount}
-          prefillWorkspaceKey={modal.workspaceKey}
-          onSectionsChanged={refreshSections}
           records={records}
           onCreateNote={createNote}
           onClose={() => setModal(null)}
           onSave={saveRecord}
           cashAccounts={cashAccounts}
           sections={sections}
-          users={users}
-          onTransfersChanged={refreshAfterCashTransfer}
         />
       )}
       {noteDeleteId !== null && (

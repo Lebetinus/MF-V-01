@@ -62,7 +62,7 @@ export function AreaDetails({
   const nodes: Node[] = useMemo(() => {
     const cashSections = sections.filter((x) => x.scope === "cash");
     const accountOf = new Map(cashAccounts.map((a) => [a.name, a]));
-    const names = [...new Set([...cashAccounts.map((a) => a.name), ...records.filter((x) => x.kind === "cash").map((x) => x.source), ...records.filter((x) => x.kind !== "cash").map((x) => x.cashAccount)].filter(Boolean))];
+    const names = [...new Set([...cashAccounts.map((a) => a.name), ...records.map((x) => x.cashAccount)].filter(Boolean))];
     const inPeriod = (x: RecordItem) => (year === "all" || x.date.startsWith(year)) && (month === "all" || x.date.slice(5, 7) === month);
     const builtin: { key: string; name: string; color: string }[] = [
       { key: "genel", name: tx(language, "Diğer", "Other", "Yên din"), color: "#315fe8" },
@@ -74,7 +74,6 @@ export function AreaDetails({
     const bucket = new Map<string, KasaRow[]>(defs.map((d) => [d.key, []]));
     for (const name of names) {
       const acc = accountOf.get(name);
-      const direct = records.filter((x) => x.kind === "cash" && x.source === name);
       const inc = records.filter((x) => x.kind === "income" && x.cashAccount === name);
       const exp = records.filter((x) => x.kind === "expense" && x.cashAccount === name);
       const key = acc?.sectionId != null && cashSections.some((s) => s.id === acc.sectionId) ? `sec-${acc.sectionId}` : acc?.isListWorkspace ? "liste" : acc?.isRjKasa ? "rj" : "genel";
@@ -84,13 +83,13 @@ export function AreaDetails({
         name,
         wsKey: isSub ? (def.parentKey as string) : key,
         secKey: isSub ? key : null,
-        balance: combineByCurrency([{ rows: direct }, { rows: inc }, { rows: exp, sign: -1 }]),
+        balance: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]),
         // Kasaya giren her para gelirdir (borç alma girişi dahil); kasadan çıkan her para giderdir (borç ödemesi dahil).
-        inBy: combineByCurrency([{ rows: direct.filter(inPeriod) }, { rows: inc.filter(inPeriod) }]),
+        inBy: combineByCurrency([{ rows: inc.filter(inPeriod) }]),
         outBy: combineByCurrency([{ rows: exp.filter(inPeriod) }]),
         debt: kasaDebtByCurrency(records, name),
-        last: [...direct, ...inc, ...exp].map((x) => x.date).filter(Boolean).sort().pop() ?? "",
-        count: direct.length + inc.length + exp.length,
+        last: [...inc, ...exp].map((x) => x.date).filter(Boolean).sort().pop() ?? "",
+        count: inc.length + exp.length,
       });
     }
     const orderIdx = (k: string) => { const i = workspaceOrder.indexOf(k); return i < 0 ? 1e9 : i; };

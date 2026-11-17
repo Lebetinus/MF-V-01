@@ -351,6 +351,13 @@
       "when": 1794870703283,
       "tag": "0049_session_viewer",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794875161032,
+      "tag": "0050_unify_record_kinds",
+      "breakpoints": true
     }
   ]
 }

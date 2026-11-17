@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../../../../db";
 import { archive, cashAccounts, records, users } from "../../../../db/schema";
@@ -54,7 +54,6 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
       .where(eq(cashAccounts.id, id));
     if (payload.name !== account.name) {
       await tx.update(records).set({ cashAccount: payload.name }).where(eq(records.cashAccountId, id));
-      await tx.update(records).set({ source: payload.name }).where(and(eq(records.cashAccountId, id), eq(records.kind, "cash")));
     }
     if (payload.listKasa) await markListKasa(id, tx);
     else if (payload.listKasa === false) await unmarkListKasa(id, tx);

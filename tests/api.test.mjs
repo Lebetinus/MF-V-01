@@ -148,11 +148,23 @@ test("permission matrix: scoped user can reach a permitted page, not an unpermit
   assert.equal(login.status, 200);
   testUserCookie = login.cookie;
 
-  const allowed = await call("GET", "/api/records?kind=cash", { cookie: testUserCookie });
-  assert.equal(allowed.status, 200);
+  // The "cash" permission opens Kasa Kontrol Merkezi (its kasa endpoints), not record kinds of its own.
+  const kasas = await call("GET", "/api/cash-accounts", { cookie: testUserCookie });
+  assert.equal(kasas.status, 200);
+  assert.ok(Array.isArray(kasas.json.cashAccounts));
+  const transfers = await call("GET", "/api/cash-transfers", { cookie: testUserCookie });
+  assert.equal(transfers.status, 200);
 
+  // There is no "cash" record kind any more.
+  const noCashKind = await call("GET", "/api/records?kind=cash", { cookie: testUserCookie });
+  assert.equal(noCashKind.status, 400);
+
+  // Income/expense records stay gated by their own permissions.
   const forbiddenKind = await call("GET", "/api/records?kind=income", { cookie: testUserCookie });
   assert.equal(forbiddenKind.status, 403);
+  const all = await call("GET", "/api/records", { cookie: testUserCookie });
+  assert.equal(all.status, 200);
+  assert.deepEqual(all.json.records, [], "no income/expense permission → no records");
 
   const forbiddenPage = await call("GET", "/api/notes", { cookie: testUserCookie });
   assert.equal(forbiddenPage.status, 403);
@@ -162,13 +174,11 @@ test("permission matrix: scoped user can reach a permitted page, not an unpermit
 });
 
 test("records: create, partial update, archive, delete", async () => {
-  // A kasa is created by its own cash record; income/expense then join it.
-  const kasa = await call("POST", "/api/records", {
-    cookie: adminCookie,
-    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_kasa`, amount: 0, currency: "USD" },
-  });
+  // A kasa is created on its own (Yeni Kasa); income/expense then join it.
+  const kasa = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_kasa` } });
   assert.equal(kasa.status, 201);
-  createdRecordIds.push(kasa.json.record.id);
+  adminKasaId = kasa.json.cashAccount.id;
+  assert.equal(kasa.json.record, null, "no opening balance → no record");
 
   const create = await call("POST", "/api/records", {
     cookie: adminCookie,
@@ -177,10 +187,15 @@ test("records: create, partial update, archive, delete", async () => {
   assert.equal(create.status, 201);
   const record = create.json.record;
   createdRecordIds.push(record.id);
-  // Income/expense records must name a kasa; it is created on demand.
+  // Income/expense records must name an existing kasa and are linked to it.
   assert.equal(record.cashAccount, `${RUN_TAG}_kasa`);
-  assert.ok(record.cashAccountId, "the record is linked to a cash_accounts row");
-  adminKasaId = record.cashAccountId;
+  assert.equal(record.cashAccountId, adminKasaId, "the record is linked to the kasa's cash_accounts row");
+
+  const unknownKasa = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "income", date: "2026-01-15", source: `${RUN_TAG}_x`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_nosuchkasa` },
+  });
+  assert.equal(unknownKasa.status, 403, "naming a kasa no longer creates it");
 
   const noKasa = await call("POST", "/api/records", {
     cookie: adminCookie,
@@ -218,11 +233,49 @@ test("records: invalid kind and negative amount are rejected", async () => {
   });
   assert.equal(badKind.status, 400);
 
+  // The old "kasa kaydı" kind is gone: every record is income or expense.
+  const cashKind = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_kasa`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_kasa` },
+  });
+  assert.equal(cashKind.status, 400);
+
   const badAmount = await call("POST", "/api/records", {
     cookie: adminCookie,
     body: { kind: "income", date: "2026-01-15", source: "x", amount: -1 },
   });
   assert.equal(badAmount.status, 400);
+});
+
+test("import: a legacy kasa-record row lands as income (negative → expense) in the kasa named by its source", async () => {
+  const name = `${RUN_TAG}_legacy`;
+  const res = await call("POST", "/api/records/import", {
+    cookie: adminCookie,
+    body: {
+      items: [
+        { kind: "cash", date: "2026-01-10", source: name, amount: 75, currency: "USD" },
+        { kind: "cash", date: "2026-01-11", source: name, amount: -20, currency: "USD" },
+      ],
+    },
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  const [opening, out] = res.json.records;
+  createdRecordIds.push(opening.id, out.id);
+  if (opening.cashAccountId) extraKasaIds.push(opening.cashAccountId);
+  assert.equal(opening.kind, "income");
+  assert.equal(opening.amount, 75);
+  assert.equal(opening.cashAccount, name);
+  assert.ok(opening.cashAccountId, "the kasa was opened and linked");
+  assert.equal(out.kind, "expense");
+  assert.equal(out.amount, 20);
+  assert.equal(out.cashAccountId, opening.cashAccountId);
+  assert.equal(await kasaBalance(opening.cashAccountId), 55);
+
+  const negativeIncome = await call("POST", "/api/records/import", {
+    cookie: adminCookie,
+    body: { items: [{ kind: "income", date: "2026-01-12", source: "x", amount: -1, currency: "USD", cashAccount: name }] },
+  });
+  assert.equal(negativeIncome.status, 400, "negative amounts are only accepted on legacy kasa rows");
 });
 
 test("import: links rows to their kasa, requires one, and enforces the row limit", async () => {
@@ -311,13 +364,10 @@ test("prepared reports: a user only sees and edits reports of kasas they can acc
 });
 
 test("debts: the counter kasa must be one the user can access", async () => {
-  const ownKasa = await call("POST", "/api/records", {
-    cookie: reporterCookie,
-    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_repkasa`, amount: 0, currency: "USD" },
-  });
+  // A user with the Kasa Kontrol Merkezi ("cash") permission may open a kasa of their own.
+  const ownKasa = await call("POST", "/api/cash-accounts", { cookie: reporterCookie, body: { name: `${RUN_TAG}_repkasa` } });
   assert.equal(ownKasa.status, 201);
-  reporterKasaId = ownKasa.json.record.cashAccountId;
-  createdRecordIds.push(ownKasa.json.record.id);
+  reporterKasaId = ownKasa.json.cashAccount.id;
 
   const res = await call("POST", "/api/records", {
     cookie: reporterCookie,
@@ -350,15 +400,72 @@ test("database: import/clear need a super admin and the password, checked on the
   assert.ok(records.json.records.some((r) => createdRecordIds.includes(r.id)));
 });
 
-async function makeKasa(name) {
-  const res = await call("POST", "/api/records", {
+async function makeKasa(name, openingAmount = 0) {
+  const res = await call("POST", "/api/cash-accounts", {
     cookie: adminCookie,
-    body: { kind: "cash", date: "2026-01-15", source: name, amount: 0, currency: "USD" },
+    body: { name, openingAmount, currency: "USD", date: "2026-01-15" },
   });
   assert.equal(res.status, 201, `create kasa ${name}`);
-  createdRecordIds.push(res.json.record.id);
-  return res.json.record.cashAccountId;
+  extraKasaIds.push(res.json.cashAccount.id);
+  if (res.json.record) createdRecordIds.push(res.json.record.id);
+  return res.json.cashAccount.id;
 }
+
+// A kasa's balance = its income − its expense records (transfer and debt legs included).
+async function kasaBalance(kasaId) {
+  const res = await call("GET", "/api/records", { cookie: adminCookie });
+  return res.json.records
+    .filter((r) => r.cashAccountId === kasaId)
+    .reduce((t, r) => t + (r.kind === "income" ? r.amount : -r.amount), 0);
+}
+
+test("cash accounts: Yeni Kasa with an opening balance writes one income record", async () => {
+  const name = `${RUN_TAG}_opening`;
+  const res = await call("POST", "/api/cash-accounts", {
+    cookie: adminCookie,
+    body: { name, openingAmount: 250, currency: "USD", date: "2026-02-01" },
+  });
+  assert.equal(res.status, 201);
+  const kasaId = res.json.cashAccount.id;
+  extraKasaIds.push(kasaId);
+  assert.equal(res.json.cashAccount.name, name);
+  assert.ok(res.json.record, "opening income record returned");
+  createdRecordIds.push(res.json.record.id);
+
+  const records = (await call("GET", "/api/records", { cookie: adminCookie })).json.records.filter((r) => r.cashAccountId === kasaId);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].kind, "income");
+  assert.equal(records[0].source, "Açılış bakiyesi");
+  assert.equal(records[0].amount, 250);
+  assert.equal(records[0].date, "2026-02-01");
+  assert.equal(records[0].cashAccount, name);
+  assert.equal(await kasaBalance(kasaId), 250);
+
+  // The kasa is listed for its creator.
+  const list = await call("GET", "/api/cash-accounts", { cookie: adminCookie });
+  assert.ok(list.json.cashAccounts.some((a) => a.id === kasaId));
+});
+
+test("cash accounts: a duplicate kasa name is rejected with 409", async () => {
+  await makeKasa(`${RUN_TAG}_dup`);
+  const again = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_dup` } });
+  assert.equal(again.status, 409);
+  assert.match(again.json?.error ?? "", /zaten var/);
+  const blank = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: "   " } });
+  assert.equal(blank.status, 400);
+});
+
+test("cash accounts: a user without the Kasa Kontrol Merkezi permission cannot open a kasa", async () => {
+  const created = await call("POST", "/api/users", {
+    cookie: adminCookie,
+    body: { username: `${RUN_TAG}_nokasa`, password: "ApiTest1234", name: "No Kasa", roleLabel: "Test", isAdmin: false, permissions: ["income"] },
+  });
+  assert.equal(created.status, 201);
+  const cookie = (await call("POST", "/api/auth/login", { body: { username: `${RUN_TAG}_nokasa`, password: "ApiTest1234" } })).cookie;
+  const res = await call("POST", "/api/cash-accounts", { cookie, body: { name: `${RUN_TAG}_nokasa_kasa` } });
+  assert.equal(res.status, 403);
+  assert.equal((await call("DELETE", `/api/users/${created.json.user.id}`, { cookie: adminCookie })).status, 200);
+});
 
 async function transfer(fromId, toId, amount) {
   const res = await call("POST", "/api/cash-transfers", {
@@ -375,11 +482,26 @@ async function recordExists(id) {
 }
 
 test("cash transfers: both legs live and die together", async () => {
-  const fromId = await makeKasa(`${RUN_TAG}_tA`);
+  const fromId = await makeKasa(`${RUN_TAG}_tA`, 100);
   const toId = await makeKasa(`${RUN_TAG}_tB`);
-  extraKasaIds.push(fromId, toId);
   const t = await transfer(fromId, toId, 50);
   assert.ok(t.fromRecordId && t.toRecordId);
+
+  // Sender leg: a positive "Kasa Aktarımı" expense in the sender kasa; receiver leg: income in the target kasa.
+  const all = (await call("GET", "/api/records", { cookie: adminCookie })).json.records;
+  const sent = all.find((r) => r.id === t.fromRecordId);
+  const received = all.find((r) => r.id === t.toRecordId);
+  assert.equal(sent.kind, "expense");
+  assert.equal(sent.amount, 50);
+  assert.equal(sent.source, "Kasa Aktarımı");
+  assert.equal(sent.cashAccount, `${RUN_TAG}_tA`);
+  assert.equal(sent.cashAccountId, fromId);
+  assert.equal(received.kind, "income");
+  assert.equal(received.amount, 50);
+  assert.equal(received.cashAccount, `${RUN_TAG}_tB`);
+  assert.equal(received.cashAccountId, toId);
+  assert.equal(await kasaBalance(fromId), 50, "sender: 100 opening − 50 sent");
+  assert.equal(await kasaBalance(toId), 50);
 
   // The money-defining fields of one leg cannot be edited on their own.
   const edit = await call("PUT", `/api/records/${t.toRecordId}`, { cookie: adminCookie, body: { amount: 999 } });
@@ -394,12 +516,26 @@ test("cash transfers: both legs live and die together", async () => {
   assert.equal(await recordExists(t.fromRecordId), false, "sender leg is gone too");
   const list = await call("GET", "/api/cash-transfers", { cookie: adminCookie });
   assert.equal(list.json.cashTransfers.find((x) => x.id === t.id)?.status, "cancelled");
+  assert.equal(await kasaBalance(fromId), 100, "reversing restores the sender's balance");
+  assert.equal(await kasaBalance(toId), 0);
+});
+
+test("cash transfers: deleting the sender's expense leg reverses the transfer too", async () => {
+  const fromId = await makeKasa(`${RUN_TAG}_tE`, 30);
+  const toId = await makeKasa(`${RUN_TAG}_tF`);
+  const t = await transfer(fromId, toId, 30);
+  const lockedKind = await call("PUT", `/api/records/${t.fromRecordId}`, { cookie: adminCookie, body: { kind: "income" } });
+  assert.equal(lockedKind.status, 400, "a leg's kind cannot be changed");
+  const del = await call("DELETE", `/api/records/${t.fromRecordId}?reason=test%20reverse`, { cookie: adminCookie });
+  assert.equal(del.status, 200);
+  assert.deepEqual([...del.json.removedRecordIds].sort(), [t.fromRecordId, t.toRecordId].sort());
+  assert.equal(await kasaBalance(fromId), 30);
+  assert.equal(await kasaBalance(toId), 0);
 });
 
 test("cash transfers: deleting a kasa also removes the counterpart leg on the other kasa", async () => {
   const fromId = await makeKasa(`${RUN_TAG}_tC`);
   const toId = await makeKasa(`${RUN_TAG}_tD`);
-  extraKasaIds.push(toId);
   const t = await transfer(fromId, toId, 20);
   const del = await call("DELETE", `/api/cash-accounts/${fromId}`, { cookie: adminCookie, body: { password: "admin123", reason: "test kasa delete" } });
   assert.equal(del.status, 200);
@@ -431,7 +567,7 @@ test("polling: an unchanged GET answers 304 to its ETag, a changed one sends the
   assert.equal(again.status, 304);
   assert.equal(await again.text(), "");
 
-  await makeKasa(`${RUN_TAG}_etag`);
+  await makeKasa(`${RUN_TAG}_etag`, 1);
   const changed = await callRaw("GET", "/api/records", { cookie: adminCookie, headers: { "if-none-match": etag } });
   assert.equal(changed.status, 200, "data changed → full body again");
   assert.notEqual(changed.headers.get("etag"), etag);
@@ -503,7 +639,7 @@ test("view as user: a super admin browses as another user, read-only and without
   assert.equal((await call("GET", "/api/users", { cookie: both })).status, 403, "sees only what the user may see");
 
   // Nothing can be changed.
-  const write = await call("POST", "/api/records", { cookie: both, body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_viewwrite`, amount: 1, currency: "USD" } });
+  const write = await call("POST", "/api/records", { cookie: both, body: { kind: "income", date: "2026-01-15", source: `${RUN_TAG}_viewwrite`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_kasa` } });
   assert.equal(write.status, 403);
   assert.equal(write.json?.code, "read_only");
   assert.equal((await call("PUT", "/api/profile", { cookie: both, body: { name: "x", avatar: "", language: "en" } })).status, 403);
@@ -617,7 +753,7 @@ test("database backup: full backup round-trips through restore; bad files change
   // A record created after the backup must be gone after the restore.
   const after = await call("POST", "/api/records", {
     cookie: adminCookie,
-    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_afterbackup`, amount: 7, currency: "USD" },
+    body: { kind: "income", date: "2026-01-15", source: `${RUN_TAG}_afterbackup`, amount: 7, currency: "USD", cashAccount: `${RUN_TAG}_kasa` },
   });
   assert.equal(after.status, 201);
   createdRecordIds.push(after.json.record.id);
@@ -641,7 +777,7 @@ test("database backup: full backup round-trips through restore; bad files change
   // Id counters were moved past the restored rows: a new record gets a fresh id.
   const fresh = await call("POST", "/api/records", {
     cookie: adminCookie,
-    body: { kind: "cash", date: "2026-01-15", source: `${RUN_TAG}_afterrestore`, amount: 1, currency: "USD" },
+    body: { kind: "income", date: "2026-01-15", source: `${RUN_TAG}_afterrestore`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_kasa` },
   });
   assert.equal(fresh.status, 201);
   assert.ok(!ids.includes(fresh.json.record.id));

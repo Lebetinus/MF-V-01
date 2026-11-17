@@ -15,7 +15,7 @@ export type BoardKasa = {
   totalByCurrency: Record<string, number>;
   totalInByCurrency: Record<string, number>;
   totalOutByCurrency: Record<string, number>;
-  direct: RecordItem[];
+  // Kasadaki gelir ve gider kayıtları (bakiye = gelir − gider).
   inc: RecordItem[];
   exp: RecordItem[];
 };
@@ -44,6 +44,7 @@ export function KasaBoard({
   onAddSection,
   onAddKasa,
   onAddWorkspace,
+  onTransfer,
 }: {
   language: Language;
   workspaces: BoardWorkspace[];
@@ -61,6 +62,8 @@ export function KasaBoard({
   onAddSection?: (parentKey: string) => void;
   onAddKasa?: (groupKey: string) => void;
   onAddWorkspace?: () => void;
+  // Kasa kartının ⋯ menüsündeki "Kasalar arası aktarım" (yalnız kasaya yazabilenler).
+  onTransfer?: (account: CashAccountSummary) => void;
 }) {
   const [ws, setWs] = useState<string>("all");
   const [query, setQuery] = useState("");
@@ -140,7 +143,7 @@ export function KasaBoard({
     return out;
   };
 
-  const lastDate = (k: BoardKasa) => [...k.direct, ...k.inc, ...k.exp].map((x) => x.date).filter(Boolean).sort().pop() ?? "";
+  const lastDate = (k: BoardKasa) => [...k.inc, ...k.exp].map((x) => x.date).filter(Boolean).sort().pop() ?? "";
 
   const renderCard = (k: BoardKasa, w: { color: string; name: string }, ctx?: { full: BoardKasa[]; list: BoardKasa[] }) => {
   const account = cashAccounts.find((a) => a.name === k.name);
@@ -209,7 +212,7 @@ export function KasaBoard({
       {menuFor !== k.name && (
         <div className="kbTip" role="tooltip">
           <div><small>{tx(language, "Kasa Oluşturucu", "Kasa Owner", "Vekera Qaseyê")}</small><strong>{account?.ownerName || tx(language, "Belirtilmedi", "Unassigned", "Nehatiye diyarkirin")}</strong></div>
-          <div><small>{tx(language, "Toplam Kasa", "Total In", "Giştî")}</small><strong className="pos"><MoneyStack by={k.totalInByCurrency} /></strong></div>
+          <div><small>{tx(language, "Toplam Giriş", "Total In", "Têketina Giştî")}</small><strong className="pos"><MoneyStack by={k.totalInByCurrency} /></strong></div>
           <div><small>{tx(language, "Gider", "Expense", "Mesref")}</small><strong className="neg"><MoneyStack by={k.totalOutByCurrency} /></strong></div>
           <div><small>{tx(language, "Sonuç", "Result", "Encam")}</small><strong className={negative ? "neg" : ""}><MoneyStack by={k.totalByCurrency} /></strong></div>
           {months.length > 0 && (
@@ -231,6 +234,7 @@ export function KasaBoard({
             <div className="kbMenu" role="menu" onMouseLeave={() => setMenuFor(null)}>
               <button type="button" role="menuitem" onClick={() => { setMenuFor(null); onOpen(k.name); }}>{tx(language, "Aç", "Open", "Veke")}</button>
               {account && <button type="button" onClick={() => { setMenuFor(null); onShare(account); }}>{tx(language, "Paylaş", "Share", "Parve bike")}</button>}
+              {account && onTransfer && (account.isOwner || canManage) && <button type="button" onClick={() => { setMenuFor(null); onTransfer(account); }}>⇄ {tx(language, "Kasalar arası aktarım", "Transfer to another cash account", "Veguhastin bo qaseyeke din")}</button>}
               {canManage && ctx && ctx.list.indexOf(k) > 0 && <button type="button" onClick={() => { setMenuFor(null); moveKasa(ctx.full, ctx.list, k, -1); }}>{tx(language, "← Öne al", "← Move earlier", "← Bîne pêş")}</button>}
                         {canManage && ctx && ctx.list.indexOf(k) < ctx.list.length - 1 && <button type="button" onClick={() => { setMenuFor(null); moveKasa(ctx.full, ctx.list, k, 1); }}>{tx(language, "Geri al →", "Move later →", "Bibe paş →")}</button>}
               {actions.map((a) => (

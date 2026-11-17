@@ -12,10 +12,10 @@ export function RecordViewPanel({ language, record: x, sectionName, canEdit, inl
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const kindLabel = x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : x.kind === "expense" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Kasa", "Cash", "Qase");
+  const kindLabel = x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref");
   const tableRows = (x.detailTable?.length ?? 0) > 1 ? x.detailTable!.length - 1 : 0;
   const rows: [string, string][] = [
-    [tx(language, "Kasa", "Cash account", "Qase"), x.kind === "cash" ? x.source : x.cashAccount],
+    [tx(language, "Kasa", "Cash account", "Qase"), x.cashAccount],
     [tx(language, "Bölüm", "Section", "Beş"), sectionName],
     [tx(language, "Kişi", "Person", "Kes"), x.person],
     [tx(language, "Birim", "Unit", "Yekîne"), x.project],

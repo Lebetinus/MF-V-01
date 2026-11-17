@@ -5,14 +5,11 @@ import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds, canAccessCashAccount } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
 import { ensureCashAccountLink, fallbackKasaNameFor } from "../_lib/records";
-import { markListKasa, resolveRecordList, setRjKasa, unmarkListKasa } from "../_lib/lists";
-import { cashAccounts } from "../../../db/schema";
-import type { Kind } from "../_lib/types";
+import { resolveRecordList } from "../_lib/lists";
+import { RECORD_KINDS, type Kind } from "../_lib/types";
 import { parseBody, recordInputSchema } from "../_lib/validate";
 import { formatAmount, logActivity } from "../_lib/activity";
 import { kasaName, outstandingDebt, reduceLentExpenses, type DebtMeta } from "../_lib/debts";
-
-const RECORD_KINDS: Kind[] = ["cash", "income", "expense"];
 
 function allowedKinds(user: { isAdmin: boolean; permissions: string[] }): Kind[] {
   if (user.isAdmin) return RECORD_KINDS;
@@ -39,6 +36,8 @@ export const GET = withErrorHandling(async (request: Request) => {
   const accessibleIds = await accessibleCashAccountIds(session.user, db);
 
   if (kind) {
+    // Yalnız gelir/gider vardır; eski "kasa kaydı" türü 0050 göçüyle kaldırıldı.
+    if (!RECORD_KINDS.includes(kind as Kind)) return json({ error: "Geçersiz kayıt türü" }, { status: 400 });
     if (!allowed.includes(kind as Kind)) return json({ error: "Forbidden" }, { status: 403 });
     const rows = await db.select().from(records).where(eq(records.kind, kind)).orderBy(desc(records.date), desc(records.id));
     return json({ records: scopeToAccessibleKasas(rows, accessibleIds) });
@@ -62,21 +61,14 @@ export const POST = withErrorHandling(async (request: Request) => {
   }
 
   // Hiçbir gelir/gider kasadan kopuk olamaz: kasa zorunludur (kasalar da bir çalışma alanına bağlıdır).
-  if (payload.kind !== "cash" && !payload.cashAccount?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
+  if (!payload.cashAccount?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
 
   const db = getDb();
   const listLink = await resolveRecordList(session.user, { listId: payload.listId, listName: payload.listName }, db);
   if ("error" in listLink) return json({ error: listLink.error }, { status: 400 });
-  const linkName = payload.kind === "cash" ? payload.source : payload.cashAccount;
   const result = await db.transaction(async (tx) => {
-    const link = await ensureCashAccountLink({ name: linkName, kind: payload.kind, user: session.user }, tx);
+    const link = await ensureCashAccountLink({ name: payload.cashAccount, kind: payload.kind, user: session.user }, tx);
     if (link.forbidden) return { forbidden: true as const };
-    // "Liste Kasası" işaretli kasa kaydı: kasa Listeler sayfasında otomatik çalışma alanı olur.
-    if (payload.kind === "cash" && payload.listKasa && link.cashAccountId != null) await markListKasa(link.cashAccountId, tx);
-    if (payload.kind === "cash" && payload.listKasa === false && link.cashAccountId != null) await unmarkListKasa(link.cashAccountId, tx);
-    if (payload.kind === "cash" && payload.rjKasa !== undefined && link.cashAccountId != null) await setRjKasa(link.cashAccountId, payload.rjKasa, tx);
-    // Kasa kaydında seçilen "kasa bölümü" kasaya yazılır (boş = Genel Kasa).
-    if (payload.kind === "cash" && payload.sectionId !== undefined && link.cashAccountId != null) await tx.update(cashAccounts).set({ sectionId: payload.sectionId }).where(eq(cashAccounts.id, link.cashAccountId));
 
     // Gider eklerken borç işareti: lent (borç veriyorum) ya da repay (borcumu ödüyorum).
     const debtMode = payload.kind === "expense" ? payload.debtMode : undefined;
@@ -120,9 +112,9 @@ export const POST = withErrorHandling(async (request: Request) => {
         project: payload.project,
         tags: payload.tags,
         link: payload.link,
-        cashAccount: payload.kind === "cash" ? payload.source : (payload.cashAccount || fallbackKasaNameFor(payload.kind)),
+        cashAccount: payload.cashAccount || fallbackKasaNameFor(payload.kind),
         cashAccountId: link.cashAccountId,
-        sectionId: payload.kind === "cash" ? null : payload.sectionId ?? null,
+        sectionId: payload.sectionId ?? null,
         listName: listLink.listName ?? "",
         listId: listLink.listId ?? null,
         attachments: payload.attachments,
@@ -155,7 +147,7 @@ export const POST = withErrorHandling(async (request: Request) => {
       [record] = await tx.update(records).set({ debtLinkId: twin.id }).where(eq(records.id, insertedRecord.id)).returning();
     }
 
-    return { forbidden: false as const, record, ensuredCash: link.ensuredCashRecord };
+    return { forbidden: false as const, record };
   });
 
   if ("badDebt" in result) return json({ error: result.badDebt }, { status: 400 });
@@ -164,9 +156,9 @@ export const POST = withErrorHandling(async (request: Request) => {
   await logActivity(session.user, {
     category: created.kind,
     action: "create",
-    summary: `${({ income: "Gelir", expense: "Gider", cash: "Kasa" } as Record<string, string>)[created.kind]} eklendi: ${created.source} — ${formatAmount(created.amount, created.currency)}`,
-    kasa: created.kind === "cash" ? created.source : created.cashAccount,
+    summary: `${created.kind === "income" ? "Gelir" : "Gider"} eklendi: ${created.source} — ${formatAmount(created.amount, created.currency)}`,
+    kasa: created.cashAccount,
     meta: { id: created.id },
   });
-  return json({ record: result.record, ensuredCash: result.ensuredCash }, { status: 201 });
+  return json({ record: result.record }, { status: 201 });
 });

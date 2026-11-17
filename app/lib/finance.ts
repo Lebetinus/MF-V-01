@@ -73,7 +73,8 @@ export function parseStoredDate(value: unknown) {
   }
   return new Date().toISOString().slice(0, 10);
 }
-export function normalizeRecord(x: RecordItem): RecordItem {
+// Arşiv görüntüleri (eski "kasa kaydı" türü dahil) için de kullanılır; tür olduğu gibi korunur.
+export function normalizeRecord<T extends Omit<RecordItem, "kind"> & { kind: string }>(x: T): T {
   return {
     ...x,
     detail: x.detail || "",

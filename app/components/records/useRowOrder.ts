@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
-import type { Kind, RecordItem } from "../../lib/types";
+import type { RecordItem, RecordsView } from "../../lib/types";
 
 // Tarihe göre / son eklenene göre sıralama — standart bir liste özelliği.
 // Seçim değişince önceki elle sürükleme sırası (rowOrder) temizlenir, yoksa
@@ -9,7 +9,7 @@ import type { Kind, RecordItem } from "../../lib/types";
 export type SortMode = "dateDesc" | "dateAsc" | "addedDesc" | "addedAsc";
 
 // Satır sırası tercihleri (sayfa türüne göre localStorage'da): elle sürükleme sırası ve sıralama seçimi.
-export function useRowOrder(kind: Kind) {
+export function useRowOrder(kind: RecordsView) {
   // Manual row order (drag handle in the İşlem column) — a per-kind override
   // on top of the default date/id sort, kept in localStorage since it's a
   // personal display preference, not app data. Ids not in the saved order

@@ -5118,3 +5118,19 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .viewAsBanner b { font-weight: 700; }
 .viewAsBanner button { border: 1px solid #c99a1e; background: #fff; color: #5c4300; border-radius: 8px; padding: 6px 12px; font-weight: 600; cursor: pointer; }
 .viewAsBanner button:hover { background: #ffe9a8; }
+
+/* Kasalar arası aktarım penceresi (kasa kartının ⋯ menüsü / kasa sayfası başlığı). */
+.kasaTransferModal { width: min(760px, 96vw); max-height: 92vh; overflow: auto; }
+.kasaTransferModal .cashTransferSection { margin-top: 4px; border-top: 0; padding-top: 0; }
+
+/* Yeni Kasa penceresi. */
+.newKasaModal { width: min(520px, 94vw); }
+.newKasaModal .newKasaAmount { display: grid; grid-template-columns: 1fr 110px; gap: 8px; }
+
+/* Ana Sayfa kart satırı (3 kart): Toplam Kasa Gelirleri kartı kaldırıldı. */
+.metrics3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1150px) {
+  .metrics3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics3 > .lpMetric.net { grid-column: 1 / -1; }
+}
+@media (max-width: 390px) { .metrics3 { grid-template-columns: 1fr; } }

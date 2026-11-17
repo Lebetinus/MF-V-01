@@ -1,6 +1,6 @@
 import type { CashTransfer, RecordItem } from "./types";
 
-// Kasa aktarımının iki kaydı (gönderende −X "kasa", alanda +X "gelir")
+// Kasa aktarımının iki kaydı (gönderende X "gider", alanda X "gelir"; ikisi de "Kasa Aktarımı")
 // paranın kasalar arasında yer değiştirmesidir; yeni gelir veya gider
 // değildir. Kasa bakiyelerine girerler ama gelir/gider/net toplamlarına ve
 // analize girmezler (borç kayıtlarındaki isDebtLeg ile aynı mantık).

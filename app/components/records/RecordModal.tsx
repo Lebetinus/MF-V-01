@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmModal } from "../shared";
 import { debtPairs } from "../../lib/debts";
-import { workspaceKeyOf, workspaceOptions, workspaceState } from "../KasaManage";
+import { workspaceKeyOf, workspaceOptions } from "../KasaManage";
 import { tx, localizeData, noteRelationLabel } from "../../lib/i18n";
 import { openAttachment } from "../../lib/attachments";
-import { date, money, normalizeRecord, total } from "../../lib/finance";
-import type { CashAccountSummary, CashTransfer, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordItem, UserAccount } from "../../lib/types";
+import { money, normalizeRecord } from "../../lib/finance";
+import type { CashAccountSummary, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordItem } from "../../lib/types";
 import { notify } from "../../lib/notify";
 import { DETAIL_MAX_CELL, DETAIL_MAX_COLS, DETAIL_MAX_ROWS, DetailTableEditor, parseClipboardTable } from "./detailTable";
 import { SuggestInput, TagsInput } from "./inputs";
@@ -19,36 +19,27 @@ export function RecordModal({
   kind: kindProp,
   initial,
   prefillCashAccount,
-  prefillWorkspaceKey,
-  onSectionsChanged,
   records,
   onCreateNote,
   onClose,
   onSave,
   cashAccounts,
-  users,
-  onTransfersChanged,
   sections = [],
 }: {
   language: Language;
   kind: Kind;
   initial?: RecordItem;
   prefillCashAccount?: string;
-  prefillWorkspaceKey?: string;
-  onSectionsChanged?: () => void;
   sections?: KasaSection[];
   records: RecordItem[];
   onCreateNote: (input: Omit<FinanceNote, "id" | "createdAt" | "updatedAt" | "isArchived" | "archivedAt">) => void;
   onClose: () => void;
   onSave: (x: Omit<RecordItem, "id">, id?: number) => void;
   cashAccounts: CashAccountSummary[];
-  users: UserAccount[];
-  onTransfersChanged: () => void;
 }) {
   // Yeni Gelir/Gider/Borç kaydında tür, pencerenin içinden değiştirilebilir.
   const [kind, setKindState] = useState<Kind>(kindProp);
-  const defaultNoteRelation: NoteRelation =
-    kind === "cash" ? "cash" : kind === "income" ? "income" : "expense";
+  const defaultNoteRelation: NoteRelation = kind;
   const [financeNote, setFinanceNote] = useState("");
   const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
   const [financeNoteStatus, setFinanceNoteStatus] = useState<NoteStatus>("pending");
@@ -64,11 +55,7 @@ export function RecordModal({
   const financeNoteTitleOptions = [
     ...new Set(
       records
-        .filter(
-          (x) =>
-            x.kind === financeNoteRelation ||
-            (financeNoteRelation === "income" && x.kind === "cash"),
-        )
+        .filter((x) => x.kind === financeNoteRelation)
         .map((x) => x.source)
         .filter(Boolean),
     ),
@@ -87,7 +74,7 @@ export function RecordModal({
         project: "",
         tags: [],
         link: "",
-        cashAccount: kind === "cash" ? "" : prefillCashAccount ?? "",
+        cashAccount: prefillCashAccount ?? "",
         listName: "",
         attachments: [],
         detailTable: [],
@@ -100,7 +87,7 @@ export function RecordModal({
   // matching and silently corrupting data across languages.
   const [form, setForm] = useState<Omit<RecordItem, "id">>(base);
   const debtModeNow = form.debtMode ?? "";
-  const tone: "cash" | "in" | "out" | "debt" = kind === "cash" ? "cash" : kind === "income" ? "in" : debtModeNow !== "" ? "debt" : "out";
+  const tone: "in" | "out" | "debt" = kind === "income" ? "in" : debtModeNow !== "" ? "debt" : "out";
   function switchType(next: "in" | "out" | "debt") {
     const nextKind: Kind = next === "in" ? "income" : "expense";
     setKindState(nextKind);
@@ -108,10 +95,8 @@ export function RecordModal({
     setFinanceNoteRelation(nextKind);
     setForm((f) => ({ ...f, kind: nextKind, debtMode: next === "debt" ? (f.debtMode || "lent") : "", debtCashAccountId: null }));
   }
-  // "Liste Kasası": işaretlenen kasa Listeler sayfasında otomatik çalışma alanı olur ve Kasalar'daki Liste Kasaları bölümüne gelir.
-  const [sectionId, setSectionId] = useState<number | null>(() => (prefillWorkspaceKey && !initial && kind === "cash" ? workspaceState(prefillWorkspaceKey, { rjKasa: false, listKasa: false }).sectionId : kind === "cash" ? cashAccounts?.find((a) => a.name === base.source)?.sectionId ?? null : (base as RecordItem).sectionId ?? null));
-  const [rjKasa, setRjKasa] = useState(() => (prefillWorkspaceKey && !initial && kind === "cash" ? workspaceState(prefillWorkspaceKey, { rjKasa: false, listKasa: false }).rjKasa : kind === "cash" && !!cashAccounts?.some((a) => a.name === base.source && a.isRjKasa)));
-  const [listKasa, setListKasa] = useState(() => (prefillWorkspaceKey && !initial && kind === "cash" ? workspaceState(prefillWorkspaceKey, { rjKasa: false, listKasa: false }).listKasa : kind === "cash" && !!cashAccounts?.some((a) => a.name === base.source && a.isListWorkspace)));
+  // Gelir/Gider bölümü (Ayarlar > Bölümler).
+  const [sectionId, setSectionId] = useState<number | null>(() => (base as RecordItem).sectionId ?? null);
   // Gider eklerken "Borç" işareti: lent = başka bir kasaya borç veriyorum, repay = borcumu ödüyorum (karşı kasa seçilir).
   // Karşı kasa yalnız kullanıcının erişebildiği kasalardan seçilir (sunucu da aynı kuralı uygular).
   const debtMode = form.debtMode ?? "";
@@ -129,50 +114,6 @@ export function RecordModal({
     }
     setForm({ ...form, debtCashAccountId: id, amount });
   };
-  // Kasa formundan, seçili çalışma alanının içinde hızlıca yeni bölüm oluşturur ve onu seçer.
-  const [inlineSectionOpen, setInlineSectionOpen] = useState(false);
-  const [inlineSectionName, setInlineSectionName] = useState("");
-  const [inlineSectionError, setInlineSectionError] = useState("");
-  async function createInlineSection() {
-    const name = inlineSectionName.trim();
-    if (!name) return;
-    const key = workspaceKeyOf({ sectionId, rjKasa, listKasa }, sections);
-    const selected = key.startsWith("sec-") ? sections.find((x) => `sec-${x.id}` === key) : undefined;
-    const parentKey = selected?.parentKey ?? key; // bölümün içine bölüm yok: üst alanını kullan
-    try {
-      const response = await fetch("/api/sections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope: "cash", name, color: "#7b52bf", parentKey }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setInlineSectionError(response.status === 403 ? tx(language, "Bölümü yalnızca yönetici oluşturabilir.", "Only an administrator can create a section.", "Beşê tenê rêvebir dikare çêke.") : response.status === 409 ? tx(language, "Bu adla bir bölüm zaten var.", "A section with this name already exists.", "Beşa bi vî navî heye.") : body.error || tx(language, "Bölüm oluşturulamadı.", "The section could not be created.", "Beş nehat çêkirin."));
-        return;
-      }
-      setSectionId(body.section.id);
-      setRjKasa(false);
-      setListKasa(false);
-      setInlineSectionOpen(false);
-      setInlineSectionName("");
-      setInlineSectionError("");
-      onSectionsChanged?.();
-    } catch {
-      setInlineSectionError(tx(language, "Bölüm oluşturulamadı.", "The section could not be created.", "Beş nehat çêkirin."));
-    }
-  }
-  // Yeni kasa kaydında mevcut bir kasanın adı yazılırsa o kasanın çalışma alanı yüklenir (yanlışlıkla değiştirilmesin).
-  useEffect(() => {
-    if (kind !== "cash" || initial) return;
-    const account = cashAccounts?.find((a) => a.name === form.source.trim());
-    if (!account) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- yazılan kasa adına tepki; ilk açılışta da (önceden doldurulmuş ad) çalışmalı */
-    setSectionId(account.sectionId ?? null);
-    setRjKasa(!!account.isRjKasa);
-    setListKasa(!!account.isListWorkspace);
-    /* eslint-enable react-hooks/set-state-in-effect */
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.source]);
   // "Gider Detaylarını Görüntüle" bölümü kayıt penceresi her açıldığında
   // kapalı başlar (detay kayıtlıysa bile); açılınca tablonun tamamı görünür.
   const [detailTrimmed, setDetailTrimmed] = useState(false);
@@ -305,12 +246,12 @@ export function RecordModal({
         assignedUserIds: [],
       });
     }
-    onSave(kind === "cash" ? { ...form, listKasa, rjKasa, sectionId } : { ...form, sectionId }, initial?.id);
+    onSave({ ...form, sectionId }, initial?.id);
   }
   const rfHero = (
     <div className="wide rfHero">
       <div className="rfAmt">
-        <span>{kind === "cash" ? tx(language, "Açılış bakiyesi", "Opening balance", "Bakiya destpêkê") : tx(language, "Tutar", "Amount", "Meblağ")}</span>
+        <span>{tx(language, "Tutar", "Amount", "Meblağ")}</span>
         <div>
           <i aria-hidden="true">{form.currency === "USD" ? "$" : form.currency === "EUR" ? "€" : form.currency === "TRY" ? "₺" : form.currency}</i>
           <input
@@ -341,7 +282,7 @@ export function RecordModal({
     return rfWsOptions.find((o) => o.key === key)?.label || tx(language, "Diğer", "Other", "Yên din");
   };
   const kasaGroups = (() => {
-    const names = [...new Set([...records.filter((x) => x.kind === "cash").map((x) => x.source), ...cashAccounts.map((a) => a.name), form.cashAccount || ""].filter(Boolean))];
+    const names = [...new Set([...cashAccounts.map((a) => a.name), form.cashAccount || ""].filter(Boolean))];
     const map = new Map<string, string[]>();
     for (const n of names) { const g = rfWsOf(n); map.set(g, [...(map.get(g) ?? []), n]); }
     const order = rfWsOptions.map((o) => o.label);
@@ -349,11 +290,9 @@ export function RecordModal({
       .sort((x, y) => (order.indexOf(x[0]) + 1 || 999) - (order.indexOf(y[0]) + 1 || 999))
       .map(([label, list]) => ({ label, names: list.sort((p, q) => p.localeCompare(q)) }));
   })();
-  const toneLabel = tone === "in" ? tx(language, "Gelir", "Income", "Dahat") : tone === "out" ? tx(language, "Gider", "Expense", "Mesref") : tone === "debt" ? tx(language, "Borç", "Debt", "Deyn") : tx(language, "Kasa", "Cash account", "Qase");
+  const toneLabel = tone === "in" ? tx(language, "Gelir", "Income", "Dahat") : tone === "out" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Borç", "Debt", "Deyn");
   const rfSource = (          <label>
-            <span>{kind === "cash"
-              ? tx(language, "Kasa Adı", "Cash Account", "Navê Qaseyê")
-              : kind === "income"
+            <span>{kind === "income"
                 ? tx(
                     language,
                     "Gelir Ana Başlığı",
@@ -444,7 +383,7 @@ export function RecordModal({
       </span>
     </label>
   );
-  const rfKasa = kind !== "cash" && (
+  const rfKasa = (
             <label>
               <span>{tx(language, "Kasa", "Cash account", "Qase")} <b className="rfReq">*</b></span>
               <select
@@ -495,7 +434,7 @@ export function RecordModal({
               )}
             </div>
           );
-  const rfSection = kind !== "cash" && sections.some((x) => x.scope === kind) && (
+  const rfSection = sections.some((x) => x.scope === kind) && (
             <label>
               {tx(language, "Bölüm", "Section", "Beş")}
               <select value={sectionId ?? ""} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}>
@@ -519,14 +458,12 @@ export function RecordModal({
         }}
       >
         <div className="modalHead rfHead">
-          <span className={`rfIcon ${tone}`} aria-hidden="true">{tone === "in" ? "↗" : tone === "out" ? "↘" : tone === "debt" ? "⇄" : "▣"}</span>
+          <span className={`rfIcon ${tone}`} aria-hidden="true">{tone === "in" ? "↗" : tone === "out" ? "↘" : "⇄"}</span>
           <div className="rfTitle">
             <h2>
               {initial
                 ? tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")
-                : kind === "cash"
-                  ? tx(language, "Yeni kasa", "New cash account", "Qaseya nû")
-                  : `${toneLabel} ${tx(language, "ekle", "add", "zêde bike")}`}
+                : `${toneLabel} ${tx(language, "ekle", "add", "zêde bike")}`}
             </h2>
             <p>
               {initial
@@ -534,7 +471,7 @@ export function RecordModal({
                 : tx(language, "Daha önce kullanılan bilgiler alanlarda öneri olarak görünür.", "Previously used information appears as suggestions.", "Agahiyên berê hatine bikaranîn wek pêşniyar xuya dibin.")}
             </p>
           </div>
-          {!initial && kind !== "cash" && (
+          {!initial && (
             <div className="rfType" role="tablist" aria-label={tx(language, "Kayıt türü", "Record type", "Cureyê qeydê")}>
               {([["in", tx(language, "Gelir", "Income", "Dahat")], ["out", tx(language, "Gider", "Expense", "Mesref")], ["debt", tx(language, "Borç", "Debt", "Deyn")]] as const).map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={tone === id} className={`${id}${tone === id ? " on" : ""}`} onClick={() => switchType(id)}>{label}</button>
@@ -546,61 +483,19 @@ export function RecordModal({
           </button>
         </div>
         <div className="formGrid">
-          {kind !== "cash" && rfHero}
-          {sec(kind === "cash" ? tx(language, "KASA", "CASH ACCOUNT", "QASE") : tx(language, "NEREYE", "WHERE", "KU"))}
-          {kind === "cash" ? rfSource : rfKasa}
+          {rfHero}
+          {sec(tx(language, "NEREYE", "WHERE", "KU"))}
+          {rfKasa}
           {rfDate}
           {rfDebt}
           {rfSection}
-          {kind === "cash" && rfHero}
-          {sec(kind === "cash" ? tx(language, "AYRINTILAR", "DETAILS", "HÛRGULÎ") : tx(language, "NE İÇİN", "WHAT FOR", "BI ÇI"))}
-          {kind !== "cash" && rfSource}
+          {sec(tx(language, "NE İÇİN", "WHAT FOR", "BI ÇI"))}
+          {rfSource}
           {rfPerson}
           {rfUnit}
           {rfDetail}
           {rfTags}
           {rfLink}
-          {kind === "cash" && (
-          <fieldset className="wide listFieldset">
-            <legend>{tx(language, "Çalışma Alanı", "Workspace", "Qada Xebatê")}</legend>
-            <label>
-                {tx(language, "Çalışma alanı", "Workspace", "Qada xebatê")}
-                <select
-                  value={workspaceKeyOf({ sectionId, rjKasa, listKasa }, sections)}
-                  onChange={(e) => {
-                    const next = workspaceState(e.target.value, { rjKasa, listKasa });
-                    setSectionId(next.sectionId);
-                    setRjKasa(next.rjKasa);
-                    setListKasa(next.listKasa);
-                    if (next.listKasa) {
-                      setForm((f) => ({ ...f, listName: f.listName || f.source.trim() }));
-                    }
-                  }}
-                >
-                  {workspaceOptions(sections, language).map((o) => (
-                    <option key={o.key} value={o.key}>{o.label}</option>
-                  ))}
-                </select>
-                <small className="listKasaHint">{tx(language, "Her kasa mutlaka bir çalışma alanına (ya da onun bir bölümüne) bağlıdır.", "Every cash account belongs to a workspace (or one of its sections).", "Her qase girêdayî qada xebatê (an beşekî wê) ye.")}</small>
-            </label>
-            {!initial && (
-              <div className="inlineSectionRow">
-                {!inlineSectionOpen ? (
-                  <button type="button" className="light compact" onClick={() => setInlineSectionOpen(true)}>
-                    ＋ {tx(language, "Bölüm oluştur (seçili çalışma alanında)", "Create section (in selected workspace)", "Beş çêke (di qada hilbijartî de)")}
-                  </button>
-                ) : (
-                  <>
-                    <input value={inlineSectionName} autoFocus maxLength={80} placeholder={tx(language, "Bölüm adı", "Section name", "Navê beşê")} onChange={(e) => setInlineSectionName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createInlineSection(); } }} />
-                    <button type="button" className="primary compact" disabled={!inlineSectionName.trim()} onClick={createInlineSection}>{tx(language, "Oluştur", "Create", "Çêke")}</button>
-                    <button type="button" className="light compact" onClick={() => { setInlineSectionOpen(false); setInlineSectionError(""); }}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
-                  </>
-                )}
-                {inlineSectionError && <small className="kasaManageError">{inlineSectionError}</small>}
-              </div>
-            )}
-          </fieldset>
-          )}
           {sec(tx(language, "EK BİLGİ", "EXTRA", "ZÊDE"))}
           <label className="wide">
             {tx(language, "Belgeler", "Documents", "Belge")}
@@ -783,92 +678,6 @@ export function RecordModal({
             </div>
           )}
         </div>
-        {kind === "cash" && initial && (
-          <div className="cashHistory">
-            <h3>
-              {tx(language, "Kasa Hareketleri", "Cash Account History", "Tevgerên Qaseyê")}
-            </h3>
-            {(() => {
-              const linkedIncome = total(
-                records.filter(
-                  (x) => x.kind === "income" && x.cashAccount === initial.source,
-                ),
-              );
-              const linkedExpense = total(
-                records.filter(
-                  (x) => x.kind === "expense" && x.cashAccount === initial.source,
-                ),
-              );
-              const totalIn = initial.amount + linkedIncome;
-              const totalOut = linkedExpense;
-              const net = totalIn - totalOut;
-              const remainingPercent = totalIn
-                ? Math.round((net / totalIn) * 100)
-                : 0;
-              return (
-                <div className="cashHistoryStats">
-                  <div>
-                    <small>{tx(language, "Toplam Giriş", "Total In", "Giştî Têketin")}</small>
-                    <strong>{money(totalIn)}</strong>
-                  </div>
-                  <div>
-                    <small>{tx(language, "Toplam Gider", "Total Out", "Giştî Derketin")}</small>
-                    <strong className="negative">{money(totalOut)}</strong>
-                  </div>
-                  <div>
-                    <small>{tx(language, "Net Bakiye", "Net Balance", "Bakiya Paqij")}</small>
-                    <strong>{money(net)}</strong>
-                  </div>
-                  <div>
-                    <small>{tx(language, "Kalan %", "Remaining %", "% Mayî")}</small>
-                    <strong>%{remainingPercent}</strong>
-                  </div>
-                </div>
-              );
-            })()}
-            <div className="cashHistoryList">
-              {records
-                .filter((x) => x.kind !== "cash" && x.cashAccount === initial.source)
-                .sort((a, b) => b.date.localeCompare(a.date))
-                .map((x) => (
-                  <div className="cashHistoryRow" key={x.id}>
-                    <span>{date(x.date, language)}</span>
-                    <span>
-                      {x.kind === "income"
-                        ? tx(language, "Gelir", "Income", "Dahat")
-                        : tx(language, "Gider", "Expense", "Mesref")}
-                    </span>
-                    <span>{localizeData(x.source, language)}</span>
-                    <strong className={x.kind === "expense" ? "negative" : ""}>
-                      {x.kind === "income" ? "+" : "−"}
-                      {money(x.amount, x.currency)}
-                    </strong>
-                  </div>
-                ))}
-              {!records.some(
-                (x) => x.kind !== "cash" && x.cashAccount === initial.source,
-              ) && (
-                <div className="cashHistoryEmpty">
-                  {tx(
-                    language,
-                    "Bu kasaya bağlı hareket yok.",
-                    "No transactions linked to this cash account.",
-                    "Tevgerek girêdayî vê qaseyê tune.",
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {kind === "cash" && initial && (
-          <KasaTransferSection
-            language={language}
-            kasa={initial}
-            cashAccounts={cashAccounts}
-            users={users}
-            onTransfersChanged={onTransfersChanged}
-          />
-        )}
         <div className="modalActions">
           <button type="button" className="light" onClick={onClose}>
             {tx(language, "Vazgeç", "Cancel", "Betal")}
@@ -883,8 +692,6 @@ export function RecordModal({
                   "Save Changes",
                   "Guherînan Tomar Bike",
                 )
-              : kind === "cash"
-              ? tx(language, "Kasayı kaydet", "Save cash account", "Qaseyê tomar bike")
               : `${toneLabel} ${tx(language, "kaydet", "save", "tomar bike")}`}
           </button>
         </div>
@@ -904,298 +711,6 @@ export function RecordModal({
             commitSave();
           }}
         />
-      )}
-    </div>
-  );
-}
-
-// "Kasa Aktarımı": moves money from `kasa` to another kasa (existing or
-// brand new), pending until the recipient side confirms receipt — see
-// app/api/cash-transfers. Nothing here touches app/page.tsx's `records`
-// state directly; a confirm calls `onTransfersChanged` so the parent
-// refetches and every kasa's balance reflects the new ledger rows.
-export function KasaTransferSection({
-  language,
-  kasa,
-  cashAccounts,
-  users,
-  onTransfersChanged,
-}: {
-  language: Language;
-  kasa: RecordItem;
-  cashAccounts: CashAccountSummary[];
-  users: UserAccount[];
-  onTransfersChanged: () => void;
-}) {
-  const thisAccount = cashAccounts.find((a) => a.name === kasa.source);
-  const [open, setOpen] = useState(false);
-  const [transfers, setTransfers] = useState<CashTransfer[] | null>(null);
-  const [allAccounts, setAllAccounts] = useState<{ id: number; name: string }[] | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [targetId, setTargetId] = useState("");
-  const [newKasaName, setNewKasaName] = useState("");
-  const [recipientPerson, setRecipientPerson] = useState("");
-  const [recipientUserId, setRecipientUserId] = useState("");
-  const [tDate, setTDate] = useState(new Date().toISOString().slice(0, 10));
-  const [tAmount, setTAmount] = useState(0);
-  const [tCurrency, setTCurrency] = useState("USD");
-  const [tDetail, setTDetail] = useState("");
-  const [tNote, setTNote] = useState("");
-  const [sentConfirmed, setSentConfirmed] = useState(false);
-
-  async function loadTransfers() {
-    try {
-      const response = await fetch("/api/cash-transfers");
-      const data = await response.json().catch(() => ({}));
-      setTransfers(response.ok ? (data.cashTransfers ?? []) : []);
-    } catch {
-      setTransfers([]);
-    }
-  }
-
-  async function loadAllAccounts() {
-    try {
-      const response = await fetch("/api/cash-accounts/all");
-      const data = await response.json().catch(() => ({}));
-      setAllAccounts(response.ok ? (data.cashAccounts ?? []) : []);
-    } catch {
-      setAllAccounts([]);
-    }
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- veri yükleme/periyodik tazeleme; setState fetch sonucunda çalışır
-    loadTransfers();
-    loadAllAccounts();
-  }, [kasa.source]);
-
-  const outgoing = (transfers ?? []).filter((t) => t.fromCashAccountId === thisAccount?.id);
-  const incoming = (transfers ?? []).filter((t) => t.toCashAccountId === thisAccount?.id);
-  // Every kasa in the system, not just the ones this user can already see —
-  // sending money to a kasa shouldn't require having view access to it.
-  const otherAccounts = (allAccounts ?? cashAccounts).filter((a) => a.id !== thisAccount?.id);
-  const valid = Boolean(thisAccount) && tAmount > 0 && Boolean(targetId || newKasaName.trim()) && sentConfirmed;
-
-  async function submitTransfer() {
-    if (!thisAccount || !valid) return;
-    setSubmitting(true);
-    try {
-      const response = await fetch("/api/cash-transfers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fromCashAccountId: thisAccount.id,
-          ...(targetId ? { toCashAccountId: Number(targetId) } : { toCashAccountName: newKasaName.trim() }),
-          amount: tAmount,
-          currency: tCurrency,
-          date: tDate,
-          detail: tDetail,
-          note: tNote,
-          recipientPerson,
-          ...(recipientUserId ? { recipientUserId: Number(recipientUserId) } : {}),
-        }),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        notify(body.error || tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
-        return;
-      }
-      setTargetId("");
-      setNewKasaName("");
-      setRecipientPerson("");
-      setRecipientUserId("");
-      setTAmount(0);
-      setTDetail("");
-      setTNote("");
-      setSentConfirmed(false);
-      await loadTransfers();
-      // A brand-new target kasa gets a zero-balance placeholder record on
-      // creation (see POST /api/cash-transfers) — refresh so it shows up
-      // immediately instead of only after the next full reload.
-      onTransfersChanged();
-    } catch {
-      notify(tx(language, "Aktarım oluşturulamadı.", "The transfer could not be created.", "Veguhastin nehat afirandin."));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function confirmTransfer(id: number) {
-    setBusyId(id);
-    try {
-      const response = await fetch(`/api/cash-transfers/${id}/confirm`, { method: "POST" });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        notify(body.error || tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
-        return;
-      }
-      await loadTransfers();
-      onTransfersChanged();
-    } catch {
-      notify(tx(language, "Aktarım onaylanamadı.", "The transfer could not be confirmed.", "Veguhastin nehat erêkirin."));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  const statusLabel = (s: CashTransfer["status"]) =>
-    s === "pending"
-      ? tx(language, "Bekliyor", "Pending", "Li benda")
-      : s === "confirmed"
-        ? tx(language, "Onaylandı", "Confirmed", "Hat erêkirin")
-        : tx(language, "İptal", "Cancelled", "Betal");
-
-  return (
-    <div className="cashTransferSection">
-      <div className="cashTransferHead">
-        <h3>{tx(language, "Kasa Aktarımı", "Kasa Transfer", "Veguhastina Qaseyê")}</h3>
-        <button type="button" className="light" onClick={() => setOpen((o) => !o)}>
-          {open
-            ? tx(language, "Kapat", "Close", "Bigire")
-            : tx(language, "Kasa Aktar", "Transfer Kasa", "Qaseyê Veguhezîne")}
-        </button>
-      </div>
-
-      {open && thisAccount && (
-        <div className="formGrid cashTransferForm">
-          <label>
-            {tx(language, "Aktarılacak Kasa", "Target Kasa", "Qaseya Armanc")}
-            <select
-              value={targetId}
-              onChange={(e) => {
-                setTargetId(e.target.value);
-                if (e.target.value) setNewKasaName("");
-              }}
-            >
-              <option value="">
-                {tx(language, "— Seçin —", "— Select —", "— Hilbijêre —")}
-              </option>
-              {otherAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {tx(language, "Yeni Kasa Adı", "New Kasa Name", "Navê Qaseya Nû")}
-            <input
-              value={newKasaName}
-              disabled={Boolean(targetId)}
-              onChange={(e) => setNewKasaName(e.target.value)}
-              placeholder={tx(
-                language,
-                "Listede yoksa buraya yazın",
-                "Type here if not in the list above",
-                "Heke ne di lîsteyê de be li vir binivîse",
-              )}
-            />
-          </label>
-          <label>
-            {tx(language, "Aktarılacak Kişi", "Recipient", "Kesê Wergir")}
-            <input value={recipientPerson} onChange={(e) => setRecipientPerson(e.target.value)} />
-          </label>
-          <label>
-            {tx(language, "Alıcı Kullanıcı", "Recipient User", "Bikarhênerê Wergir")}
-            <select value={recipientUserId} onChange={(e) => setRecipientUserId(e.target.value)}>
-              <option value="">{tx(language, "Belirtilmedi", "Unspecified", "Nehatiye diyarkirin")}</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {tx(language, "Tarih", "Date", "Tarîx")}
-            <input type="date" value={tDate} onChange={(e) => setTDate(e.target.value)} />
-          </label>
-          <label>
-            {tx(language, "Miktar / Para Birimi", "Amount / Currency", "Meblağ / Yekeya Pere")}
-            <div className="amountCurrency">
-              <input type="number" min="0" value={tAmount} onChange={(e) => setTAmount(Number(e.target.value))} />
-              <select value={tCurrency} onChange={(e) => setTCurrency(e.target.value)}>
-                <option>USD</option>
-                <option>IQD</option>
-              <option>SYP</option>
-                <option>TRY</option>
-                <option>EUR</option>
-              </select>
-            </div>
-          </label>
-          <label>
-            {tx(language, "Detay", "Detail", "Hûragahî")}
-            <input value={tDetail} onChange={(e) => setTDetail(e.target.value)} />
-          </label>
-          <label className="wide">
-            {tx(language, "Not", "Note", "Nîşe")}
-            <textarea rows={2} value={tNote} onChange={(e) => setTNote(e.target.value)} />
-          </label>
-          <label className="wide check">
-            <input type="checkbox" checked={sentConfirmed} onChange={(e) => setSentConfirmed(e.target.checked)} />
-            <span>
-              <b>{tx(language, "Kasa aktarıldı", "Kasa has been sent", "Qase hat veguhastin")}</b>
-              <small>
-                {tx(
-                  language,
-                  "Tutar bu kasadan hemen düşülür ve hedef kasada gelir olarak görünür; karşı taraf onaylayana kadar o kayıt 'Onay Bekliyor' tonunda gösterilir.",
-                  "The amount is deducted from this kasa immediately and appears as income in the target kasa right away; that record shows an 'Awaiting Approval' tone until the other side confirms it.",
-                  "Meblağ tavilê ji vê qaseyê tê kêmkirin û di qaseya armanc de wek dahat xuya dike; heta alîyê din erê neke, ew qeyd bi rengê 'Li Benda Erêkirinê' tê nîşandan.",
-                )}
-              </small>
-            </span>
-          </label>
-          <button type="button" className="wide primary" disabled={!valid || submitting} onClick={submitTransfer}>
-            {tx(language, "Kasayı Aktar", "Transfer Kasa", "Qaseyê Veguhezîne")}
-          </button>
-        </div>
-      )}
-
-      {(outgoing.length > 0 || incoming.length > 0) && (
-        <div className="cashTransferList">
-          {outgoing.length > 0 && (
-            <div>
-              <small>{tx(language, "Gönderilen Aktarımlar", "Outgoing Transfers", "Veguhastinên Şandî")}</small>
-              {outgoing.map((t) => (
-                <div className="cashTransferRow" key={t.id}>
-                  <span>{date(t.date, language)}</span>
-                  <span>{localizeData(t.toCashAccountName, language)}</span>
-                  <span>{t.recipientPerson || t.recipientUserName || "—"}</span>
-                  <strong>{money(t.amount, t.currency)}</strong>
-                  <em className={`transferStatus transferStatus-${t.status}`}>{statusLabel(t.status)}</em>
-                </div>
-              ))}
-            </div>
-          )}
-          {incoming.length > 0 && (
-            <div>
-              <small>{tx(language, "Bu Kasaya Gelen Aktarımlar", "Incoming Transfers", "Veguhastinên Hatî")}</small>
-              {incoming.map((t) => (
-                <div className="cashTransferRow" key={t.id}>
-                  <span>{date(t.date, language)}</span>
-                  <span>{localizeData(t.fromCashAccountName, language)}</span>
-                  <span>{t.recipientPerson || t.recipientUserName || "—"}</span>
-                  <strong>{money(t.amount, t.currency)}</strong>
-                  {t.status === "pending" ? (
-                    <label className="check transferConfirm">
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        disabled={busyId === t.id}
-                        onChange={() => confirmTransfer(t.id)}
-                      />
-                      {tx(language, "Aktarılan Kasa Alındı", "Received", "Hat Wergirtin")}
-                    </label>
-                  ) : (
-                    <em className={`transferStatus transferStatus-${t.status}`}>{statusLabel(t.status)}</em>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       )}
     </div>
   );

@@ -5,7 +5,13 @@ import { Title } from "./shared";
 import { TableTools } from "./TableTools";
 import { tx, localizeData, kindName } from "../lib/i18n";
 import { date, money } from "../lib/finance";
-import type { ArchivedCommentThread, ArchiveItem, FinanceNote, Language, PreparedReport } from "../lib/types";
+import type { ArchivedCommentThread, ArchiveItem, CashAccountSummary, FinanceNote, Language, PreparedReport } from "../lib/types";
+
+// Arşiv görüntüsünün kasası. 0050 öncesinden kalan eski "kasa kaydı" görüntülerinde (kind "cash") kasa adı
+// kaydın kaynağıdır (`source`); bugünkü gelir/gider görüntülerinde `cashAccount`.
+const LEGACY_KASA_KIND = "cash";
+const isLegacyKasaSnapshot = (x: ArchiveItem) => x.old.kind === LEGACY_KASA_KIND;
+const archivedKasaName = (x: ArchiveItem) => (isLegacyKasaSnapshot(x) ? x.old.source : x.old.cashAccount) || "";
 
 // Silinenler/Düzenlenenler alt-başlıklarının ikisi de aynı kolonları
 // kullanıyor — tek yerden render edip iki kez çağırıyoruz.
@@ -44,7 +50,7 @@ function ArchiveRecordsTable({ language, rows }: { language: Language; rows: Arc
               <td>
                 <b>{localizeData(x.old.source, language)}</b>
               </td>
-              <td>{localizeData(x.old.kind === "cash" ? x.old.source : x.old.project, language)}</td>
+              <td>{localizeData(isLegacyKasaSnapshot(x) ? x.old.source : x.old.project, language)}</td>
               <td className="amount">{money(x.old.amount)}</td>
               <td>{localizeData(x.user, language)}</td>
               <td>{x.action === "Silindi" ? x.reason || "—" : ""}</td>
@@ -101,12 +107,14 @@ function Filter({
 export function Archive({
   language,
   rows,
+  cashAccounts = [],
   notes,
   preparedReports,
   onUnarchiveNote,
 }: {
   language: Language;
   rows: ArchiveItem[];
+  cashAccounts?: CashAccountSummary[];
   notes: FinanceNote[];
   preparedReports: PreparedReport[];
   onUnarchiveNote?: (id: number) => void;
@@ -129,16 +137,13 @@ export function Archive({
     [kind, setKind] = useState("Tümü");
   const years = [...new Set(rows.map((x) => x.old.date.slice(0, 4)))],
     units = [...new Set(rows.map((x) => x.old.project).filter(Boolean))],
-    cashes = [
-      ...new Set(
-        rows.filter((x) => x.old.kind === "cash").map((x) => x.old.source),
-      ),
-    ];
+    // Kasa süzgeci: bugünkü kasalar + arşiv görüntülerinde adı geçen kasalar (silinmiş/eski adlı kasalar dahil).
+    cashes = [...new Set([...cashAccounts.map((a) => a.name), ...rows.map(archivedKasaName)].filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const filtered = rows.filter(
     (x) =>
       (year === "Tümü" || x.old.date.startsWith(year)) &&
       (unit === "Tümü" || x.old.project === unit) &&
-      (cash === "Tümü" || x.old.source === cash) &&
+      (cash === "Tümü" || archivedKasaName(x) === cash) &&
       (kind === "Tümü" || x.old.kind === kind),
   );
   // Silinenler/Düzenlenenler kendi başlıkları altında ayrı ayrı, varsayılan
@@ -206,7 +211,7 @@ export function Archive({
           label={tx(language, "Bölüm", "Section", "Beş")}
           value={kind}
           set={setKind}
-          options={["income", "expense", "cash"]}
+          options={rows.some(isLegacyKasaSnapshot) ? ["income", "expense", LEGACY_KASA_KIND] : ["income", "expense"]}
           names={{
             income: tx(language, "Gelir", "Income", "Dahat"),
             expense: tx(language, "Gider", "Expense", "Mesref"),

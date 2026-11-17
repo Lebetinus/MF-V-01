@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { archive, financeNotes, preparedReports, records, settings } from "../../../../db/schema";
+import { archive, cashAccounts, financeNotes, preparedReports, records, settings } from "../../../../db/schema";
 import { requireSuperAdmin } from "../../_lib/auth";
 import { requireCurrentPassword } from "../../_lib/confirm-password";
 import { json, withErrorHandling } from "../../_lib/http";
-import { databaseImportSchema, parseBody } from "../../_lib/validate";
+import { convertLegacyKasaItem, databaseImportSchema, parseBody } from "../../_lib/validate";
+import { createCashAccount } from "../../_lib/records";
 import { dedupePeople } from "../../_lib/notes";
 
 const SETTINGS_ID = 1;
@@ -34,8 +35,19 @@ export const POST = withErrorHandling(async (request: Request) => {
     await tx.delete(preparedReports);
 
     if (payload.records.length) {
+      // Eski biçimdeki "kasa kaydı" satırları kaynak adındaki kasaya Gelir
+      // (eksi tutarlıysa Gider) olarak girer. Eskiden kasayı o satır var
+      // ediyordu; şimdi kasa (cash_accounts) yoksa açılır. Kayıtlar adı
+      // tutan kasaya bağlanır.
+      const items = payload.records.map(convertLegacyKasaItem);
+      const kasaIdByName = new Map((await tx.select({ id: cashAccounts.id, name: cashAccounts.name }).from(cashAccounts)).map((k) => [k.name, k.id]));
+      for (const name of new Set(items.filter((r) => r.legacyKasa && r.cashAccount).map((r) => r.cashAccount))) {
+        if (kasaIdByName.has(name)) continue;
+        const created = await createCashAccount(tx, { name, ownerUserId: session.user.id });
+        kasaIdByName.set(name, created.id);
+      }
       await tx.insert(records).values(
-        payload.records.map((r) => ({
+        items.map((r) => ({
           kind: r.kind,
           date: r.date,
           source: r.source,
@@ -48,6 +60,7 @@ export const POST = withErrorHandling(async (request: Request) => {
           tags: r.tags,
           link: r.link,
           cashAccount: r.cashAccount,
+          cashAccountId: kasaIdByName.get(r.cashAccount) ?? null,
           listName: r.listName,
         })),
       );

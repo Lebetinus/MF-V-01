@@ -3,10 +3,13 @@ import type { DbClient } from "../../../db";
 import { archive, cashTransfers, records } from "../../../db/schema";
 
 // A kasa transfer writes two ledger rows that must live and die together:
-// a negative "cash" row on the sender's kasa (fromRecordId) and a positive
-// "income" row on the receiver's kasa (toRecordId). Deleting only one of
-// them used to make money appear or vanish; these helpers keep the pair
-// consistent.
+// an "expense" row on the sender's kasa (fromRecordId) and an "income" row
+// on the receiver's kasa (toRecordId), both for the same positive amount
+// and both titled "Kasa Aktarımı". (Before migration 0050 the sender leg was
+// a negative kasa-record row; the migration turned those into the same
+// positive expense rows, so the balance effect is unchanged.) Deleting only
+// one of them used to make money appear or vanish; these helpers keep the
+// pair consistent.
 
 export type TransferRow = typeof cashTransfers.$inferSelect;
 

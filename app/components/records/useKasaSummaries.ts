@@ -4,12 +4,12 @@ import { useCallback, useMemo } from "react";
 import { isDebtLeg } from "../../lib/debts";
 import { tx } from "../../lib/i18n";
 import { combineByCurrency, total } from "../../lib/finance";
-import type { CashAccountSummary, KasaSection, Kind, Language, RecordItem } from "../../lib/types";
+import type { CashAccountSummary, KasaSection, Kind, Language, RecordItem, RecordsView } from "../../lib/types";
 
-// Kasalar sayfasındaki kasa kartı verisi (kasa kaydı + bağlı gelir/gider).
+// Kasa kartı ("kasa") ya da Gelir/Gider sayfasındaki başlık kutusu (kayıt türü).
 export type CardGroup = {
   name: string;
-  kind: Kind;
+  kind: Kind | "kasa";
   count: number;
   totalInByCurrency: Record<string, number>;
   totalOutByCurrency: Record<string, number>;
@@ -18,6 +18,8 @@ export type CardGroup = {
 
 // Kasalar/Gelir/Gider sayfalarındaki kasa kartları, çalışma alanları ve toplam kutuları için türetilmiş veriler.
 // Yalnız prop'lardan hesaplanır (Records'un seçim durumuna bağlı değildir).
+// Kasa Kontrol Merkezi'nde (view "cash") kasalar cash_accounts satırlarıdır; her kasanın bakiyesi o kasadaki
+// gelir − gider kayıtlarıdır (kasa aktarımı ve borç tarafları dahil). Ayrı bir "kasa kaydı" türü yoktur.
 export function useKasaSummaries({
   records,
   allRecords,
@@ -29,130 +31,97 @@ export function useKasaSummaries({
 }: {
   records: RecordItem[];
   allRecords: RecordItem[];
-  kind: Kind;
+  kind: RecordsView;
   cashAccounts: CashAccountSummary[];
   sections: KasaSection[];
   language: Language;
   workspaceOrder: string[];
 }) {
-  // "Liste Kasası" işaretli kasalar (Listeler ile ilişkili): üstteki kasa kartlarında değil, yalnızca "Tüm Liste Kasaları"
-  // bölümünde görünür; kasanın kendi kayıtları listeli kayıt sayılır.
+  const kasaPage = kind === "cash";
+  // "Liste Kasası" işaretli kasalar (Listeler ile ilişkili).
   // Kasa adı kümeleri yalnız kasalar/bölümler değişince yeniden kurulur; aşağıdaki useMemo'lar bunlara bağlıdır.
   const kasaListNames = useMemo(() => new Set(cashAccounts.filter((a) => a.isListWorkspace).map((a) => a.name)), [cashAccounts]);
-  // "RJ-Kasaları": üstteki kasa kartlarında değil, kendi renkli bölümlerinde görünür (Liste Kasaları gibi ayrı tutulur).
+  // "RJ-Kasaları": kendi renkli bölümlerinde görünür (Liste Kasaları gibi ayrı tutulur).
   const kasaRjNames = useMemo(() => new Set(cashAccounts.filter((a) => a.isRjKasa).map((a) => a.name)), [cashAccounts]);
   const cashSections = useMemo(() => sections.filter((x) => x.scope === "cash"), [sections]);
   const kasaSectionNames = useMemo(
     () => new Set(cashAccounts.filter((a) => a.sectionId != null && cashSections.some((x) => x.id === a.sectionId)).map((a) => a.name)),
     [cashAccounts, cashSections],
   );
-  const listOf = useCallback((x: RecordItem) => x.listName || (x.kind === "cash" && kasaListNames.has(x.source) ? x.source : ""), [kasaListNames]);
+  const listOf = useCallback((x: RecordItem) => x.listName || "", []);
   const isListLinked = useCallback((x: RecordItem) => !!x.listName || kasaListNames.has(x.cashAccount), [kasaListNames]);
-  // Liste ile ilişkilendirilen kayıtlar üst (ana) satırda kendi kartını
-  // oluşturmaz — sadece aşağıdaki sarı "Tüm Liste ..." satırında görünür
-  // (bkz. listGroups). Bir kasaya bağlı gelir/gider (linkedIncomeRows/
-  // linkedExpenseRows) bu kuralın dışında tutulur: o para gerçekten o
-  // kasaya girip çıktığı için, liste etiketli olsa bile kasanın üstteki
-  // gerçek bakiyesinden düşülmemesi/eklenmemesi yanlış olur.
+  // Kasaya bağlı gelir/gider kayıtları (Kasa Kontrol Merkezi'nin tüm rakamları bunlardan çıkar).
+  const kasaIncome = useMemo(() => allRecords.filter((x) => x.kind === "income" && x.cashAccount), [allRecords]);
+  const kasaExpense = useMemo(() => allRecords.filter((x) => x.kind === "expense" && x.cashAccount), [allRecords]);
+  // Gelir/Gider sayfalarındaki başlık kutuları (ana başlığa göre). Liste ile ilişkilendirilen kayıtlar ve Excel
+  // aktarımıyla gelen kayıtlar (yüzlerce kalem başlığı olabilir) kendi kutusunu oluşturmaz; kasa kutusunda toplanır.
+  // Kasanın kendi adıyla açılan başlıklar ayrı kasa kutusunda zaten toplandığı için tekrar edilmez.
   const groups = useMemo(
     () =>
-      // Gelir sayfasında kasanın kendi adıyla açılan kayıt kutuları (ör. "Ana -Kasa") ayrı kasa kutusunda (ör. "Ana -Kasa Gelirleri")
-      // zaten toplandığı için burada tekrar edilmez.
-      // Excel aktarımıyla gelen kayıtlar (yüzlerce ürün/kalem başlığı olabilir) tek tek kutu oluşturmaz; kasa kutusunda toplanır.
-      [...new Set(records.filter((x) => !listOf(x) && !(kind !== "cash" && x.importBatch) && !(kind === "cash" && (kasaRjNames.has(x.source) || kasaSectionNames.has(x.source)))).map((x) => x.source))]
-        .filter((name) => !(kind !== "cash" && cashAccounts.some((a) => a.name === name)))
-        .map((name) => {
-        const directRows = records.filter((x) => x.source === name && !listOf(x) && !(kind !== "cash" && x.importBatch));
-        const linkedIncomeRows =
-          kind === "cash"
-            ? allRecords.filter((x) => x.kind === "income" && x.cashAccount === name)
-            : [];
-        const linkedExpenseRows =
-          kind === "cash"
-            ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount === name)
-            : [];
-        const directAmount = total(directRows);
-        const linkedIncome = total(linkedIncomeRows);
-        const linkedExpense = total(linkedExpenseRows);
-        return {
-          name,
-          kind: records.find((x) => x.source === name)?.kind ?? kind,
-          kasas: [...new Set(directRows.map((r) => r.cashAccount).filter(Boolean))],
-          count: directRows.length + linkedIncomeRows.length + linkedExpenseRows.length,
-          totalIn: directAmount + linkedIncome,
-          totalOut: linkedExpense,
-          total: directAmount + linkedIncome - linkedExpense,
-          totalInByCurrency: combineByCurrency([{ rows: directRows }, { rows: linkedIncomeRows }]),
-          totalOutByCurrency: combineByCurrency([{ rows: linkedExpenseRows }]),
-          totalByCurrency: combineByCurrency([
-            { rows: directRows },
-            { rows: linkedIncomeRows },
-            { rows: linkedExpenseRows, sign: -1 },
-          ]),
-        };
-      }),
-    [records, allRecords, kind, cashAccounts, kasaRjNames, kasaSectionNames, listOf],
+      kasaPage
+        ? []
+        : [...new Set(records.filter((x) => !listOf(x) && !x.importBatch).map((x) => x.source))]
+            .filter((name) => !cashAccounts.some((a) => a.name === name))
+            .map((name) => {
+              const directRows = records.filter((x) => x.source === name && !listOf(x) && !x.importBatch);
+              const by = combineByCurrency([{ rows: directRows }]);
+              return {
+                name,
+                kind: kind as Kind,
+                kasas: [...new Set(directRows.map((r) => r.cashAccount).filter(Boolean))],
+                count: directRows.length,
+                totalIn: total(directRows),
+                totalOut: 0,
+                total: total(directRows),
+                totalInByCurrency: by,
+                totalOutByCurrency: {},
+                totalByCurrency: by,
+              };
+            }),
+    [records, kind, kasaPage, cashAccounts, listOf],
   );
   // Overall pill total, computed per currency directly from the record
   // arrays (not by summing groups' already-blended totals) so mixed
   // currencies show as separate amounts instead of one wrong number.
-  // "Tüm Kasalar" toplamı: Listeler ile ilişkili (Liste Kasası) kasalar burada değil, "Tüm Liste Kasaları"nda sayılır.
+  // Kasa Kontrol Merkezi'nde "Tüm Kasalar" = tüm kasaların bakiyesi (gelir − gider).
   const overallByCurrency = useMemo(
-    () =>
-      combineByCurrency([
-        { rows: records },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount) : [] },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount) : [], sign: -1 },
-      ]),
-    [records, allRecords, kind],
+    () => (kasaPage ? combineByCurrency([{ rows: kasaIncome }, { rows: kasaExpense, sign: -1 }]) : combineByCurrency([{ rows: records }])),
+    [records, kasaPage, kasaIncome, kasaExpense],
   );
   const listedRecords = useMemo(() => records.filter((x) => listOf(x)), [records, listOf]);
   const listGroups = useMemo(
     () =>
-      [...new Set(records.map((x) => listOf(x)).filter(Boolean))].map(
-        (name) => {
-          const directRows = records.filter((x) => listOf(x) === name);
-          const linkedIncomeRows =
-            kind === "cash"
-              ? allRecords.filter((x) => x.kind === "income" && (x.listName === name || (kasaListNames.has(name) && x.cashAccount === name)))
-              : [];
-          const linkedExpenseRows =
-            kind === "cash"
-              ? allRecords.filter((x) => x.kind === "expense" && (x.listName === name || (kasaListNames.has(name) && x.cashAccount === name)))
-              : [];
-          const directAmount = total(directRows);
-          const linkedIncome = total(linkedIncomeRows);
-          const linkedExpense = total(linkedExpenseRows);
-          return {
-            name,
-            count: records.filter((x) => listOf(x) === name).length,
-            totalIn: directAmount + linkedIncome,
-            totalOut: linkedExpense,
-            total: directAmount + linkedIncome - linkedExpense,
-            totalInByCurrency: combineByCurrency([{ rows: directRows }, { rows: linkedIncomeRows }]),
-            totalOutByCurrency: combineByCurrency([{ rows: linkedExpenseRows }]),
-            totalByCurrency: combineByCurrency([
-              { rows: directRows },
-              { rows: linkedIncomeRows },
-              { rows: linkedExpenseRows, sign: -1 },
-            ]),
-          };
-        },
-      ),
-    [records, allRecords, kind, kasaListNames, listOf],
+      [...new Set(records.map((x) => listOf(x)).filter(Boolean))].map((name) => {
+        const rows = records.filter((x) => listOf(x) === name);
+        const inc = rows.filter((x) => x.kind === "income");
+        const exp = rows.filter((x) => x.kind === "expense");
+        return {
+          name,
+          count: rows.length,
+          totalIn: total(inc),
+          totalOut: total(exp),
+          total: total(inc) - total(exp),
+          totalInByCurrency: combineByCurrency([{ rows: inc }]),
+          totalOutByCurrency: combineByCurrency([{ rows: exp }]),
+          totalByCurrency: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]),
+        };
+      }),
+    [records, listOf],
   );
   // Kasa kutusu satırı (eskiden ayrı bir kasaBoxes hesabı vardı; yalnız türü kullanılıyordu).
   type KasaBox = { name: string; count: number; totalByCurrency: ReturnType<typeof combineByCurrency>; amount: number };
-  // "Tüm Kasalar" / "Tüm Liste Kasaları" kutuları da tek tek kasa kartları gibi gelir ↗ ve gider ↘ satırını gösterir.
-  const overallInOut = useMemo(() => {
-    const incomeRows = kind === "cash" ? allRecords.filter((x) => x.kind === "income" && x.cashAccount) : [];
-    const expenseRows = kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && x.cashAccount) : [];
-    return { inBy: combineByCurrency([{ rows: records }, { rows: incomeRows.filter((x) => !isDebtLeg(x)) }]), outBy: combineByCurrency([{ rows: expenseRows.filter((x) => !isDebtLeg(x)) }]) };
-  }, [records, allRecords, kind]);
+  // "Tüm Kasalar" kutusu da tek tek kasa kartları gibi kasaya giren ↗ ve çıkan ↘ parayı gösterir (borç tarafları hariç).
+  const overallInOut = useMemo(
+    () =>
+      kasaPage
+        ? { inBy: combineByCurrency([{ rows: kasaIncome.filter((x) => !isDebtLeg(x)) }]), outBy: combineByCurrency([{ rows: kasaExpense.filter((x) => !isDebtLeg(x)) }]) }
+        : { inBy: combineByCurrency([{ rows: records }]), outBy: {} as Record<string, number> },
+    [records, kasaPage, kasaIncome, kasaExpense],
+  );
   // Gelir/Gider sayfalarında liste kayıtları, genel yönteme uygun olarak liste adına göre değil bağlı oldukları (Liste)
   // kasaya göre kutulanır: "DL-2026 Giderleri" gibi; kutuda o kasanın listeleri etiket olarak görünür.
   const listKasaBoxes = useMemo(() => {
-    if (kind === "cash") return [];
+    if (kasaPage) return [];
     const byKasa = new Map<string, RecordItem[]>();
     for (const x of records) {
       if (!(listOf(x) || isListLinked(x))) continue;
@@ -169,14 +138,19 @@ export function useKasaSummaries({
       }))
       .filter((b) => Math.abs(b.amount) > 0.004)
       .sort((a, b) => b.amount - a.amount);
-  }, [records, kind, isListLinked, listOf]);
-  // Çalışma alanları (Kasalar sayfası): Genel Kasalar, Liste Kasaları, RJ-Kasaları ve Ayarlar > Çalışma Alanları'ndan oluşturulanlar.
-  // Her kasa yalnızca bir alanda görünür: önce seçili çalışma alanı, yoksa Liste Kasası / RJ-Kasası işareti, yoksa Genel Kasalar.
+  }, [records, kasaPage, isListLinked, listOf]);
+  // Çalışma alanları (Kasa Kontrol Merkezi): Diğer, Liste Kasaları, RJ-Kasaları ve Ayarlar > Çalışma Alanları'ndan oluşturulanlar.
+  // Her kasa yalnızca bir alanda görünür: önce seçili çalışma alanı, yoksa Liste Kasası / RJ-Kasası işareti, yoksa Diğer.
+  // Kasalar cash_accounts satırlarıdır (+ kaydında adı geçen ama listede olmayan kasa adları, bakiyesi kaybolmasın).
   const cashWorkspaces = useMemo(() => {
-    if (kind !== "cash") return [];
-    const names = [...new Set([...cashAccounts.map((a) => a.name), ...records.map((x) => x.source)].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (!kasaPage) return [];
+    const names = [...new Set([...cashAccounts.map((a) => a.name), ...kasaIncome.map((x) => x.cashAccount), ...kasaExpense.map((x) => x.cashAccount)].filter(Boolean))].sort((a, b) => a.localeCompare(b));
     const accountOf = new Map(cashAccounts.map((a) => [a.name, a]));
-    type Card = CardGroup & { direct: RecordItem[]; inc: RecordItem[]; exp: RecordItem[] };
+    const incOf = new Map<string, RecordItem[]>();
+    const expOf = new Map<string, RecordItem[]>();
+    for (const x of kasaIncome) incOf.set(x.cashAccount, [...(incOf.get(x.cashAccount) ?? []), x]);
+    for (const x of kasaExpense) expOf.set(x.cashAccount, [...(expOf.get(x.cashAccount) ?? []), x]);
+    type Card = CardGroup & { inc: RecordItem[]; exp: RecordItem[] };
     type Ws = { key: string; name: string; color: string; kasas: Card[]; parentKey?: string | null };
     const buckets: Ws[] = [
       { key: "genel", name: tx(language, "Diğer", "Other", "Yên din"), color: "#315fe8", kasas: [] },
@@ -185,17 +159,15 @@ export function useKasaSummaries({
       ...cashSections.map((section) => ({ key: `sec-${section.id}`, name: section.name, color: section.color, parentKey: section.parentKey ?? null, kasas: [] as Card[] })),
     ];
     for (const name of names) {
-      const direct = records.filter((x) => x.source === name);
-      const inc = allRecords.filter((x) => x.kind === "income" && x.cashAccount === name);
-      const exp = allRecords.filter((x) => x.kind === "expense" && x.cashAccount === name);
+      const inc = incOf.get(name) ?? [];
+      const exp = expOf.get(name) ?? [];
       const card: Card = {
         name,
-        kind: "cash",
-        count: direct.length + inc.length + exp.length,
-        totalInByCurrency: combineByCurrency([{ rows: direct }, { rows: inc.filter((x) => !isDebtLeg(x)) }]),
+        kind: "kasa",
+        count: inc.length + exp.length,
+        totalInByCurrency: combineByCurrency([{ rows: inc.filter((x) => !isDebtLeg(x)) }]),
         totalOutByCurrency: combineByCurrency([{ rows: exp.filter((x) => !isDebtLeg(x)) }]),
-        totalByCurrency: combineByCurrency([{ rows: direct }, { rows: inc }, { rows: exp, sign: -1 }]),
-        direct,
+        totalByCurrency: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]),
         inc,
         exp,
       };
@@ -210,16 +182,12 @@ export function useKasaSummaries({
     for (const b of buckets) b.kasas.sort((a, c) => (orderOf(a.name) || 1e9) - (orderOf(c.name) || 1e9));
     // Bölümler: başka bir çalışma alanının içine taşınan alanlar ana listede ayrı kutu olmaz; üst alanın içinde "bölüm" olarak görünür
     // ve toplamları üst alana dahil edilir.
-    const calc = (kasas: Card[]) => {
-      const parts = kasas.flatMap((k) => [{ rows: k.direct }, { rows: k.inc }]);
-      const opParts = kasas.flatMap((k) => [{ rows: k.direct }, { rows: k.inc.filter((x) => !isDebtLeg(x)) }]);
-      return {
-        count: kasas.reduce((a, k) => a + k.count, 0),
-        inBy: combineByCurrency(opParts),
-        outBy: combineByCurrency(kasas.map((k) => ({ rows: k.exp.filter((x) => !isDebtLeg(x)) }))),
-        totalBy: combineByCurrency([...parts, ...kasas.map((k) => ({ rows: k.exp, sign: -1 }))]),
-      };
-    };
+    const calc = (kasas: Card[]) => ({
+      count: kasas.reduce((a, k) => a + k.count, 0),
+      inBy: combineByCurrency(kasas.map((k) => ({ rows: k.inc.filter((x) => !isDebtLeg(x)) }))),
+      outBy: combineByCurrency(kasas.map((k) => ({ rows: k.exp.filter((x) => !isDebtLeg(x)) }))),
+      totalBy: combineByCurrency([...kasas.map((k) => ({ rows: k.inc })), ...kasas.map((k) => ({ rows: k.exp, sign: -1 }))]),
+    });
     const known = new Set(buckets.map((b) => b.key));
     const isChild = (b: Ws) => Boolean(b.parentKey) && known.has(b.parentKey as string);
     return buckets
@@ -237,11 +205,11 @@ export function useKasaSummaries({
         const allKasas = [...b.kasas, ...subs.flatMap((s) => s.kasas)];
         return { ...b, subs, allKasas, ...calc(allKasas) };
       });
-  }, [records, allRecords, kind, cashAccounts, sections, cashSections, language, workspaceOrder]);
+  }, [kasaPage, kasaIncome, kasaExpense, cashAccounts, sections, cashSections, language, workspaceOrder]);
   // Gelir/Gider sayfaları: kasa kutuları çalışma alanlarına göre gruplanır; üstte yalnızca alan kutuları görünür (ekran şişmesin),
   // bir alana basınca o alanın kasaları altta açılır. Bu sayfadaki türde (gelir/gider) kaydı olmayan alanlar gösterilmez.
   const ieWorkspaces = useMemo(() => {
-    if (kind === "cash") return [];
+    if (kasaPage) return [];
     const accountOf = new Map(cashAccounts.map((a) => [a.name, a]));
     const buckets = [
       { key: "genel", name: tx(language, "Diğer", "Other", "Yên din"), color: "#315fe8", kasas: [] as KasaBox[] },
@@ -264,11 +232,11 @@ export function useKasaSummaries({
         const rows = b.kasas.flatMap((k) => rowsByKasa.get(k.name) ?? []);
         return { ...b, kasas: [...b.kasas].sort((a, c) => c.amount - a.amount), count: rows.length, totalByCurrency: combineByCurrency([{ rows }]) };
       });
-  }, [records, kind, cashAccounts, cashSections, language]);
+  }, [records, kasaPage, cashAccounts, cashSections, language]);
   // Gelir/Gider bölüm kutuları: her bölüm için bir kutu (o bölümdeki kayıtların toplamı).
   const sectionBoxes = useMemo(
     () =>
-      kind === "cash"
+      kasaPage
         ? []
         : sections
             .filter((x) => x.scope === kind)
@@ -276,21 +244,22 @@ export function useKasaSummaries({
               const rows = records.filter((x) => x.sectionId === section.id);
               return { section, count: rows.length, totalByCurrency: combineByCurrency([{ rows }]) };
             }),
-    [records, kind, sections],
+    [records, kind, kasaPage, sections],
   );
-  const overallListInOut = useMemo(() => {
-    const incomeRows = kind === "cash" ? allRecords.filter((x) => x.kind === "income" && isListLinked(x)) : [];
-    const expenseRows = kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && isListLinked(x)) : [];
-    return { inBy: combineByCurrency([{ rows: listedRecords }, { rows: incomeRows }]), outBy: combineByCurrency([{ rows: expenseRows }]) };
-  }, [listedRecords, allRecords, kind, isListLinked]);
+  // Kapatılmış "Tüm Liste …" satırının toplamları (Kasa Kontrol Merkezi'nde gelir − gider, Gelir/Gider sayfalarında o türün toplamı).
+  const overallListInOut = useMemo(
+    () => ({
+      inBy: combineByCurrency([{ rows: listedRecords.filter((x) => x.kind === "income") }]),
+      outBy: combineByCurrency([{ rows: listedRecords.filter((x) => x.kind === "expense") }]),
+    }),
+    [listedRecords],
+  );
   const overallListByCurrency = useMemo(
     () =>
-      combineByCurrency([
-        { rows: listedRecords },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "income" && isListLinked(x)) : [] },
-        { rows: kind === "cash" ? allRecords.filter((x) => x.kind === "expense" && isListLinked(x)) : [], sign: -1 },
-      ]),
-    [listedRecords, allRecords, kind, isListLinked],
+      kasaPage
+        ? combineByCurrency([{ rows: listedRecords.filter((x) => x.kind === "income") }, { rows: listedRecords.filter((x) => x.kind === "expense"), sign: -1 }])
+        : combineByCurrency([{ rows: listedRecords }]),
+    [listedRecords, kasaPage],
   );
 
   return {

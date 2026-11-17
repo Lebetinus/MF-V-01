@@ -139,6 +139,194 @@ export function KasaEditModal({
   );
 }
 
+// "Yeni Kasa": kasa kendi başına açılır (POST /api/cash-accounts) — ad,
+// çalışma alanı (seçili alanın içinde hızlıca yeni bölüm de açılabilir) ve
+// isteğe bağlı açılış bakiyesi. Açılış bakiyesi kasaya "Açılış bakiyesi"
+// başlıklı bir Gelir kaydı olarak yazılır.
+export function NewKasaModal({
+  language,
+  sections,
+  initialWorkspaceKey,
+  onSectionsChanged,
+  onClose,
+  onDone,
+}: {
+  language: Language;
+  sections: KasaSection[];
+  initialWorkspaceKey?: string;
+  onSectionsChanged?: () => void;
+  onClose: () => void;
+  onDone: (name: string) => void;
+}) {
+  const options = workspaceOptions(sections, language);
+  const [name, setName] = useState("");
+  const [wsKey, setWsKey] = useState(() => (initialWorkspaceKey && options.some((o) => o.key === initialWorkspaceKey) ? initialWorkspaceKey : "genel"));
+  const [amount, setAmount] = useState(0);
+  const [currency, setCurrency] = useState("USD");
+  const [openingDate, setOpeningDate] = useState(new Date().toISOString().slice(0, 10));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [sectionOpen, setSectionOpen] = useState(false);
+  const [sectionName, setSectionName] = useState("");
+  const [sectionError, setSectionError] = useState("");
+
+  // Seçili çalışma alanının içinde yeni bölüm (bölümün içine bölüm olmaz: seçili bir bölümse onun üst alanı kullanılır).
+  async function createSection() {
+    const trimmed = sectionName.trim();
+    if (!trimmed) return;
+    const selected = wsKey.startsWith("sec-") ? sections.find((x) => `sec-${x.id}` === wsKey) : undefined;
+    const parentKey = selected?.parentKey ?? wsKey;
+    try {
+      const response = await fetch("/api/sections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "cash", name: trimmed, color: "#7b52bf", parentKey }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setSectionError(
+          response.status === 403
+            ? tx(language, "Bölümü yalnızca yönetici oluşturabilir.", "Only an administrator can create a section.", "Beşê tenê rêvebir dikare çêke.")
+            : response.status === 409
+              ? tx(language, "Bu adla bir bölüm zaten var.", "A section with this name already exists.", "Beşa bi vî navî heye.")
+              : body.error || tx(language, "Bölüm oluşturulamadı.", "The section could not be created.", "Beş nehat çêkirin."),
+        );
+        return;
+      }
+      setWsKey(`sec-${body.section.id}`);
+      setSectionOpen(false);
+      setSectionName("");
+      setSectionError("");
+      onSectionsChanged?.();
+    } catch {
+      setSectionError(tx(language, "Bölüm oluşturulamadı.", "The section could not be created.", "Beş nehat çêkirin."));
+    }
+  }
+
+  async function save() {
+    const trimmed = name.trim();
+    if (!trimmed || busy) return;
+    setBusy(true);
+    setError("");
+    const ws = workspaceState(wsKey, { rjKasa: false, listKasa: false });
+    try {
+      const response = await fetch("/api/cash-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          sectionId: ws.sectionId,
+          listKasa: ws.listKasa,
+          rjKasa: ws.rjKasa,
+          openingAmount: amount > 0 ? amount : 0,
+          currency,
+          date: openingDate,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(
+          response.status === 409
+            ? tx(language, "Bu isimde bir kasa zaten var.", "A cash account with this name already exists.", "Qaseyek bi vî navî heye.")
+            : response.status === 403 && (!body.error || body.error === "Forbidden")
+              ? tx(language, "Kasa açma yetkiniz yok.", "You are not allowed to create a cash account.", "Destûra te ya vekirina qaseyê tune.")
+              : body.error || tx(language, "Kasa oluşturulamadı.", "The cash account could not be created.", "Qase nehat çêkirin."),
+        );
+        return;
+      }
+      onDone(trimmed);
+      onClose();
+    } catch {
+      setError(tx(language, "Kasa oluşturulamadı.", "The cash account could not be created.", "Qase nehat çêkirin."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="overlay">
+      <form
+        className="modal kasaManageModal newKasaModal"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          save();
+        }}
+      >
+        <div className="modalHead">
+          <div>
+            <h2>{tx(language, "Yeni Kasa", "New Cash Account", "Qaseya Nû")}</h2>
+            <p>{tx(language, "Kasa açılır; gelir ve giderler sonra bu kasaya eklenir.", "Opens the cash account; income and expenses are added to it afterwards.", "Qase tê vekirin; dahat û mesref paşê lê tên zêdekirin.")}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label={tx(language, "Kapat", "Close", "Bigire")}>×</button>
+        </div>
+        <div className="kasaManageBody">
+          <label>
+            {tx(language, "Kasa adı", "Cash account name", "Navê qaseyê")}
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoFocus required />
+          </label>
+          <label>
+            {tx(language, "Çalışma alanı", "Workspace", "Qada xebatê")}
+            <select value={wsKey} onChange={(e) => setWsKey(e.target.value)}>
+              {options.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+          <small className="kasaManageHint">{tx(language, "Her kasa mutlaka bir çalışma alanına (ya da onun bir bölümüne) bağlıdır.", "Every cash account belongs to a workspace (or one of its sections).", "Her qase girêdayî qada xebatê (an beşekî wê) ye.")}</small>
+          <div className="inlineSectionRow">
+            {!sectionOpen ? (
+              <button type="button" className="light compact" onClick={() => setSectionOpen(true)}>
+                ＋ {tx(language, "Bölüm oluştur (seçili çalışma alanında)", "Create section (in selected workspace)", "Beş çêke (di qada hilbijartî de)")}
+              </button>
+            ) : (
+              <>
+                <input
+                  value={sectionName}
+                  autoFocus
+                  maxLength={80}
+                  placeholder={tx(language, "Bölüm adı", "Section name", "Navê beşê")}
+                  onChange={(e) => setSectionName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      createSection();
+                    }
+                  }}
+                />
+                <button type="button" className="primary compact" disabled={!sectionName.trim()} onClick={createSection}>{tx(language, "Oluştur", "Create", "Çêke")}</button>
+                <button type="button" className="light compact" onClick={() => { setSectionOpen(false); setSectionError(""); }}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
+              </>
+            )}
+            {sectionError && <small className="kasaManageError">{sectionError}</small>}
+          </div>
+          <label>
+            {tx(language, "Açılış bakiyesi (isteğe bağlı)", "Opening balance (optional)", "Bakiya destpêkê (bijarte)")}
+            <span className="newKasaAmount">
+              <input type="number" min="0" step="any" inputMode="decimal" placeholder="0,00" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} aria-label={tx(language, "Para birimi", "Currency", "Yekeya Pere")}>
+                {["USD", "EUR", "IQD", "SYP", "TRY"].map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </span>
+          </label>
+          {amount > 0 && (
+            <label>
+              {tx(language, "Açılış tarihi", "Opening date", "Tarîxa destpêkê")}
+              <input type="date" value={openingDate} onChange={(e) => setOpeningDate(e.target.value)} />
+            </label>
+          )}
+          <small className="kasaManageHint">{tx(language, "Açılış bakiyesi kasaya “Açılış bakiyesi” başlıklı bir gelir kaydı olarak eklenir.", "The opening balance is added to the account as an income record titled “Açılış bakiyesi”.", "Bakiya destpêkê wek tomareke dahatê bi sernavê “Açılış bakiyesi” tê zêdekirin.")}</small>
+          {error && <p className="kasaManageError">{error}</p>}
+        </div>
+        <div className="modalActions">
+          <button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
+          <button type="submit" className="primary" disabled={busy || !name.trim()}>{tx(language, "Kasayı oluştur", "Create cash account", "Qaseyê çêke")}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function KasaDeleteModal({
   language,
   account,
@@ -195,9 +383,9 @@ export function KasaDeleteModal({
           <p className="kasaManageWarn">
             {tx(
               language,
-              `Bu kasa ve ona bağlı ${recordCount} kayıt (kasa, gelir, gider) silinecek. Silinen kayıtlar Arşiv'e düşer; kasa ve çalışma alanı ayarları geri alınamaz.`,
-              `This cash account and its ${recordCount} linked records (cash, income, expense) will be deleted. Deleted records go to the Archive; the account and its workspace settings cannot be restored.`,
-              `Ev qase û ${recordCount} tomarên girêdayî (qase, dahat, mesref) wê werin jêbirin. Tomarên jêbirî diçin Arşîvê; qase û mîhengên qada xebatê venagerin.`,
+              `Bu kasa ve ona bağlı ${recordCount} kayıt (gelir, gider) silinecek. Silinen kayıtlar Arşiv'e düşer; kasa ve çalışma alanı ayarları geri alınamaz.`,
+              `This cash account and its ${recordCount} linked records (income, expense) will be deleted. Deleted records go to the Archive; the account and its workspace settings cannot be restored.`,
+              `Ev qase û ${recordCount} tomarên girêdayî (dahat, mesref) wê werin jêbirin. Tomarên jêbirî diçin Arşîvê; qase û mîhengên qada xebatê venagerin.`,
             )}
           </p>
           <label>

@@ -3,9 +3,8 @@ import { commentReactions, commentReads, recordComments, records } from "../../.
 import type { DbClient } from "../../../db";
 import { accessibleCashAccountIds } from "./cash-access";
 import type { SessionUser } from "./auth";
-import type { Kind } from "./types";
+import { RECORD_KINDS, type Kind } from "./types";
 
-const RECORD_KINDS: Kind[] = ["cash", "income", "expense"];
 
 function allowedKinds(user: { isAdmin: boolean; permissions: string[] }): Kind[] {
   if (user.isAdmin) return RECORD_KINDS;

@@ -4,7 +4,7 @@ import { archive } from "../../../db/schema";
 import { requirePermission } from "../_lib/auth";
 import { accessibleCashAccountNames } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { toClientArchiveItem } from "../_lib/archive";
+import { archivedKasaName, toClientArchiveItem } from "../_lib/archive";
 
 export const GET = withErrorHandling(async (request: Request) => {
   const session = await requirePermission(request, "archive");
@@ -19,8 +19,7 @@ export const GET = withErrorHandling(async (request: Request) => {
   const scoped = allowedNames === null
     ? rows
     : rows.filter((row) => {
-        const oldRecord = row.oldRecord as { kind: string; source: string; cashAccount: string };
-        const name = oldRecord.kind === "cash" ? oldRecord.source : oldRecord.cashAccount;
+        const name = archivedKasaName(row.oldRecord as { kind: string; source: string; cashAccount: string });
         return !name || allowedNames.has(name);
       });
   return json({ archive: scoped.map(toClientArchiveItem) });

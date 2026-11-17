@@ -4,12 +4,11 @@ import { archive, noteColumns, preparedReports, records, settings, users } from 
 import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds, accessibleCashAccountNames } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { toClientArchiveItem } from "../_lib/archive";
+import { archivedKasaName, toClientArchiveItem } from "../_lib/archive";
 import { listClientNotes } from "../_lib/notes";
-import type { Kind } from "../_lib/types";
+import { RECORD_KINDS } from "../_lib/types";
 
 const SETTINGS_ID = 1;
-const RECORD_KINDS: Kind[] = ["cash", "income", "expense"];
 
 function toClientUser(row: typeof users.$inferSelect) {
   return {
@@ -37,10 +36,7 @@ function scopeRecordsToAccessibleKasas<T extends { cashAccountId: number | null 
 
 // Archive entries and prepared reports only carry the kasa's free-text name
 // (jsonb snapshot / cashAccount column), not a cashAccountId — see
-// accessibleCashAccountNames.
-function kasaNameOf(oldRecord: { kind: string; source: string; cashAccount: string }): string {
-  return oldRecord.kind === "cash" ? oldRecord.source : oldRecord.cashAccount;
-}
+// accessibleCashAccountNames and archivedKasaName.
 
 // Returns everything the client needs right after login in one round trip,
 // scoped to what the signed-in user is actually allowed to see: unpermitted
@@ -77,7 +73,7 @@ export const GET = withErrorHandling(async (request: Request) => {
   const scopedArchive = allowedNames === null
     ? archiveRows
     : archiveRows.filter((row) => {
-        const name = kasaNameOf(row.oldRecord as { kind: string; source: string; cashAccount: string });
+        const name = archivedKasaName(row.oldRecord as { kind: string; source: string; cashAccount: string });
         return !name || allowedNames.has(name);
       });
   const scopedReports = allowedNames === null

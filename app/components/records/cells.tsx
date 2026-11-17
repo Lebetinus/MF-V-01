@@ -7,7 +7,7 @@ import { workspaceKeyOf, type workspaceOptions } from "../KasaManage";
 import { TableTools } from "../TableTools";
 import { tx, localizeData } from "../../lib/i18n";
 import { date, money, toUsd, type ExchangeRates } from "../../lib/finance";
-import type { CashAccountSummary, CashTransfer, KasaSection, Kind, Language, RecordItem } from "../../lib/types";
+import type { CashAccountSummary, CashTransfer, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
 import { DocCell } from "./documents";
 import type { ColumnId } from "./useColumnLayout";
 
@@ -17,7 +17,7 @@ export type CommentSummary = { count: number; lastText: string; lastUserName: st
 // Hücre çiziminin Records'tan aldığı durum ve geri çağrılar.
 export type RecordCellContext = {
   language: Language;
-  kind: Kind;
+  kind: RecordsView;
   readOnly: boolean;
   allRecords: RecordItem[];
   cashAccounts: CashAccountSummary[];
@@ -68,14 +68,12 @@ export function debtTooltip(x: RecordItem, language: Language, allRecords: Recor
     `${tx(language, "Kalan", "Remaining", "Mayî")}: ${money(pair.outstanding, pair.currency)}`,
   ].join("\n");
 }
-export function columnLabel(id: ColumnId, language: Language, kind: Kind, showListColumn: boolean): string {
+export function columnLabel(id: ColumnId, language: Language, showListColumn: boolean): string {
   switch (id) {
     case "date":
       return tx(language, "Tarih", "Date", "Tarîx");
     case "title":
-      return kind === "cash"
-        ? tx(language, "Kasa Adı", "Cash Account", "Navê Qaseyê")
-        : tx(language, "Ana Başlık", "Main Category", "Sernavê Sereke");
+      return tx(language, "Ana Başlık", "Main Category", "Sernavê Sereke");
     case "workspace":
       return tx(language, "Çalışma Alanı", "Workspace", "Qada Xebatê");
     case "debt":
@@ -93,9 +91,7 @@ export function columnLabel(id: ColumnId, language: Language, kind: Kind, showLi
     case "amount":
       return tx(language, "Miktar", "Amount", "Meblağ");
     case "location":
-      return kind === "cash"
-        ? tx(language, "Kasa Yeri", "Cash Location", "Cihê Qaseyê")
-        : tx(language, "Proje / Birim", "Project / Unit", "Proje / Yekîne");
+      return tx(language, "Proje / Birim", "Project / Unit", "Proje / Yekîne");
     case "tags":
       return tx(language, "Etiket", "Tag", "Etîket");
     case "action":
@@ -137,25 +133,19 @@ export function renderCell(
     case "title":
       return (
         <>
-          {readOnly && x.kind === "cash" ? (
-            <b className="cellTitle" title={localizeData(x.source, language)}>
-              {localizeData(x.source, language)}
-            </b>
-          ) : (
-            <button
-              type="button"
-              className="cellTitle cellTitleButton"
-              title={tx(
-                language,
-                "Girilen verileri görmek için tıklayın",
-                "Click to view the entered data",
-                "Ji bo dîtina daneyên hatine nivîsandin bitikîne",
-              )}
-              onClick={() => (x.kind === "cash" ? onEdit(x) : setViewTarget(x))}
-            >
-              {localizeData(x.source, language)}
-            </button>
-          )}
+          <button
+            type="button"
+            className="cellTitle cellTitleButton"
+            title={tx(
+              language,
+              "Girilen verileri görmek için tıklayın",
+              "Click to view the entered data",
+              "Ji bo dîtina daneyên hatine nivîsandin bitikîne",
+            )}
+            onClick={() => setViewTarget(x)}
+          >
+            {localizeData(x.source, language)}
+          </button>
           {x.link && /^https?:\/\//i.test(x.link) && (
             <a className="cellLinkIcon" href={x.link} target="_blank" rel="noopener noreferrer" title={x.link} onClick={(e) => e.stopPropagation()}>🔗</a>
           )}
@@ -196,8 +186,7 @@ export function renderCell(
         </>
       );
     case "workspace": {
-      const kasaName = x.kind === "cash" ? x.source : x.cashAccount;
-      const account = cashAccounts.find((a) => a.name === kasaName);
+      const account = cashAccounts.find((a) => a.name === x.cashAccount);
       const label = account
         ? wsOptions.find((o) => o.key === workspaceKeyOf({ sectionId: account.sectionId ?? null, rjKasa: !!account.isRjKasa, listKasa: !!account.isListWorkspace }, sections))?.label
         : undefined;
@@ -400,7 +389,7 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
                   "Ji bo derbaskirina stûnê bikişîne, ji kêleka wê genîtiyê saz bike",
                 )}
               >
-                <span className="colHeaderLabel">{columnLabel(id, language, kind, showListColumn)}</span>
+                <span className="colHeaderLabel">{columnLabel(id, language, showListColumn)}</span>
                 <span
                   className="colResizeHandle"
                   draggable={false}
@@ -421,8 +410,7 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
             </tr>
           )}
           {tableRows.map((x) => {
-            const pendingTransfer =
-              kind !== "cash" ? cashTransfers.find((t) => t.toRecordId === x.id && t.status === "pending") : undefined;
+            const pendingTransfer = cashTransfers.find((t) => t.toRecordId === x.id && t.status === "pending");
             const canApprove = pendingTransfer && cashAccounts.some((a) => a.id === pendingTransfer.toCashAccountId);
             return (
               <tr

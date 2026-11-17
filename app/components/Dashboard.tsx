@@ -63,40 +63,36 @@ export function Dashboard({
   onTransfersChanged?: () => void;
 }) {
   // Alınan borç girişi ve borç ödemesi kasa bakiyesine girer ama gelir/gider/net toplamlarına ve analize girmez.
-  // Kasa aktarımları da öyle: iki tarafı (−X kasa, +X gelir) bakiyeye girer, gelir/net/analiz toplamlarına girmez.
+  // Kasa aktarımları da öyle: iki tarafı (gönderende gider, alanda gelir) bakiyeye girer, gelir/gider/net/analiz toplamlarına girmez.
   const isTransferLeg = makeIsTransferLeg(cashTransfers);
-  const cashRows = records.filter((x) => x.kind === "cash");
-  const flowCashRows = cashRows.filter((x) => !isTransferLeg(x));
   const incomeRows = records.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x));
-  const expenseRows = records.filter((x) => x.kind === "expense" && !isDebtLeg(x));
+  const expenseRows = records.filter((x) => x.kind === "expense" && !isDebtLeg(x) && !isTransferLeg(x));
   const linkedIncomeRows = records.filter((x) => x.kind === "income" && x.cashAccount);
   const linkedExpenseRows = records.filter((x) => x.kind === "expense" && x.cashAccount);
+  // Kasa bakiyesi = kasalardaki gelir − gider (aktarım ve borç tarafları dahil).
   const cashBalanceByCurrency = combineByCurrency([
-    { rows: cashRows },
     { rows: linkedIncomeRows },
     { rows: linkedExpenseRows, sign: -1 },
   ]);
   // Gelir – Gider Analizi için kasa seçimi: boş = tüm kasalar; seçilen kasalara göre analiz yenilenir.
-  const kasaOf = (x: RecordItem) => (x.kind === "cash" ? x.source : x.cashAccount);
+  const kasaOf = (x: RecordItem) => x.cashAccount;
   const kasaNames = [...new Set(records.map(kasaOf).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const [picked, setPicked] = useState<string[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const analysisRecords = picked.length ? records.filter((x) => picked.includes(kasaOf(x))) : records;
-  const aCash = analysisRecords.filter((x) => x.kind === "cash" && !isTransferLeg(x));
   const aIncome = analysisRecords.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x));
-  const aExpense = analysisRecords.filter((x) => x.kind === "expense" && !isDebtLeg(x));
-  const aIncomeTotal = total(aIncome) + total(aCash);
+  const aExpense = analysisRecords.filter((x) => x.kind === "expense" && !isDebtLeg(x) && !isTransferLeg(x));
+  const aIncomeTotal = total(aIncome);
   const aExpenseTotal = total(aExpense);
-  const aIncomeBy = combineByCurrency([{ rows: aIncome }, { rows: aCash }]);
+  const aIncomeBy = combineByCurrency([{ rows: aIncome }]);
   const aExpenseBy = combineByCurrency([{ rows: aExpense }]);
-  const aNetBy = combineByCurrency([{ rows: aIncome }, { rows: aCash }, { rows: aExpense, sign: -1 }]);
+  const aNetBy = combineByCurrency([{ rows: aIncome }, { rows: aExpense, sign: -1 }]);
   const shownKasas = picked.length ? picked : kasaNames;
   // Kasa sonuçları varsayılan olarak 7 satır gösterilir; "Tümünü göster" ile geri kalanı açılır.
   const KASA_PREVIEW = 7;
   const [showAllKasas, setShowAllKasas] = useState(false);
   const visibleKasas = showAllKasas ? shownKasas : shownKasas.slice(0, KASA_PREVIEW);
   const recent = [...records]
-    .filter((x) => x.kind !== "cash")
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
   // Dönem (ay) seçimi: dönem geliri / gideri yalnız seçili ayın kayıtlarını toplar.
@@ -115,8 +111,6 @@ export function Dashboard({
   const periodExpenseBy = combineByCurrency([{ rows: expenseRows.filter((x) => monthOf(x) === periodKey) }]);
   const periodIncomeCount = incomeRows.filter((x) => monthOf(x) === periodKey).length;
   const periodExpenseCount = expenseRows.filter((x) => monthOf(x) === periodKey).length;
-  // Toplam kasa gelirleri: kasalara girilen (Kasa kaydı) toplam tutarlar.
-  const cashIncomeBy = combineByCurrency([{ rows: flowCashRows }]);
 
   // Bekleyen onaylar: bana gelen (onayımı bekleyen) ve gönderdiğim (karşı tarafın onayını bekleyen) kasa aktarımları.
   const [approvingId, setApprovingId] = useState<number | null>(null);
@@ -230,12 +224,7 @@ export function Dashboard({
           </select>
         </label>
       </div>
-      <div className="lpMetrics">
-        <button type="button" className="lpMetric hero" onClick={() => (onOpenAnalysis ? onOpenAnalysis("kasa", periodKey) : goTo("cash"))} title={tx(language, "Kasa analizini aç", "Open cash analysis", "Analîza qaseyê veke")}>
-          <span className="lpLabel">{tx(language, "Toplam Kasa Gelirleri", "Total Cash Income", "Dahatên Giştî yên Qaseyê")}</span>
-          <strong><MoneyStack by={cashIncomeBy} /></strong>
-          <small>{kasaNames.length} {tx(language, "kasa", "cash accounts", "qase")} · {cashRows.length} {tx(language, "kasa kaydı", "cash entries", "tomara qaseyê")}</small>
-        </button>
+      <div className="lpMetrics metrics3">
         <button type="button" className="lpMetric" onClick={() => (onOpenAnalysis ? onOpenAnalysis("income", periodKey) : goTo("income"))} title={tx(language, "Gelir analizini aç", "Open income analysis", "Analîza dahatê veke")}>
           <span className="lpIcon income">↗</span>
           <span className="lpLabel">{tx(language, "Dönem Geliri", "Period Income", "Dahatê Heyamê")} · {monthLabel(periodKey)}</span>
@@ -252,7 +241,7 @@ export function Dashboard({
           <span className="lpIcon">▣</span>
           <span className="lpLabel">{labels.cash}</span>
           <strong><MoneyStack by={cashBalanceByCurrency} /></strong>
-          <small>{tx(language, "Tüm kasaların anlık toplamı", "Current total of all cash accounts", "Berhevoka niha ya hemû qaseyan")}</small>
+          <small>{tx(language, "Tüm kasaların anlık toplamı", "Current total of all cash accounts", "Berhevoka niha ya hemû qaseyan")} · {kasaNames.length} {tx(language, "kasa", "cash accounts", "qase")}</small>
         </button>
       </div>
       <div className="lpAnalysis">
@@ -305,9 +294,9 @@ export function Dashboard({
                 <tbody>
                   {visibleKasas.map((name) => {
                     const rows = records.filter((x) => kasaOf(x) === name);
-                    const inc = combineByCurrency([{ rows: rows.filter((x) => x.kind === "income" || x.kind === "cash") }]);
+                    const inc = combineByCurrency([{ rows: rows.filter((x) => x.kind === "income") }]);
                     const exp = combineByCurrency([{ rows: rows.filter((x) => x.kind === "expense") }]);
-                    const net = combineByCurrency([{ rows: rows.filter((x) => x.kind !== "expense") }, { rows: rows.filter((x) => x.kind === "expense"), sign: -1 }]);
+                    const net = combineByCurrency([{ rows: rows.filter((x) => x.kind === "income") }, { rows: rows.filter((x) => x.kind === "expense"), sign: -1 }]);
                     return (
                       <tr key={name}>
                         <td><strong>{localizeData(name, language)}</strong></td>
@@ -432,13 +421,13 @@ export function Dashboard({
           <h4 className="lpSubHead">{tx(language, "Son belgeler", "Latest documents", "Belgeyên dawî")}</h4>
           {docRecords.length === 0 && <p className="lpEmpty">{tx(language, "Belge eklenmiş kayıt yok.", "No records with documents.", "Tomarên bi belge tune.")}</p>}
           {docRecords.slice(0, 4).map((x) => (
-            <button type="button" key={x.id} className="lpDocRow" onClick={() => goTo(x.kind === "cash" ? "cash" : x.kind)}>
+            <button type="button" key={x.id} className="lpDocRow" onClick={() => goTo(x.kind)}>
               <span className="lpDocIcon" aria-hidden="true">📎</span>
               <span className="lpDocText">
                 <b>{x.attachments?.[0]?.name}{(x.attachments?.length ?? 0) > 1 ? ` +${(x.attachments?.length ?? 0) - 1}` : ""}</b>
                 <small>{localizeData(x.source, language)} · {date(x.date, language)}</small>
               </span>
-              <span className={`lpBadge ${x.kind === "income" ? "good" : x.kind === "expense" ? "bad" : ""}`}>{x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : x.kind === "expense" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Kasa", "Cash", "Qase")}</span>
+              <span className={`lpBadge ${x.kind === "income" ? "good" : x.kind === "expense" ? "bad" : ""}`}>{x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref")}</span>
             </button>
           ))}
           <h4 className="lpSubHead">{tx(language, "Son mesajlar", "Latest messages", "Peyamên dawî")}</h4>

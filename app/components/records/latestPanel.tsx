@@ -3,13 +3,13 @@
 import { PersonChip } from "../shared";
 import { tx, localizeData } from "../../lib/i18n";
 import { date, money } from "../../lib/finance";
-import type { FinanceNote, KasaSection, Kind, Language, RecordItem } from "../../lib/types";
+import type { FinanceNote, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
 import { RecordViewPanel } from "./RecordViewPanel";
 
 // Tablonun sağındaki pano: seçili kaydın görünümü, ya da "En Son Gelirler/Giderler" + "Mali Özel Notlar".
 export type LatestPanelContext = {
   language: Language;
-  kind: Kind;
+  kind: RecordsView;
   kasaSplitActive: boolean;
   readOnly: boolean;
   sections: KasaSection[];

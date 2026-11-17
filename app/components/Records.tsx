@@ -5,15 +5,16 @@ import { Title, DeleteConfirmModal } from "./shared";
 import { isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
 import { RecordCommentsModal } from "./Comments";
-import { KasaDeleteModal, KasaEditModal, workspaceOptions } from "./KasaManage";
+import { KasaDeleteModal, KasaEditModal, NewKasaModal, workspaceOptions } from "./KasaManage";
 import { WorkspaceAccessModal, type AccessKasa } from "./WorkspaceAccess";
 import { tx, localizeData } from "../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, type ExchangeRates } from "../lib/finance";
-import type { CashAccountSummary, CashTransfer, FinanceNote, KasaSection, Kind, Language, RecordItem, UserAccount } from "../lib/types";
+import type { CashAccountSummary, CashTransfer, FinanceNote, KasaSection, Kind, Language, RecordItem, RecordsView, UserAccount } from "../lib/types";
 import { notify } from "../lib/notify";
 import { DetailTableModal } from "./records/detailTable";
 import { ShareKasaModal } from "./records/inputs";
 import { KasaResultModal } from "./records/KasaResultModal";
+import { KasaTransferModal } from "./records/KasaTransfer";
 import { useColumnLayout } from "./records/useColumnLayout";
 import { createRowDrag, useOrderedRows, useRowOrder } from "./records/useRowOrder";
 import { useKasaSummaries, type CardGroup } from "./records/useKasaSummaries";
@@ -65,10 +66,11 @@ export function Records({
   onGoUpload,
 }: {
   language: Language;
-  kind: Kind;
+  // Sayfa: "cash" = Kasa Kontrol Merkezi (tüm gelir/gider kayıtları kasalarına göre), "income"/"expense" = Gelir/Gider.
+  kind: RecordsView;
   records: RecordItem[];
   allRecords: RecordItem[];
-  onAdd: (kind?: Kind, cashAccount?: string, workspaceKey?: string) => void;
+  onAdd: (kind: Kind, cashAccount?: string) => void;
   onEdit: (x: RecordItem) => void;
   onDelete: (x: RecordItem, reason: string) => void;
   onImport: (rows: Omit<RecordItem, "id">[]) => void;
@@ -91,6 +93,8 @@ export function Records({
   isSuperAdmin?: boolean;
   onGoUpload?: () => void;
 }) {
+  // Kasa Kontrol Merkezi sayfası mı (sayfa kimliği; kayıt türü değil — kayıtlar yalnız gelir/giderdir).
+  const kasaPage = kind === "cash";
   const [deleteTarget, setDeleteTarget] = useState<RecordItem | null>(null);
   const [commentTarget, setCommentTarget] = useState<RecordItem | null>(null);
   // Satırdaki "Detay" göstergesine basınca açılan, yapıştırılmış gider
@@ -144,6 +148,10 @@ export function Records({
   const [newWorkspaceParent, setNewWorkspaceParent] = useState("");
   const [newWorkspaceBusy, setNewWorkspaceBusy] = useState(false);
   const [newWorkspaceError, setNewWorkspaceError] = useState("");
+  // "Yeni Kasa" penceresi: null = kapalı, "" = varsayılan çalışma alanı, aksi halde açılacağı alan anahtarı.
+  const [newKasaKey, setNewKasaKey] = useState<string | null>(null);
+  // "Kasalar arası aktarım" penceresinin kaynak kasası.
+  const [transferTarget, setTransferTarget] = useState<CashAccountSummary | null>(null);
   const { shareBusyKey, dashboardShareBusy, toggleShare, toggleDashboardShare } = useKasaSharing({ language, shareTarget, setShareTarget, onCashAccountsChange });
   const { approvingId, approveTransfer } = useTransferApproval({ language, onTransfersChanged });
   const [source, setSource] = useState("Tümü");
@@ -193,16 +201,9 @@ export function Records({
     setActiveList(name);
     setShowAllLists(false);
   };
-  const openCardRecord = (
-    field: "source" | "listName",
-    value: string,
-    matchKind?: Kind,
-  ) => {
-    const candidates = records.filter((x) =>
-      field === "source"
-        ? x.source === value && (!matchKind || x.kind === matchKind)
-        : listOf(x) === value,
-    );
+  // Gelir/Gider başlık kutusundaki 🗂: o başlığın en son kaydını düzenlemeye açar.
+  const openCardRecord = (field: "source" | "listName", value: string) => {
+    const candidates = records.filter((x) => (field === "source" ? x.source === value : listOf(x) === value));
     const rec = [...candidates].sort((a, b) => b.date.localeCompare(a.date))[0];
     if (rec) onEdit(rec);
   };
@@ -223,7 +224,7 @@ export function Records({
     setKasaMoveTarget,
     setKasaDeleteTarget,
     setAccessTarget,
-    openCardRecord,
+    setTransferTarget,
   });
   const kasaActions = (name: string, selected: boolean) => renderKasaActions(name, selected, kasaCardCtx());
   const renderGroupTooltip = (g: CardGroup, matchingAccount: CashAccountSummary | undefined) => renderGroupTooltipView(g, matchingAccount, language, allRecords);
@@ -237,34 +238,27 @@ export function Records({
   const activeWsObj = cashWorkspaces.find((w) => w.key === activeWs);
   const activeSubObj = activeSub ? activeWsObj?.subs.find((s) => s.key === activeSub) ?? null : null;
   const activeWsNames = new Set((activeSubObj ? activeSubObj.kasas : activeWsObj?.allKasas ?? []).map((k) => k.name));
-  const activeIeWorkspace = kind !== "cash" && activeIeWs ? ieWorkspaces.find((w) => w.key === activeIeWs) ?? null : null;
+  const activeIeWorkspace = !kasaPage && activeIeWs ? ieWorkspaces.find((w) => w.key === activeIeWs) ?? null : null;
   const activeIeNames = new Set((activeIeWorkspace?.kasas ?? []).map((k) => k.name));
   // "Tüm Kasalar" seçiliyken (activeWs === "__all") çalışma alanlarına dağıtılmış tüm kasalar tek sırada, kendi alanının renginde gösterilir.
-  const activeWorkspace = kind === "cash" && activeWs && activeWs !== "__all" ? cashWorkspaces.find((w) => w.key === activeWs) ?? null : null;
+  const activeWorkspace = kasaPage && activeWs && activeWs !== "__all" ? cashWorkspaces.find((w) => w.key === activeWs) ?? null : null;
   const activeKasaCards: { g: CardGroup; color: string }[] =
-    kind !== "cash" || !activeWs
+    !kasaPage || !activeWs
       ? []
       : activeWs === "__all"
         ? cashWorkspaces.flatMap((w) => [...w.kasas.map((g) => ({ g, color: w.color })), ...w.subs.flatMap((s) => s.kasas.map((g) => ({ g, color: s.color })))]).sort((a, b) => a.g.name.localeCompare(b.g.name))
         : (activeWorkspace?.kasas ?? []).map((g) => ({ g, color: activeWorkspace!.color }));
-  // Belirli bir kasa seçildiğinde (source !== "Tümü"), o kasanın kart
-  // toplamına dahil edilen ama `records`'ta (sadece kind="cash" satırları)
-  // bulunmayan bağlı gelir/gider kayıtlarını da listeye kat — aksi halde
-  // "Toplam Kasa" tutarı bu kayıtları sayar ama liste onları hiç göstermez
-  // (bildirilen hata tam olarak buydu).
-  const linkedRowsForSelectedKasa =
-    kind === "cash" && source !== "Tümü"
-      ? allRecords.filter((x) => (x.kind === "income" || x.kind === "expense") && x.cashAccount === source)
-      : [];
-  const rows = [...records, ...linkedRowsForSelectedKasa].filter(
+  // Kasa Kontrol Merkezi'nde `records` tüm gelir/gider kayıtlarıdır; bir kasa seçilince (source) o kasanın kayıtları
+  // (kasa adına göre) gösterilir. Gelir/Gider sayfalarında `source` bir ana başlık kutusudur.
+  const rows = records.filter(
     (x) =>
-      (source === "Tümü" || source === "__RJ" || x.source === source || x.cashAccount === source) &&
+      (source === "Tümü" || source === "__RJ" || (kasaPage ? x.cashAccount === source : x.source === source || x.cashAccount === source)) &&
       (!showAllLists || listOf(x) || isListLinked(x)) &&
       (!activeKasa || x.cashAccount === activeKasa) &&
       (!activeIeWorkspace || activeIeNames.has(x.cashAccount)) &&
       (activeSection === null || x.sectionId === activeSection) &&
-      (activeWs === null || activeWs === "__all" || kind !== "cash" || activeWsNames.has(x.cashAccount || x.source)) &&
-      (source !== "__RJ" || kasaRjNames.has(x.cashAccount || x.source)) &&
+      (activeWs === null || activeWs === "__all" || !kasaPage || activeWsNames.has(x.cashAccount)) &&
+      (source !== "__RJ" || kasaRjNames.has(x.cashAccount)) &&
       (!filterFrom || x.date >= filterFrom) &&
       (!filterTo || x.date <= filterTo) &&
       (!filterSource || x.source === filterSource) &&
@@ -298,16 +292,18 @@ export function Records({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowIdsKey]);
   const title =
-    kind === "cash"
+    kasaPage
       ? tx(language, "Kasa Kontrol Merkezi", "Cash Control Center", "Navenda Kontrola Qaseyan")
       : kind === "income"
         ? tx(language, "Gelirler", "Income", "Dahat")
         : tx(language, "Giderler", "Expenses", "Mesref");
   const recordWord = tx(language, "kayıt", "records", "qeyd");
   function exportExcel(rowsToExport: RecordItem[] = orderedRows, suffix = "") {
-    return exportRecordsExcel(rowsToExport, suffix, { language, kind, source, title });
+    return exportRecordsExcel(rowsToExport, suffix, { language, source, title });
   }
+  // Excel'den kayıt ekleme yalnız Gelir/Gider sayfalarındadır (Kasa Kontrol Merkezi'nde kasalar "Yeni Kasa" ile açılır).
   function importExcel(file?: File) {
+    if (kasaPage) return;
     return importRecordsExcel(file, { language, kind, source, records, onImport });
   }
   // Tablo çizimi records/cells.tsx'te (renderRecordsTable); burada Records'un durumu bağlam olarak verilir.
@@ -350,8 +346,8 @@ export function Records({
   // tabloda karışık görünmesin diye iki ayrı kutuya bölünür — kullanıcı
   // hangisinin gelir hangisinin gider olduğunu tabloya bakmadan, kutunun
   // rengi ve başlığından anlar. "Tümü" görünümünde ve Gelir/Gider
-  // sayfalarında (kind !== "cash") tek, birleşik tablo olarak kalır.
-  const kasaSplitActive = kind === "cash" && source !== "Tümü";
+  // sayfalarında (!kasaPage) tek, birleşik tablo olarak kalır.
+  const kasaSplitActive = kasaPage && source !== "Tümü";
   // Kasalar sayfası: açılışta "kasa panosu" (boardMode), bir kasa seçilince kasanın kendi sayfası (detailMode).
   // Liste bağlamıyla açılan eski görünüm (activeList / showAllLists / activeKasa) olduğu gibi kalır.
   // Kasa Kontrol Merkezi yönetimi: sıralama kaydı, alan/bölüm düzenleme + yetkiler, bölüm/kasa ekleme.
@@ -381,7 +377,7 @@ export function Records({
       section: key.startsWith("sec-") ? sections.find((x) => x.id === Number(key.slice(4))) : undefined,
     });
   }
-  const boardMode = kind === "cash" && source === "Tümü" && !activeList && !showAllLists && !activeKasa;
+  const boardMode = kasaPage && source === "Tümü" && !activeList && !showAllLists && !activeKasa;
   const detailMode = kasaSplitActive;
   const boardActions = (name: string): BoardAction[] => {
     if (readOnly) return [];
@@ -405,6 +401,8 @@ export function Records({
   if (selectionScopeSeen !== selectionScope) {
     setSelectionScopeSeen(selectionScope);
     setSelectedIds(new Set());
+    // Başka bir kasaya/görünüme geçilince yandaki kayıt detayı da kapanır (önceki kasanın kaydı kalmasın).
+    setViewTarget(null);
   }
   function toggleMany(list: RecordItem[], on: boolean) {
     setSelectedIds((current) => {
@@ -417,7 +415,7 @@ export function Records({
     });
   }
   async function copySelected() {
-    const lines = selectedRows.map((x) => [date(x.date), x.kind === "cash" ? x.source : x.cashAccount, x.source, x.person, x.amount, x.currency, x.tags.join(", ")].join("\t"));
+    const lines = selectedRows.map((x) => [date(x.date), x.cashAccount, x.source, x.person, x.amount, x.currency, x.tags.join(", ")].join("\t"));
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
     } catch {
@@ -431,7 +429,7 @@ export function Records({
           title={title}
           inline
           sub={
-            kind === "cash"
+            kasaPage
               ? tx(
                   language,
                   "Bir kasaya tıklayarak hareketlerini görün",
@@ -453,7 +451,7 @@ export function Records({
             </button>
             {excelMenuOpen && (
               <div className="excelMenu" role="menu">
-                {!readOnly && (
+                {!readOnly && !kasaPage && (
                   <button type="button" role="menuitem" onClick={() => { setExcelMenuOpen(false); importFileRef.current?.click(); }}>
                     <i aria-hidden="true">⇧</i>
                     <span><b>{tx(language, "Excel ekle", "Import Excel", "Excel têxe")}</b><small>{tx(language, "Bu tablonun biçimindeki .xlsx dosyasını kayıt olarak ekler", "Adds an .xlsx file in this table's format as records", "Pelê .xlsx wekî qeyd zêde dike")}</small></span>
@@ -471,7 +469,7 @@ export function Records({
                 )}
               </div>
             )}
-            {!readOnly && (
+            {!readOnly && !kasaPage && (
               <input
                 ref={importFileRef}
                 hidden
@@ -489,7 +487,7 @@ export function Records({
               📊 {tx(language, "Sonuç Oluştur", "Create Result", "Encamê Biafirîne")}
             </button>
           )}
-          {kind === "cash" && !readOnly && (
+          {kasaPage && !readOnly && (
             <button className="light" onClick={() => { setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(""); setNewWorkspaceOpen(true); }}>
               ＋ {tx(language, "Çalışma Alanı Ekle", "Add Workspace", "Qada Xebatê Zêde Bike")}
             </button>
@@ -507,10 +505,10 @@ export function Records({
                   <button onClick={() => { setNewMenuOpen(false); onAdd("expense", kasaSplitActive ? source : undefined); }}>
                     ↘ {tx(language, "Gider Ekle", "Add Expense", "Mesref Zêde Bike")}
                   </button>
-                  <button onClick={() => { setNewMenuOpen(false); onAdd("cash", undefined, activeSub ?? (activeWs && activeWs !== "__all" ? activeWs : undefined)); }}>
+                  <button onClick={() => { setNewMenuOpen(false); setNewKasaKey(activeSub ?? (activeWs && activeWs !== "__all" ? activeWs : "")); }}>
                     ▣ {tx(language, "Kasa Ekle", "Add Cash Account", "Qase Zêde Bike")}
                   </button>
-                  {kind === "cash" && (
+                  {kasaPage && (
                     <>
                       <button onClick={() => { setNewMenuOpen(false); setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(activeWs && activeWs !== "__all" && !activeSub ? activeWs : "genel"); setNewWorkspaceOpen(true); }}>
                         ▤ {tx(language, "Bölüm Ekle", "Add Section", "Beş Zêde Bike")}
@@ -595,7 +593,7 @@ export function Records({
         <KasaDeleteModal
           language={language}
           account={kasaDeleteTarget}
-          recordCount={allRecords.filter((x) => (x.kind === "cash" ? x.source : x.cashAccount) === kasaDeleteTarget.name).length}
+          recordCount={allRecords.filter((x) => x.cashAccount === kasaDeleteTarget.name).length}
           onClose={() => setKasaDeleteTarget(null)}
           onDone={() => {
             setSource("Tümü");
@@ -620,8 +618,9 @@ export function Records({
           onReorder={saveOrder}
           onEditGroup={editWorkspaceOrSection}
           onAddSection={(parentKey) => { setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(parentKey); setNewWorkspaceOpen(true); }}
-          onAddKasa={(groupKey) => onAdd("cash", undefined, groupKey)}
+          onAddKasa={(groupKey) => setNewKasaKey(groupKey)}
           onAddWorkspace={() => { setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(""); setNewWorkspaceOpen(true); }}
+          onTransfer={readOnly ? undefined : (account) => setTransferTarget(account)}
         />
       )}
       {detailMode && (
@@ -636,7 +635,7 @@ export function Records({
           <div className="kbDetailActions">
             {kasaActions(source, true)}
             {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc ? <button type="button" className="light compact" onClick={() => setShareTarget(acc)}>🔗 {tx(language, "Paylaş", "Share", "Parve bike")}</button> : null; })()}
-            {!readOnly && <button type="button" className="light compact" onClick={() => openCardRecord("source", source, "cash")}>🗂 {tx(language, "Kasa kaydı", "Cash entry", "Tomara qaseyê")}</button>}
+            {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc && !readOnly && (acc.isOwner || isSuperAdmin) ? <button type="button" className="light compact" onClick={() => setTransferTarget(acc)}>⇄ {tx(language, "Kasalar arası aktarım", "Transfer to another cash account", "Veguhastin bo qaseyeke din")}</button> : null; })()}
           </div>
         </div>
       )}
@@ -648,30 +647,30 @@ export function Records({
             setSource("Tümü");
             setActiveKasa("");
             // Kasalar sayfasında "Tüm Kasalar" altta tüm kasaları açar/kapatır.
-            setActiveWs(kind === "cash" && activeWs !== "__all" ? "__all" : null);
+            setActiveWs(kasaPage && activeWs !== "__all" ? "__all" : null);
             setActiveIeWs(null);
             setShowAllLists(false);
           }}
         >
           <b>
-            {kind === "cash"
+            {kasaPage
               ? tx(language, "Tüm Kasalar", "All Cash Accounts", "Hemû Qase")
               : kind === "income"
                 ? tx(language, "Tüm Gelirler", "All Income", "Hemû Dahat")
                 : tx(language, "Tüm Giderler", "All Expenses", "Hemû Mesref")}{" "}
-            <span className="groupCount">({kind === "cash" ? cashWorkspaces.reduce((acc, w) => acc + w.count, 0) : records.length})</span>
+            <span className="groupCount">({kasaPage ? cashWorkspaces.reduce((acc, w) => acc + w.count, 0) : records.length})</span>
           </b>
           <strong>
             {moneyBreakdown(overallByCurrency)}
           </strong>
-          {kind === "cash" && (
+          {kasaPage && (
             <span className="groupInOut">
               <span className="in">↗ {moneyBreakdown(overallInOut.inBy)}</span>
               <span className="out">↘ {moneyBreakdown(overallInOut.outBy)}</span>
             </span>
           )}
         </button>
-        {kind === "cash" && cashWorkspaces.filter((w) => isSuperAdmin || w.allKasas.length > 0).map((w) => {
+        {kasaPage && cashWorkspaces.filter((w) => isSuperAdmin || w.allKasas.length > 0).map((w) => {
           const tone = { background: `${w.color}14`, borderColor: `${w.color}66` };
           return (
             <div className="groupCard" key={w.key}>
@@ -721,8 +720,7 @@ export function Records({
             </div>
           );
         })}
-        {(kind === "cash" ? [] : groups).map((g) => {
-          const matchingAccount = g.kind === "cash" ? cashAccounts.find((a) => a.name === g.name) : undefined;
+        {(kasaPage ? [] : groups).map((g) => {
           return (
           <div className="groupCard" key={g.name}>
             <button
@@ -734,49 +732,24 @@ export function Records({
               }}
             >
               <b>{localizeData(g.name, language)} <span className="groupCount">({g.count})</span></b>
-              {kind !== "cash" && g.kasas.length > 0 && <em className="groupKasaTag">▣ {g.kasas.map((n) => localizeData(n, language)).join(", ")}</em>}
+              {g.kasas.length > 0 && <em className="groupKasaTag">▣ {g.kasas.map((n) => localizeData(n, language)).join(", ")}</em>}
               <strong>{moneyBreakdown(g.totalByCurrency)}</strong>
-              {kind === "cash" && (
-                <span className="groupInOut">
-                  <span className="in">↗ {moneyBreakdown(g.totalInByCurrency)}</span>
-                  <span className="out">↘ {moneyBreakdown(g.totalOutByCurrency)}</span>
-                </span>
-              )}
             </button>
             {!readOnly && source === g.name && (
               <button
                 className="cashEditIcon"
                 title={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
                 aria-label={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
-                onClick={() => openCardRecord("source", g.name, g.kind)}
+                onClick={() => openCardRecord("source", g.name)}
               >
                 🗂
               </button>
             )}
-            {source === g.name &&
-              kind === "cash" &&
-              matchingAccount && (
-                // Shown even while readOnly (browsing a shared owner's workspace):
-                // matchingAccount only ever exists here because the server already
-                // scoped `cashAccounts` to kasas this user can see (owned or shared)
-                // — anyone with visibility into a kasa may manage its sharing, not
-                // just its owner (see canManageCashAccountAccess). readOnly still
-                // blocks editing records themselves, just not who can see them.
-                <button
-                  className="cashEditIcon"
-                  title={tx(language, "Kasayı Paylaş", "Share Kasa", "Qaseyê Parve Bike")}
-                  aria-label={tx(language, "Kasayı Paylaş", "Share Kasa", "Qaseyê Parve Bike")}
-                  onClick={() => setShareTarget(matchingAccount)}
-                >
-                  🔗
-                </button>
-              )}
-            {kind === "cash" && kasaActions(g.name, source === g.name && !showAllLists)}
-            {renderGroupTooltip(g, matchingAccount)}
+            {renderGroupTooltip(g, undefined)}
           </div>
           );
         })}
-        {kind !== "cash" && (
+        {!kasaPage && (
           <>
             {ieWorkspaces.map((w) => (
               <div className="groupCard" key={w.key}>
@@ -822,7 +795,7 @@ export function Records({
         )}
       </div>
       )}
-      {kind !== "cash" && activeIeWorkspace && (
+      {!kasaPage && activeIeWorkspace && (
         <div className="groups workspaceGroups" style={{ borderLeft: `4px solid ${activeIeWorkspace.color}` }}>
           {activeIeWorkspace.kasas.map((k) => (
             <div className="groupCard" key={k.name}>
@@ -846,7 +819,7 @@ export function Records({
         </div>
       )}
       {/* Listeler menüsü kapatıldı: "Tüm Liste Giderleri/Gelirleri" satırı artık gösterilmez; liste kasaları çalışma alanı kutusunda görünür. */}
-      {false && (kind as string) !== "cash" && listGroups.length > 0 &&
+      {false && !kasaPage && listGroups.length > 0 &&
         renderListGroups({
           language,
           kind,
@@ -868,7 +841,7 @@ export function Records({
           openCardRecord,
           kasaActions,
         })}
-      {kind === "cash" && activeWs && !(boardMode || detailMode) && (
+      {kasaPage && activeWs && !(boardMode || detailMode) && (
         <div className="groups workspaceGroups" style={{ borderLeft: `4px solid ${activeWorkspace?.color ?? "#315fe8"}` }}>
           {activeWorkspace?.subs.map((s) => (
             <div className="groupCard subSectionCard" key={s.key}>
@@ -916,11 +889,11 @@ export function Records({
           ))}
           {activeKasaCards.map(({ g, color }) => renderKasaCard(g, { background: `${color}14`, borderColor: `${color}66` }))}
           {activeKasaCards.length === 0 && !activeWorkspace?.subs.length && (
-            <small className="workspaceEmpty">{tx(language, "Bu çalışma alanında henüz kasa yok — kasa kaydında “Çalışma alanı” seçin.", "No cash accounts yet — pick “Workspace” on a cash record.", "Hê qase tune — di tomara qaseyê de “Qada xebatê” hilbijêre.")}</small>
+            <small className="workspaceEmpty">{tx(language, "Bu çalışma alanında henüz kasa yok — “Yeni Kayıt › Kasa Ekle” ile açın.", "No cash accounts yet — open one with “New Record › Add Cash Account”.", "Hê qase tune — bi “Qeyda Nû › Qase Zêde Bike” veke.")}</small>
           )}
         </div>
       )}
-      {kind === "cash" && activeSubObj && !(boardMode || detailMode) && (
+      {kasaPage && activeSubObj && !(boardMode || detailMode) && (
         <div className="groups workspaceGroups subGroups" style={{ borderLeft: `4px solid ${activeSubObj.color}` }}>
           <small className="subGroupsTitle">{activeSubObj.name}</small>
           {activeSubObj.kasas.map((g) => renderKasaCard(g, { background: `${activeSubObj.color}14`, borderColor: `${activeSubObj.color}66` }))}
@@ -932,7 +905,7 @@ export function Records({
       {!boardMode && (
       <div className="search">
         <span>⌕</span>
-        {kind === "cash" && (
+        {kasaPage && (
           <input
             value={search}
             onChange={(e) => {
@@ -1011,7 +984,7 @@ export function Records({
         />
       )}
       {!boardMode && (
-      <div className={kind === "cash" && !kasaSplitActive ? "" : "recordsGrid"}>
+      <div className={kasaPage && !kasaSplitActive ? "" : "recordsGrid"}>
         {kasaSplitActive ? (
           <div className="kasaResultSplit">
             <div className="kasaResultGroup kasaResultIncome">
@@ -1067,7 +1040,7 @@ export function Records({
         ) : (
           renderRecordsTable(orderedRows)
         )}
-        {(kind !== "cash" || kasaSplitActive) &&
+        {(!kasaPage || kasaSplitActive) &&
           renderLatestPanel({
             language,
             kind,
@@ -1123,12 +1096,39 @@ export function Records({
           }}
         />
       )}
+      {newKasaKey !== null && (
+        <NewKasaModal
+          language={language}
+          sections={sections}
+          initialWorkspaceKey={newKasaKey || undefined}
+          onSectionsChanged={onRefreshData}
+          onClose={() => setNewKasaKey(null)}
+          onDone={(name) => {
+            onRefreshData?.();
+            // Kasa Kontrol Merkezi'nde yeni kasanın sayfası açılır (boş kasa panoda varsayılan olarak gizlidir).
+            if (kasaPage) {
+              setSource(name);
+              setActiveKasa("");
+              setShowAllLists(false);
+            }
+          }}
+        />
+      )}
+      {transferTarget && (
+        <KasaTransferModal
+          language={language}
+          account={transferTarget}
+          cashAccounts={cashAccounts}
+          users={users}
+          onTransfersChanged={onTransfersChanged}
+          onClose={() => setTransferTarget(null)}
+        />
+      )}
       {kasaResultOpen && kasaSplitActive && (
         <KasaResultModal
           language={language}
           initialKasaName={source}
-          kasaOptions={groups.map((g) => g.name)}
-          records={records}
+          kasaOptions={[...new Set(cashWorkspaces.flatMap((w) => w.allKasas.map((k) => k.name)))]}
           allRecords={allRecords}
           onClose={() => setKasaResultOpen(false)}
         />

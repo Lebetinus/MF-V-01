@@ -30,7 +30,14 @@ export async function parseBody<T extends ZodType>(
   return { data: result.data };
 }
 
-const kindSchema = z.enum(["cash", "income", "expense"]);
+const kindSchema = z.enum(["income", "expense"]);
+// Eski (0050 öncesi) dışa aktarımlarda / JSON içe aktarımlarında hâlâ
+// bulunabilen "kasa kaydı" türü: yalnızca içe aktarmada kabul edilir ve
+// sunucuda hemen gelir (eksi tutarlıysa gider) kaydına çevrilir — bkz.
+// convertLegacyKasaItem. Yeni kayıt olarak asla yazılmaz.
+export const LEGACY_KASA_KIND = "cash";
+const importKindSchema = z.enum(["income", "expense", LEGACY_KASA_KIND]);
+const signedAmountSchema = z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99);
 const currencySchema = z.enum(["USD", "IQD", "TRY", "EUR", "SYP"]);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format (expected YYYY-MM-DD)");
 const amountSchema = z.number().finite().min(0).max(999_999_999_999.99);
@@ -107,9 +114,6 @@ export const recordInputSchema = z.object({
   listName: shortText(200),
   // Proje Aşaması 2: bağlı liste (varsa listName, listenin adından türetilir).
   listId: z.number().int().positive().nullable().optional(),
-  // Kasa kaydında "Liste Kasası" işareti: kasa Listeler sayfasında çalışma alanı olur.
-  listKasa: z.boolean().optional(),
-  rjKasa: z.boolean().optional(),
   sectionId: z.number().int().positive().nullable().optional(),
   // Gider eklerken borç işareti: lent = başka bir kasaya borç verdim, repay = borcumu ödüyorum (debtCashAccountId = karşı kasa).
   debtMode: z.enum(["lent", "repay"]).optional(),
@@ -139,8 +143,6 @@ export const recordUpdateSchema = z.object({
   cashAccount: z.string().max(200).optional(),
   listName: z.string().max(200).optional(),
   listId: z.number().int().positive().nullable().optional(),
-  listKasa: z.boolean().optional(),
-  rjKasa: z.boolean().optional(),
   sectionId: z.number().int().positive().nullable().optional(),
   attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional(),
   detailTable: detailTableSchema.optional(),
@@ -155,9 +157,37 @@ export const recordUpdateSchema = z.object({
 // z.string() here would let a malformed date like "16-01-2026" straight
 // into the database unvalidated.
 const importDateSchema = z.union([z.literal(""), dateSchema]);
+// Eski biçimdeki "kasa kaydı" satırları da kabul edilir (bkz. LEGACY_KASA_KIND);
+// eksi tutar yalnız onlarda olabilir (eski kasa aktarımı gönderen tarafı).
+const legacyAwareRecordFields = {
+  kind: importKindSchema,
+  amount: signedAmountSchema,
+};
+const legacyNegativeOnlyForKasa = <T extends { kind: string; amount: number }>(r: T) => r.amount >= 0 || r.kind === LEGACY_KASA_KIND;
+const legacyNegativeMessage = { message: "Eksi tutar yalnız eski biçimdeki kasa kaydında olabilir", path: ["amount"] };
 export const recordImportSchema = z.object({
-  items: z.array(recordInputSchema.partial({ date: true }).extend({ date: importDateSchema.optional().default("") })).min(1).max(2000),
+  items: z
+    .array(
+      recordInputSchema
+        .partial({ date: true })
+        .extend({ date: importDateSchema.optional().default(""), ...legacyAwareRecordFields })
+        .refine(legacyNegativeOnlyForKasa, legacyNegativeMessage),
+    )
+    .min(1)
+    .max(2000),
 });
+
+// Eski biçimdeki bir "kasa kaydı"nı (kind "cash") bugünkü modele çevirir:
+// kaynak adındaki kasaya bir Gelir kaydı olur; eksi tutarlıysa (eski kasa
+// aktarımının gönderen tarafı) aynı kasada mutlak tutarlı bir Gider olur.
+// Kasa bakiyesine etkisi aynıdır. Diğer satırlar olduğu gibi döner.
+export function convertLegacyKasaItem<T extends { kind: string; amount: number; source: string; cashAccount: string }>(
+  item: T,
+): Omit<T, "kind"> & { kind: "income" | "expense"; legacyKasa: boolean } {
+  if (item.kind !== LEGACY_KASA_KIND) return { ...item, kind: item.kind as "income" | "expense", legacyKasa: false };
+  const kasaName = item.cashAccount?.trim() || item.source;
+  return { ...item, kind: item.amount < 0 ? "expense" : "income", amount: Math.abs(item.amount), cashAccount: kasaName, legacyKasa: true };
+}
 
 // Excel aktarımı (sihirbaz): gelir/gider kayıtları, isteğe bağlı detay tablosu; importKey çift aktarımı engeller.
 export const excelImportSchema = z.object({
@@ -198,6 +228,18 @@ export const sectionUpdateSchema = z.object({
   parentKey: z.string().regex(/^(genel|liste|rj|sec-\d+)$/).nullable().optional(),
   name: z.string().trim().min(1).max(80).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+});
+
+// Yeni Kasa (POST /api/cash-accounts): kasa kendi başına açılır; açılış
+// bakiyesi verilirse kasaya "Açılış bakiyesi" başlıklı bir Gelir kaydı yazılır.
+export const cashAccountCreateSchema = z.object({
+  name: z.string().trim().min(1, "Kasa adı gerekli").max(120),
+  sectionId: z.number().int().positive().nullable().optional(),
+  listKasa: z.boolean().optional().default(false),
+  rjKasa: z.boolean().optional().default(false),
+  openingAmount: amountSchema.optional().default(0),
+  currency: currencySchema.optional().default("USD"),
+  date: dateSchema.optional(),
 });
 
 export const cashTransferInputSchema = z.object({
@@ -385,16 +427,17 @@ export const dashboardScopeInputSchema = z.object({
 // GET /api/database/export produces exactly this shape; POST .../import
 // validates against it. Loose on id/createdAt/updatedAt (ignored on
 // import — the DB assigns fresh ones) but strict on the business fields.
+// Bugünkü kayıtlar yalnız gelir/gider ve eksi olmayan tutarlıdır; eski
+// biçimdeki dosyalardaki "kasa kaydı" satırları (eksi tutarlı aktarım
+// tarafları dahil) içe aktarılırken convertLegacyKasaItem ile çevrilir.
 const exportedRecordSchema = recordInputSchema
   .extend({
     id: z.number().optional(),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
-    // Kasa aktarımının gönderen tarafı eksi tutarlı bir "cash" kaydıdır;
-    // dışa aktarılan yedekte bulunabilir. Eksi tutar yalnız kasa kaydında kabul edilir.
-    amount: z.number().finite().min(-999_999_999_999.99).max(999_999_999_999.99),
+    ...legacyAwareRecordFields,
   })
-  .refine((r) => r.amount >= 0 || r.kind === "cash", { message: "Eksi tutar yalnız kasa kaydında olabilir", path: ["amount"] });
+  .refine(legacyNegativeOnlyForKasa, legacyNegativeMessage);
 const exportedArchiveSchema = z.object({
   id: z.number().optional(),
   action: z.string().max(100),

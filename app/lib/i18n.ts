@@ -1,5 +1,5 @@
 import { translateGlossary } from "./glossary";
-import type { Kind, Language, NoteRelation, Page } from "./types";
+import type { ArchivedKind, Language, NoteRelation, Page } from "./types";
 
 export const kbGroupLogo = "/kb-logo.png";
 
@@ -100,7 +100,8 @@ export const nav: { id: Page; label: Record<Language, string>; icon: string }[] 
   },
 ];
 
-export function kindName(k: Kind, language: Language = "tr") {
+// Kayıt türü adı. Arşivdeki eski (0050 öncesi) "kasa kaydı" görüntüleri de "Kasa" olarak okunur.
+export function kindName(k: ArchivedKind, language: Language = "tr") {
   return k === "income"
     ? tx(language, "Gelir", "Income", "Dahat")
     : k === "expense"

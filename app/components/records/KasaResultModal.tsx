@@ -21,21 +21,19 @@ export type KasaReportData = {
   totalOutAmount: number;
 };
 
-export function computeKasaReportData(name: string, records: RecordItem[], allRecords: RecordItem[]): KasaReportData {
-  const directRows = records.filter((x) => x.source === name);
-  const linkedIncomeRows = allRecords.filter((x) => x.kind === "income" && x.cashAccount === name);
-  const linkedExpenseRows = allRecords.filter((x) => x.kind === "expense" && x.cashAccount === name);
-  const incomeRows = [...directRows, ...linkedIncomeRows].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-  const expenseRows = [...linkedExpenseRows].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+// Bir kasanın gelir ve gider kayıtları (kasa bakiyesi = gelir − gider).
+export function computeKasaReportData(name: string, allRecords: RecordItem[]): KasaReportData {
+  const incomeRows = allRecords.filter((x) => x.kind === "income" && x.cashAccount === name).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const expenseRows = allRecords.filter((x) => x.kind === "expense" && x.cashAccount === name).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   return {
     name,
     incomeRows,
     expenseRows,
-    totalInByCurrency: combineByCurrency([{ rows: directRows }, { rows: linkedIncomeRows }]),
-    totalOutByCurrency: combineByCurrency([{ rows: linkedExpenseRows }]),
-    totalByCurrency: combineByCurrency([{ rows: directRows }, { rows: linkedIncomeRows }, { rows: linkedExpenseRows, sign: -1 }]),
-    totalInAmount: total(directRows) + total(linkedIncomeRows),
-    totalOutAmount: total(linkedExpenseRows),
+    totalInByCurrency: combineByCurrency([{ rows: incomeRows }]),
+    totalOutByCurrency: combineByCurrency([{ rows: expenseRows }]),
+    totalByCurrency: combineByCurrency([{ rows: incomeRows }, { rows: expenseRows, sign: -1 }]),
+    totalInAmount: total(incomeRows),
+    totalOutAmount: total(expenseRows),
   };
 }
 
@@ -82,14 +80,12 @@ export function KasaResultModal({
   language,
   initialKasaName,
   kasaOptions,
-  records,
   allRecords,
   onClose,
 }: {
   language: Language;
   initialKasaName: string;
   kasaOptions: string[];
-  records: RecordItem[];
   allRecords: RecordItem[];
   onClose: () => void;
 }) {
@@ -97,7 +93,7 @@ export function KasaResultModal({
   const [pendingAdd, setPendingAdd] = useState("");
   const reportDate = date(new Date().toISOString().slice(0, 10), language);
   const availableToAdd = kasaOptions.filter((n) => !selectedKasas.includes(n));
-  const kasaBlocks = selectedKasas.map((name) => computeKasaReportData(name, records, allRecords));
+  const kasaBlocks = selectedKasas.map((name) => computeKasaReportData(name, allRecords));
   const isMulti = kasaBlocks.length > 1;
 
   const mergedIncome: TaggedRow[] = kasaBlocks
