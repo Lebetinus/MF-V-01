@@ -97,7 +97,6 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
         link: payload.link ?? old.link,
         cashAccount,
         cashAccountId: link.cashAccountId,
-        sectionId: payload.sectionId === undefined ? old.sectionId : payload.sectionId,
         attachments: payload.attachments ?? old.attachments,
         detailTable: payload.detailTable ?? old.detailTable,
         detailTableLayout: payload.detailTableLayout ?? old.detailTableLayout,

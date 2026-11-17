@@ -88,12 +88,9 @@ export function RecordModal({
   function switchType(next: "in" | "out") {
     const nextKind: Kind = next === "in" ? "income" : "expense";
     setKindState(nextKind);
-    setSectionId(null);
     setFinanceNoteRelation(nextKind);
     setForm((f) => ({ ...f, kind: nextKind }));
   }
-  // Gelir/Gider bölümü (Ayarlar > Bölümler).
-  const [sectionId, setSectionId] = useState<number | null>(() => (base as RecordItem).sectionId ?? null);
   // "Gider Detaylarını Görüntüle" bölümü kayıt penceresi her açıldığında
   // kapalı başlar (detay kayıtlıysa bile); açılınca tablonun tamamı görünür.
   const [detailTrimmed, setDetailTrimmed] = useState(false);
@@ -226,7 +223,7 @@ export function RecordModal({
         assignedUserIds: [],
       });
     }
-    onSave({ ...form, sectionId }, initial?.id);
+    onSave(form, initial?.id);
   }
   const rfHero = (
     <div className="wide rfHero">
@@ -382,15 +379,6 @@ export function RecordModal({
               </select>
             </label>
           );
-  const rfSection = sections.some((x) => x.scope === kind) && (
-            <label>
-              {tx(language, "Bölüm", "Section", "Beş")}
-              <select value={sectionId ?? ""} onChange={(e) => setSectionId(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">{tx(language, "Bölümsüz", "No section", "Bê beş")}</option>
-                {sections.filter((x) => x.scope === kind).map((x) => (<option key={x.id} value={x.id}>{x.name}</option>))}
-              </select>
-            </label>
-          );
   return (
     <div className="overlay overlayScrollThrough">
       <form
@@ -435,7 +423,6 @@ export function RecordModal({
           {sec(tx(language, "NEREYE", "WHERE", "KU"))}
           {rfKasa}
           {rfDate}
-          {rfSection}
           {sec(tx(language, "NE İÇİN", "WHAT FOR", "BI ÇI"))}
           {rfSource}
           {rfPerson}

@@ -500,6 +500,10 @@ test("workspaces: a kasa opens in a workspace; a workspace holding kasas cannot 
   // The old built-in workspace keys are gone.
   const oldParent = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_old`, parentKey: "rj" } });
   assert.equal(oldParent.status, 400);
+  // Gelir/Gider bölümleri kaldırıldı: yalnız kasa çalışma alanları oluşturulabilir.
+  const incomeSection = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "income", name: `${RUN_TAG}_inc` } });
+  assert.equal(incomeSection.status, 400);
+  assert.equal((await call("GET", "/api/sections", { cookie: adminCookie })).json.sections.every((s) => s.scope === "cash"), true);
 
   const other = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_ws2` } });
   assert.equal(other.status, 201);

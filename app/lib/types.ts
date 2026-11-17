@@ -37,8 +37,6 @@ export type RecordItem = {
   // Kayda iliştirilen dış bağlantı (http/https); yoksa boş.
   link?: string;
   cashAccount: string;
-  // Gelir/Gider bölümü (Ayarlar > Bölümler).
-  sectionId?: number | null;
   // Excel aktarımıyla gelen kayıtların aktarım numarası (kasa kutusunda toplanır, başlık kutusu oluşturmaz).
   importBatch?: string | null;
   // Kayda eklenen Excel/Office/PDF dosyaları (birden fazla olabilir) —
@@ -232,5 +230,5 @@ export type TypographyRule = { size: number; font: string; color: string };
 export type TypographySettings = Record<TypographyKey, TypographyRule>;
 
 // Ayarlar > Bölümler: yönetici tanımlı kasa / gelir / gider bölümleri (her biri sayfalarda yeni bir kutu ekler).
-export type SectionScope = "cash" | "income" | "expense";
+export type SectionScope = "cash";
 export type KasaSection = { id: number; scope: SectionScope; name: string; color: string; parentKey?: string | null; sortOrder?: number };

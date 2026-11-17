@@ -6,7 +6,7 @@ import { date, money } from "../../lib/finance";
 import type { Language, RecordItem } from "../../lib/types";
 
 // Gelir/Gider görünüm kartı: kaydın içeriği düzenleme açılmadan sağ üstte küçük bir kartta okunur.
-export function RecordViewPanel({ language, record: x, sectionName, canEdit, inline, onClose, onEdit, onMessages, onOpenTable }: { inline?: boolean; language: Language; record: RecordItem; sectionName: string; canEdit: boolean; onClose: () => void; onEdit: () => void; onMessages: () => void; onOpenTable: () => void }) {
+export function RecordViewPanel({ language, record: x, canEdit, inline, onClose, onEdit, onMessages, onOpenTable }: { inline?: boolean; language: Language; record: RecordItem; canEdit: boolean; onClose: () => void; onEdit: () => void; onMessages: () => void; onOpenTable: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
@@ -16,7 +16,6 @@ export function RecordViewPanel({ language, record: x, sectionName, canEdit, inl
   const tableRows = (x.detailTable?.length ?? 0) > 1 ? x.detailTable!.length - 1 : 0;
   const rows: [string, string][] = [
     [tx(language, "Kasa", "Cash account", "Qase"), x.cashAccount],
-    [tx(language, "Bölüm", "Section", "Beş"), sectionName],
     [tx(language, "Kişi", "Person", "Kes"), x.person],
     [tx(language, "Birim", "Unit", "Yekîne"), x.project],
     [tx(language, "Etiketler", "Tags", "Etîket"), (x.tags ?? []).join(", ")],

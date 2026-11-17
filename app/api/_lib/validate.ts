@@ -111,7 +111,6 @@ export const recordInputSchema = z.object({
   tags: tagsSchema,
   link: linkSchema.optional().default(""),
   cashAccount: shortText(200),
-  sectionId: z.number().int().positive().nullable().optional(),
   // Borç artık normal kayıtla oluşturulamaz (tek yol: POST /api/debts ve /api/debts/repay). Eski istemcinin
   // gönderdiği bir borç işareti sessizce yok sayılıp sıradan gider yazılmasın diye reddedilir.
   debtMode: z
@@ -141,7 +140,6 @@ export const recordUpdateSchema = z.object({
   tags: z.array(z.string().max(64)).max(20).optional(),
   link: linkSchema.optional(),
   cashAccount: z.string().max(200).optional(),
-  sectionId: z.number().int().positive().nullable().optional(),
   attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional(),
   detailTable: detailTableSchema.optional(),
   detailTableLayout: detailTableLayoutSchema.optional(),
@@ -214,7 +212,8 @@ export const excelImportSchema = z.object({
 });
 
 export const sectionInputSchema = z.object({
-  scope: z.enum(["cash", "income", "expense"]),
+  // Yalnız kasa çalışma alanları/bölümleri vardır (eski Gelir/Gider bölümleri kaldırıldı).
+  scope: z.literal("cash").optional().default("cash"),
   name: z.string().trim().min(1, "Ad gerekli").max(80),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default("#7b52bf"),
   // Doluysa ("sec-<id>") yeni alan, üstündekinin içinde "bölüm" olarak oluşturulur.

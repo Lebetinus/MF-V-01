@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
-import { cashAccounts, kasaSections, records } from "../../../../db/schema";
+import { cashAccounts, kasaSections } from "../../../../db/schema";
 import { requireSession } from "../../_lib/auth";
 import { json, withErrorHandling } from "../../_lib/http";
 import { parseBody, sectionUpdateSchema } from "../../_lib/validate";
@@ -24,14 +24,13 @@ export const PUT = withErrorHandling<Ctx>(async (request, { params }) => {
       const [self] = await db.select().from(kasaSections).where(eq(kasaSections.id, id)).limit(1);
       if (!self) return json({ error: "Not found" }, { status: 404 });
       if (parentKey !== null) {
-        // Yalnızca kasa çalışma alanları bölüm olabilir; tek seviye iç içe (bölümün altına bölüm yok).
-        if (self.scope !== "cash") return json({ error: "Yalnızca kasa çalışma alanları bölüm olabilir" }, { status: 400 });
+        // Tek seviye iç içe (bölümün altına bölüm yok).
         if (parentKey === `sec-${id}`) return json({ error: "Bir alan kendi içine taşınamaz" }, { status: 400 });
         const hasChildren = (await db.select({ id: kasaSections.id }).from(kasaSections).where(eq(kasaSections.parentKey, `sec-${id}`)).limit(1)).length > 0;
         if (hasChildren) return json({ error: "Altında bölüm bulunan alan başka bir alanın içine taşınamaz" }, { status: 400 });
         if (parentKey.startsWith("sec-")) {
           const [parent] = await db.select().from(kasaSections).where(eq(kasaSections.id, Number(parentKey.slice(4)))).limit(1);
-          if (!parent || parent.scope !== "cash") return json({ error: "Üst çalışma alanı bulunamadı" }, { status: 404 });
+          if (!parent) return json({ error: "Üst çalışma alanı bulunamadı" }, { status: 404 });
           if (parent.parentKey) return json({ error: "Bölümün içine başka bölüm eklenemez" }, { status: 400 });
         }
       }
@@ -49,7 +48,7 @@ export const PUT = withErrorHandling<Ctx>(async (request, { params }) => {
 });
 
 // Bölümü / çalışma alanını siler. İçinde kasa olan bir kasa alanı silinemez (kasalar önce başka alana taşınır);
-// altındaki bölümler ana seviyeye çıkıp birer çalışma alanı olur. Gelir/Gider bölümünün kayıtları bölümsüz kalır.
+// altındaki bölümler ana seviyeye çıkıp birer çalışma alanı olur.
 export const DELETE = withErrorHandling<Ctx>(async (request, { params }) => {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
@@ -58,13 +57,12 @@ export const DELETE = withErrorHandling<Ctx>(async (request, { params }) => {
   if (!Number.isFinite(id)) return json({ error: "Invalid id" }, { status: 400 });
   const db = getDb();
   const [gone] = await db.select().from(kasaSections).where(eq(kasaSections.id, id)).limit(1);
-  if (gone?.scope === "cash") {
+  if (gone) {
     const inside = await db.select({ id: cashAccounts.id }).from(cashAccounts).where(eq(cashAccounts.sectionId, id));
     if (inside.length) return json({ error: `Bu alanda ${inside.length} kasa var; silmeden önce kasaları başka bir alana taşıyın` }, { status: 409 });
   }
   await db.transaction(async (tx) => {
     await tx.update(cashAccounts).set({ sectionId: null }).where(eq(cashAccounts.sectionId, id));
-    await tx.update(records).set({ sectionId: null }).where(eq(records.sectionId, id));
     // Altındaki bölümler üst alansız (ana seviyede) kalır.
     await tx.update(kasaSections).set({ parentKey: null }).where(eq(kasaSections.parentKey, `sec-${id}`));
     await tx.delete(kasaSections).where(eq(kasaSections.id, id));

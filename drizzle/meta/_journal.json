@@ -365,6 +365,13 @@
       "when": 1794920007625,
       "tag": "0051_workspaces_only",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794949749774,
+      "tag": "0052_remove_record_sections",
+      "breakpoints": true
     }
   ]
 }

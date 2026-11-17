@@ -82,7 +82,6 @@ export const POST = withErrorHandling(async (request: Request) => {
         link: payload.link,
         cashAccount: payload.cashAccount || fallbackKasaNameFor(payload.kind),
         cashAccountId: link.cashAccountId,
-        sectionId: payload.sectionId ?? null,
         attachments: payload.attachments,
         detailTable: payload.detailTable,
         detailTableLayout: payload.detailTableLayout,

@@ -128,7 +128,6 @@ export const POST = withErrorHandling(async (request: Request) => {
     let removed = 0;
     for (const g of groups) {
       if (g.skipped) continue;
-      const first = byId.get(g.sourceIds[0])!;
       const label = g.kind === "income" ? "Aylık Gelir" : "Aylık Gider";
       await tx.insert(records).values({
         kind: g.kind,
@@ -143,7 +142,6 @@ export const POST = withErrorHandling(async (request: Request) => {
         tags: [],
         cashAccount: g.kasa,
         cashAccountId: g.kasaId,
-        sectionId: first.sectionId,
         detailTable: g.detailTable,
         importBatch: `${batchId}-m`,
         importKey: `mc|${batchId}|${g.key}`.slice(0, 240),

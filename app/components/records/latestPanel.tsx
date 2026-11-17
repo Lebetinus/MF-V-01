@@ -3,7 +3,7 @@
 import { PersonChip } from "../shared";
 import { tx, localizeData } from "../../lib/i18n";
 import { date, money } from "../../lib/finance";
-import type { FinanceNote, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
+import type { FinanceNote, Language, RecordItem, RecordsView } from "../../lib/types";
 import { RecordViewPanel } from "./RecordViewPanel";
 
 // Tablonun sağındaki pano: seçili kaydın görünümü, ya da "En Son Gelirler/Giderler" + "Mali Özel Notlar".
@@ -12,7 +12,6 @@ export type LatestPanelContext = {
   kind: RecordsView;
   kasaSplitActive: boolean;
   readOnly: boolean;
-  sections: KasaSection[];
   records: RecordItem[];
   rows: RecordItem[];
   notes: FinanceNote[];
@@ -24,7 +23,7 @@ export type LatestPanelContext = {
 };
 
 export function renderLatestPanel(c: LatestPanelContext) {
-  const { language, kind, kasaSplitActive, readOnly, sections, records, rows, notes, viewTarget, setViewTarget, onEdit, setCommentTarget, setDetailViewTarget } = c;
+  const { language, kind, kasaSplitActive, readOnly, records, rows, notes, viewTarget, setViewTarget, onEdit, setCommentTarget, setDetailViewTarget } = c;
   const latestRows = [...records]
     .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
     .slice(0, 3);
@@ -49,7 +48,6 @@ export function renderLatestPanel(c: LatestPanelContext) {
           inline
           language={language}
           record={viewTarget}
-          sectionName={viewTarget.sectionId ? sections.find((sec) => sec.id === viewTarget.sectionId)?.name ?? "" : ""}
           canEdit={!readOnly}
           onClose={() => setViewTarget(null)}
           onEdit={() => { const item = viewTarget; setViewTarget(null); onEdit(item); }}

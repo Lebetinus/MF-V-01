@@ -177,19 +177,6 @@ export function useKasaSummaries({
         return { ...b, kasas: [...b.kasas].sort((a, c) => c.amount - a.amount), count: rows.length, totalByCurrency: combineByCurrency([{ rows }]) };
       });
   }, [records, kasaPage, cashAccounts, cashSections, language]);
-  // Gelir/Gider bölüm kutuları: her bölüm için bir kutu (o bölümdeki kayıtların toplamı).
-  const sectionBoxes = useMemo(
-    () =>
-      kasaPage
-        ? []
-        : sections
-            .filter((x) => x.scope === kind)
-            .map((section) => {
-              const rows = records.filter((x) => x.sectionId === section.id);
-              return { section, count: rows.length, totalByCurrency: combineByCurrency([{ rows }]) };
-            }),
-    [records, kind, kasaPage, sections],
-  );
 
   return {
     cashSections,
@@ -199,6 +186,5 @@ export function useKasaSummaries({
     overallInOut,
     cashWorkspaces,
     ieWorkspaces,
-    sectionBoxes,
   };
 }

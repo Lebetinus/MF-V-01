@@ -160,7 +160,6 @@ export function Records({
   // Gelir/Gider sayfalarında kasa kutusuyla (ör. "Ana Kasa Giderleri") süzülen kasa adı.
   const [activeKasa, setActiveKasa] = useState("");
   // Gelir/Gider sayfalarında bölüm kutusuyla süzülen bölüm (Ayarlar > Bölümler).
-  const [activeSection, setActiveSection] = useState<number | null>(null);
   // Kasalar sayfasında çalışma alanı başlığıyla süzülen alan anahtarı (sec-<id>).
   const [activeWs, setActiveWs] = useState<string | null>(null);
   // Gelir/Gider sayfalarında seçili çalışma alanı (kasa kutuları yalnız seçili alanın kasalarını gösterir).
@@ -182,7 +181,6 @@ export function Records({
     overallInOut,
     cashWorkspaces,
     ieWorkspaces,
-    sectionBoxes,
   } = useKasaSummaries({ records, allRecords, kind, cashAccounts, sections, language, workspaceOrder });
   const filterSourceOptions = [...new Set(records.map((x) => x.source).filter(Boolean))];
 
@@ -238,7 +236,6 @@ export function Records({
       (source === "Tümü" || (kasaPage ? x.cashAccount === source : x.source === source || x.cashAccount === source)) &&
       (!activeKasa || x.cashAccount === activeKasa) &&
       (!activeIeWorkspace || activeIeNames.has(x.cashAccount)) &&
-      (activeSection === null || x.sectionId === activeSection) &&
       (activeWs === null || activeWs === "__all" || !kasaPage || activeWsNames.has(x.cashAccount)) &&
       (!filterFrom || x.date >= filterFrom) &&
       (!filterTo || x.date <= filterTo) &&
@@ -796,24 +793,6 @@ export function Records({
                 </button>
               </div>
             ))}
-            {sectionBoxes.map(({ section, count, totalByCurrency }) => (
-              <div className="groupCard sectionBox" key={`sec-${section.id}`}>
-                <button
-                  className={activeSection === section.id ? "selected" : ""}
-                  style={{ background: `${section.color}14`, borderColor: activeSection === section.id ? section.color : `${section.color}66` }}
-                  onClick={() => {
-                    setActiveSection(activeSection === section.id ? null : section.id);
-                    setActiveKasa("");
-                    setSource("Tümü");
-                    setSearch("");
-                  }}
-                >
-                  <b>{section.name} <span className="groupCount" style={{ color: section.color }}>({count})</span></b>
-                  <em className="groupKasaTag" style={{ background: `${section.color}22`, color: section.color }}>◆ {kind === "income" ? tx(language, "Gelir bölümü", "Income section", "Beşa dahatê") : tx(language, "Gider bölümü", "Expense section", "Beşa mesrefê")}</em>
-                  <strong style={{ color: section.color }}>{moneyBreakdown(totalByCurrency)}</strong>
-                </button>
-              </div>
-            ))}
           </>
         )}
       </div>
@@ -1038,7 +1017,6 @@ export function Records({
             kind,
             kasaSplitActive,
             readOnly,
-            sections,
             records,
             rows,
             notes,

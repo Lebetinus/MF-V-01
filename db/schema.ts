@@ -64,11 +64,11 @@ export const sessions = pgTable("sessions", {
 ]);
 
 // Çalışma alanları ve bölümler. scope=cash: kasaları gruplayan çalışma alanı (parentKey boş) ya da onun içindeki
-// bölüm (parentKey = "sec-<üst id>"); hazır/sabit bir alan yoktur, hepsini yönetici oluşturur. scope=income/expense:
-// Gelir/Gider sayfalarındaki kayıt bölümleri.
+// bölüm (parentKey = "sec-<üst id>"); hazır/sabit bir alan yoktur, hepsini yönetici oluşturur. Eski Gelir/Gider
+// kayıt bölümleri (scope=income/expense) kaldırıldı; scope artık hep "cash".
 export const kasaSections = pgTable("kasa_sections", {
   id: serial("id").primaryKey(),
-  scope: text("scope").notNull(),
+  scope: text("scope").notNull().default("cash"),
   name: text("name").notNull(),
   color: text("color").notNull().default("#7b52bf"),
   // Üst çalışma alanı ("sec-<id>"): doluysa bu kayıt, o çalışma alanının içinde bir "bölüm"dür (tek seviye).
@@ -77,7 +77,7 @@ export const kasaSections = pgTable("kasa_sections", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  check("kasa_sections_scope_check", sql`${table.scope} IN ('cash', 'income', 'expense')`),
+  check("kasa_sections_scope_check", sql`${table.scope} = 'cash'`),
   uniqueIndex("kasa_sections_scope_name_idx").on(table.scope, table.name),
 ]);
 
@@ -139,8 +139,6 @@ export const records = pgTable("records", {
   cashAccountId: integer("cash_account_id").references(() => cashAccounts.id, { onDelete: "set null" }),
   // Excel aktarımı: aynı aktarımdaki kayıtlar tek tıkla geri alınabilsin (importBatch) ve aynı satırlar ikinci
   // yüklemede çift kayıt oluşturmasın (importKey).
-  // Gelir/Gider bölümü (kasa_sections, scope=income/expense).
-  sectionId: integer("section_id"),
   importBatch: text("import_batch"),
   importKey: text("import_key"),
   // Bir kayda eklenen Excel/Office/PDF dosyaları (birden fazla olabilir) —

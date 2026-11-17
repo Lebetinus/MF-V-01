@@ -814,8 +814,6 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
   const [deleteTarget, setDeleteTarget] = useState<KasaSection | null>(null);
   const [drafts, setDrafts] = useState<Record<SectionScope, { name: string; color: string }>>({
     cash: { name: "", color: SECTION_COLORS[0] },
-    income: { name: "", color: SECTION_COLORS[1] },
-    expense: { name: "", color: SECTION_COLORS[2] },
   });
   const [error, setError] = useState("");
   // Kasa çalışma alanı eklerken doluysa yeni alan bu alanın içinde "bölüm" olur.
@@ -823,8 +821,6 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
   const parentLabel = (x: KasaSection) => (x.parentKey ? parentWorkspaceOptions(sections).find((o) => o.key === x.parentKey)?.label : undefined);
   const groups: [SectionScope, string, string][] = [
     ["cash", tx(language, "Çalışma alanları (Proje Kasaları, Şirketler…)", "Workspaces (Project cash accounts, Companies…)", "Qadên xebatê (Qaseyên Projeyê, Şirket…)"), tx(language, "Kasalar sayfasında kasalar çalışma alanları başlığı altında görünür. Burada oluşturduğunuz her alan Kasalar sayfasına kendi renginde bir başlık ve kutu satırı ekler; Yeni Kasa penceresinde “Çalışma alanı” ile seçilir. Hazır bir alan yoktur; her alanın içinde bölümler açılabilir.", "On the Kasalar page cash accounts appear under workspace headings. Each workspace created here adds a colored heading and box row; chosen with “Workspace” in the New Cash Account window. There are no built-in workspaces; each can hold sections.", "Di rûpela Qase de qase di bin sernavên qadên xebatê de xuya dibin. Her qada ku li vir çêdikin sernavek û rêzeke qutiyê ya rengîn zêde dike; di pencereya Qaseya Nû de bi “Qada xebatê” tê hilbijartin. Qadeke amade tune; di her qadê de beş dikarin werin vekirin.")],
-    ["income", tx(language, "Gelir bölümleri", "Income sections", "Beşên dahatê"), tx(language, "Gelir sayfasına yeni bir kutu ekler; gelir kaydında “Bölüm” ile seçilir.", "Adds a new box to the Income page; chosen with “Section” on an income record.", "Qutiyeke nû li rûpela Dahat zêde dike; di tomara dahatê de bi “Beş” tê hilbijartin.")],
-    ["expense", tx(language, "Gider bölümleri", "Expense sections", "Beşên mesrefê"), tx(language, "Gider sayfasına yeni bir kutu ekler; gider kaydında “Bölüm” ile seçilir.", "Adds a new box to the Expense page; chosen with “Section” on an expense record.", "Qutiyeke nû li rûpela Mesref zêde dike; di tomara mesrefê de bi “Beş” tê hilbijartin.")],
   ];
   async function call(url: string, method: string, body?: unknown) {
     const response = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
@@ -903,11 +899,7 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
         <DeleteConfirmModal
           language={language}
           itemLabel={deleteTarget.name}
-          warningText={
-            deleteTarget.scope === "cash"
-              ? tx(language, "İçinde kasa olan bir alan silinemez; önce kasaları başka bir alana taşıyın. Altındaki bölümler çalışma alanı olur.", "A workspace that still holds cash accounts cannot be deleted; move them to another workspace first. Its sections become workspaces.", "Qadeke ku qase tê de hene nayê jêbirin; pêşî qaseyan bibin qadeke din. Beşên wê dibin qadên xebatê.")
-              : tx(language, "Kayıtlar silinmez; bölümsüz kalır.", "Records are kept without a section.", "Tomar nayên jêbirin; bê beş dimînin.")
-          }
+          warningText={tx(language, "İçinde kasa olan bir alan silinemez; önce kasaları başka bir alana taşıyın. Altındaki bölümler çalışma alanı olur.", "A workspace that still holds cash accounts cannot be deleted; move them to another workspace first. Its sections become workspaces.", "Qadeke ku qase tê de hene nayê jêbirin; pêşî qaseyan bibin qadeke din. Beşên wê dibin qadên xebatê.")}
           checkPassword={checkPassword}
           onClose={() => setDeleteTarget(null)}
           onConfirm={(reason) => {
