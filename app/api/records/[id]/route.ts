@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { archive, records } from "../../../../db/schema";
 import { requireSession } from "../../_lib/auth";
@@ -10,11 +10,12 @@ import type { Kind } from "../../_lib/types";
 import { toClientArchiveItem } from "../../_lib/archive";
 import { parseBody, recordUpdateSchema } from "../../_lib/validate";
 import { deleteReason, formatAmount, logActivity, withReason } from "../../_lib/activity";
-import { restoreLentExpenses, type DebtMeta } from "../../_lib/debts";
-import { and, eq as eqOp, ne, sql } from "drizzle-orm";
+import { debtPairOf, debtTwinOf, lockDebtPair, outstandingDebt } from "../../_lib/debts";
 import { reverseTransfer, TRANSFER_LOCKED_FIELDS, transferForRecord } from "../../_lib/transfers";
 
 class RecordConflictError extends Error {}
+class DebtConflictError extends Error {}
+class DebtGoneError extends Error {}
 
 function canAccessKind(user: { isAdmin: boolean; permissions: string[] }, kind: string): boolean {
   return user.isAdmin || user.permissions.includes(kind as Kind);
@@ -189,23 +190,66 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
     });
   }
 
-  // Borç kayıtları: alınan borç girişi doğrudan silinemez; verilen borç ödenmişse önce ödemeler silinmelidir.
-  if (old.debtRole === "borrowed") {
-    return json({ error: "Borç alındı kaydı doğrudan silinemez; borcu veren kasadaki gideri silin" }, { status: 409 });
-  }
-  if (old.debtRole === "lent" && old.debtCashAccountId !== null && old.cashAccountId !== null) {
-    const repays = await db
-      .select({ meta: records.debtMeta })
-      .from(records)
-      .where(and(eqOp(records.debtRole, "repay"), eqOp(records.cashAccountId, old.debtCashAccountId), eqOp(records.debtCashAccountId, old.cashAccountId), ne(records.id, id)));
-    if (repays.some((r) => ((r.meta as DebtMeta) ?? []).some((m) => m.id === old.id))) {
-      return json({ error: "Bu borca ödeme yapılmış; önce borç ödemesi giderlerini silin" }, { status: 409 });
+  // Borç kayıtları ikiz yaşar (bkz. _lib/debts.ts): bir tarafı silmek işlemin iki kaydını birlikte siler (ikisi de
+  // Arşiv'e yazılır). Verilen borcu silmek, o borca yapılmış geri ödemeler kalan borçtan fazla kalacaksa reddedilir
+  // (önce ödemeler silinmeli); geri ödemeler her zaman silinebilir.
+  if (old.debtRole) {
+    // İkiz öteki türdedir (gelir ↔ gider): ikisinin de izni gerekir.
+    if (!canAccessKind(session.user, "income") || !canAccessKind(session.user, "expense")) {
+      return json({ error: "Forbidden" }, { status: 403 });
     }
+    let removed;
+    try {
+      removed = await db.transaction(async (tx) => {
+        const pair = debtPairOf(old);
+        if (pair) await lockDebtPair(pair.debtorId, pair.creditorId, tx);
+        // Kilit alındıktan sonra yeniden okunur: bu arada başka bir istek silmiş olabilir.
+        const current = (await tx.select().from(records).where(eq(records.id, id)).limit(1))[0];
+        if (!current) throw new DebtGoneError();
+        const twin = await debtTwinOf(current, tx);
+        if (pair && (current.debtRole === "lent" || current.debtRole === "borrowed")) {
+          const remaining = await outstandingDebt(pair.debtorId, pair.creditorId, current.currency, tx);
+          if (remaining - current.amount < -0.004) throw new DebtConflictError();
+        }
+        const legs = twin ? [current, twin] : [current];
+        const archiveEntries = await tx
+          .insert(archive)
+          .values(legs.map((leg) => ({
+            action: "Silindi",
+            userName: session.user.name,
+            oldRecord: leg,
+            reason: leg.id === current.id ? reason : `Borç işleminin karşı kaydı silindi: ${reason}`,
+          })))
+          .returning();
+        await tx.delete(records).where(inArray(records.id, legs.map((leg) => leg.id)));
+        return { legs, archiveEntries };
+      });
+    } catch (error) {
+      if (error instanceof DebtConflictError) {
+        return json({ error: "Bu borca yapılan geri ödemeler kalan borçtan fazla olur; önce borç ödemelerini silin" }, { status: 409 });
+      }
+      if (error instanceof DebtGoneError) return json({ error: "Record not found" }, { status: 404 });
+      throw error;
+    }
+    const lendLeg = old.debtRole === "lent" || old.debtRole === "borrowed";
+    const route = removed.legs.find((leg) => leg.kind === "expense");
+    const target = removed.legs.find((leg) => leg.kind === "income");
+    await logActivity(session.user, {
+      category: "cash",
+      action: "delete",
+      summary: withReason(`${lendLeg ? "Borç verme" : "Borç ödemesi"} silindi: ${route?.cashAccount ?? "—"} → ${target?.cashAccount ?? "—"} — ${formatAmount(old.amount, old.currency)} (${removed.legs.length} kayıt Arşiv'e taşındı)`, reason),
+      kasa: old.cashAccount,
+      meta: { id: old.id, removedRecordIds: removed.legs.map((leg) => leg.id) },
+    });
+    const own = removed.archiveEntries.find((entry) => (entry.oldRecord as { id?: number })?.id === id) ?? removed.archiveEntries[0];
+    return json({
+      archiveEntry: own ? toClientArchiveItem(own) : null,
+      archiveEntries: removed.archiveEntries.map(toClientArchiveItem),
+      removedRecordIds: removed.legs.map((leg) => leg.id),
+    });
   }
 
   const [archiveEntry] = await db.transaction(async (tx) => {
-    if (old.debtRole === "repay") await restoreLentExpenses((old.debtMeta as DebtMeta) ?? [], tx);
-    if (old.debtRole === "lent" && old.debtLinkId !== null) await tx.delete(records).where(eq(records.id, old.debtLinkId));
     await tx.delete(records).where(eq(records.id, id));
     return tx
       .insert(archive)

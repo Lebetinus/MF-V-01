@@ -53,19 +53,30 @@ export type RecordsTableContext = RecordCellContext & {
   dragOverRowId: number | null;
 };
 
-// Borç simgesinin üzerine gelince çıkan açıklama: kime/kimden, toplam, ödenen ve kalan.
+// Borç kaydının adı (dört rol; bkz. app/lib/debts.ts).
+export function debtRoleLabel(role: string | undefined, language: Language): string {
+  return role === "lent" ? tx(language, "Borç verildi", "Lent", "Deyn hat dayîn")
+    : role === "borrowed" ? tx(language, "Borç alındı", "Borrowed", "Deyn hat girtin")
+    : role === "collected" ? tx(language, "Borç tahsilatı", "Debt collected", "Deyn hat standin")
+    : tx(language, "Borç ödemesi", "Debt payment", "Dravdana deynê");
+}
+// Borç simgesinin / rozetinin üzerine gelince çıkan açıklama: kime/kimden, verilen, geri ödenen ve kalan.
 export function debtTooltip(x: RecordItem, language: Language, allRecords: RecordItem[]): string {
-  const title = x.debtRole === "lent" ? tx(language, "Borç verildi", "Lent", "Deyn hat dayîn") : x.debtRole === "borrowed" ? tx(language, "Borç alındı", "Borrowed", "Deyn hat girtin") : tx(language, "Borç ödemesi", "Debt payment", "Dravdana deynê");
-  const debtorId = x.debtRole === "lent" ? x.debtCashAccountId : x.cashAccountId;
-  const creditorId = x.debtRole === "lent" ? x.cashAccountId : x.debtCashAccountId;
+  const title = debtRoleLabel(x.debtRole, language);
+  const lenderSide = x.debtRole === "lent" || x.debtRole === "collected";
+  const debtorId = lenderSide ? x.debtCashAccountId : x.cashAccountId;
+  const creditorId = lenderSide ? x.cashAccountId : x.debtCashAccountId;
   const pair = debtPairs(allRecords).find((p) => p.debtorId === debtorId && p.creditorId === creditorId && p.currency === x.currency);
   if (!pair) return `${title}: ${money(x.amount, x.currency)}`;
   const route = `${localizeData(pair.creditorName || "—", language)} → ${localizeData(pair.debtorName || "—", language)}`;
   return [
     `${title}: ${route}`,
-    `${tx(language, "Toplam borç", "Total debt", "Deynê giştî")}: ${money(pair.borrowed, pair.currency)}`,
-    `${tx(language, "Ödenen", "Repaid", "Hatî dayîn")}: ${money(pair.repaid, pair.currency)}`,
+    `${tx(language, "Verilen borç", "Lent", "Deynê hatî dayîn")}: ${money(pair.given, pair.currency)}`,
+    `${tx(language, "Geri ödenen", "Repaid", "Hatî vegerandin")}: ${money(pair.returned, pair.currency)}`,
     `${tx(language, "Kalan", "Remaining", "Mayî")}: ${money(pair.outstanding, pair.currency)}`,
+    lenderSide
+      ? tx(language, "Borç veren kasanın kaydı: bakiyeye girer, gelir/gider istatistiğine girmez.", "Lender-side record: affects the balance, not income/expense statistics.", "Qeyda deyndêr: dikeve balansê, nakeve statîstîka dahat/mesrefê.")
+      : tx(language, "Borç alan kasanın kaydı: bakiyeye ve gelir/gider istatistiğine girer.", "Borrower-side record: counts in the balance and income/expense statistics.", "Qeyda deyndar: dikeve balans û statîstîka dahat/mesrefê."),
   ].join("\n");
 }
 export function columnLabel(id: ColumnId, language: Language, showListColumn: boolean): string {
@@ -146,6 +157,11 @@ export function renderCell(
           >
             {localizeData(x.source, language)}
           </button>
+          {x.debtRole && (
+            <span className="debtBadge" title={debtTooltip(x, language, allRecords)}>
+              {tx(language, "Borç", "Debt", "Deyn")}
+            </span>
+          )}
           {x.link && /^https?:\/\//i.test(x.link) && (
             <a className="cellLinkIcon" href={x.link} target="_blank" rel="noopener noreferrer" title={x.link} onClick={(e) => e.stopPropagation()}>🔗</a>
           )}
@@ -258,7 +274,7 @@ export function renderCell(
     case "debt":
       return x.debtRole ? (
         <span className={`debtIcon ${x.debtRole}`} title={debtTooltip(x, language, allRecords)} aria-label={debtTooltip(x, language, allRecords)} tabIndex={0}>
-          {x.debtRole === "lent" ? "↗" : x.debtRole === "borrowed" ? "↙" : "✓"}
+          {x.debtRole === "lent" ? "↗" : x.debtRole === "borrowed" ? "↙" : x.debtRole === "collected" ? "↩" : "✓"}
         </span>
       ) : null;
     case "tags":

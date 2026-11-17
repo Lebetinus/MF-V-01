@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { MoneyStack } from "./MoneyStack";
 import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, toUsd } from "../lib/finance";
-import { kasaDebtByCurrency } from "../lib/debts";
+import { isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
 import type { CashAccountSummary, KasaSection, Language, Page, RecordItem } from "../lib/types";
 
 // Alan Detayları: çalışma alanı → bölüm → kasa ağacından istenen alanlar işaretlenir; seçilenlerin özeti, alanlar arası
@@ -84,9 +84,10 @@ export function AreaDetails({
         wsKey: isSub ? (def.parentKey as string) : key,
         secKey: isSub ? key : null,
         balance: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]),
-        // Kasaya giren her para gelirdir (borç alma girişi dahil); kasadan çıkan her para giderdir (borç ödemesi dahil).
-        inBy: combineByCurrency([{ rows: inc.filter(inPeriod) }]),
-        outBy: combineByCurrency([{ rows: exp.filter(inPeriod) }]),
+        // Kasaya giren her para gelirdir (alınan borç dahil); kasadan çıkan her para giderdir (borç geri ödemesi dahil).
+        // Borç veren kasanın verdiği borç ve geri aldığı tahsilat ise gelir/gider sayılmaz (yalnız bakiyeye girer).
+        inBy: combineByCurrency([{ rows: inc.filter((x) => inPeriod(x) && !isDebtLeg(x)) }]),
+        outBy: combineByCurrency([{ rows: exp.filter((x) => inPeriod(x) && !isDebtLeg(x)) }]),
         debt: kasaDebtByCurrency(records, name),
         last: [...inc, ...exp].map((x) => x.date).filter(Boolean).sort().pop() ?? "",
         count: inc.length + exp.length,
@@ -162,7 +163,7 @@ export function AreaDetails({
       <div className="adHead">
         <div>
           <h2>{tx(language, "Kasa-Gelir-Gider Detayları", "Cash-Income-Expense Details", "Hûrguliyên Qase-Dahat-Mesref")}</h2>
-          <p>{tx(language, "Dönemi, çalışma alanı, bölüm ve kasaları seçin. Kasaya giren her para gelir, çıkan her para gider sayılır (borç alma ve ödemeleri dahil).", "Pick the period, workspaces, sections and cash accounts. Every amount entering a cash account counts as income and every amount leaving it as expense (debts included).", "Dem, qad, beş û qaseyan hilbijêre.")}</p>
+          <p>{tx(language, "Dönemi, çalışma alanı, bölüm ve kasaları seçin. Kasaya giren her para gelir, çıkan her para gider sayılır (alınan borç ve borç geri ödemesi dahil); borç veren kasanın verdiği borç ve geri aldığı tahsilat gelir/gidere girmez, yalnız bakiyeye girer.", "Pick the period, workspaces, sections and cash accounts. Every amount entering a cash account counts as income and every amount leaving it as expense (borrowed money and repayments included); money a lending kasa lends and collects back is not income/expense, it only moves the balance.", "Dem, qad, beş û qaseyan hilbijêre. Her pereyê dikeve qaseyê dahat e, her pereyê derdikeve mesref e (deynê hatî girtin û vegerandin jî tê de); deynê qaseya deyndêr dide û distîne nakeve dahat/mesrefê, tenê balansê diguherîne.")}</p>
         </div>
       </div>
 

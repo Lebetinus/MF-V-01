@@ -3,7 +3,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmModal } from "../shared";
-import { debtPairs } from "../../lib/debts";
 import { workspaceKeyOf, workspaceOptions } from "../KasaManage";
 import { tx, localizeData, noteRelationLabel } from "../../lib/i18n";
 import { openAttachment } from "../../lib/attachments";
@@ -37,7 +36,7 @@ export function RecordModal({
   onSave: (x: Omit<RecordItem, "id">, id?: number) => void;
   cashAccounts: CashAccountSummary[];
 }) {
-  // Yeni Gelir/Gider/Borç kaydında tür, pencerenin içinden değiştirilebilir.
+  // Yeni Gelir/Gider kaydında tür, pencerenin içinden değiştirilebilir (borç: Borç ver / Borç öde penceresi).
   const [kind, setKindState] = useState<Kind>(kindProp);
   const defaultNoteRelation: NoteRelation = kind;
   const [financeNote, setFinanceNote] = useState("");
@@ -86,34 +85,16 @@ export function RecordModal({
   // translated string back to the database, breaking cashAccount name
   // matching and silently corrupting data across languages.
   const [form, setForm] = useState<Omit<RecordItem, "id">>(base);
-  const debtModeNow = form.debtMode ?? "";
-  const tone: "in" | "out" | "debt" = kind === "income" ? "in" : debtModeNow !== "" ? "debt" : "out";
-  function switchType(next: "in" | "out" | "debt") {
+  const tone: "in" | "out" = kind === "income" ? "in" : "out";
+  function switchType(next: "in" | "out") {
     const nextKind: Kind = next === "in" ? "income" : "expense";
     setKindState(nextKind);
     setSectionId(null);
     setFinanceNoteRelation(nextKind);
-    setForm((f) => ({ ...f, kind: nextKind, debtMode: next === "debt" ? (f.debtMode || "lent") : "", debtCashAccountId: null }));
+    setForm((f) => ({ ...f, kind: nextKind }));
   }
   // Gelir/Gider bölümü (Ayarlar > Bölümler).
   const [sectionId, setSectionId] = useState<number | null>(() => (base as RecordItem).sectionId ?? null);
-  // Gider eklerken "Borç" işareti: lent = başka bir kasaya borç veriyorum, repay = borcumu ödüyorum (karşı kasa seçilir).
-  // Karşı kasa yalnız kullanıcının erişebildiği kasalardan seçilir (sunucu da aynı kuralı uygular).
-  const debtMode = form.debtMode ?? "";
-  const ownKasaId = cashAccounts.find((a) => a.name === form.cashAccount)?.id;
-  // Borcumu öderken: bu kasanın borcu olduğu (seçili para biriminde kalan borcu bulunan) alacaklı kasalar.
-  const repayOptions = debtPairs(records).filter((p) => p.debtorName === form.cashAccount && p.currency === form.currency && p.outstanding > 0.004);
-  const lentOptions = cashAccounts.filter((k) => k.id !== ownKasaId).map((k) => ({ id: k.id, name: k.name }));
-  const pickDebtKasa = (idText: string) => {
-    const id = idText ? Number(idText) : null;
-    let amount = form.amount;
-    if (debtMode === "repay" && id) {
-      const remaining = repayOptions.find((p) => p.creditorId === id)?.outstanding ?? 0;
-      // Ödeme tutarı kalan borca göre otomatik düzenlenir.
-      if (remaining > 0 && (!amount || amount > remaining)) amount = remaining;
-    }
-    setForm({ ...form, debtCashAccountId: id, amount });
-  };
   // "Gider Detaylarını Görüntüle" bölümü kayıt penceresi her açıldığında
   // kapalı başlar (detay kayıtlıysa bile); açılınca tablonun tamamı görünür.
   const [detailTrimmed, setDetailTrimmed] = useState(false);
@@ -290,7 +271,7 @@ export function RecordModal({
       .sort((x, y) => (order.indexOf(x[0]) + 1 || 999) - (order.indexOf(y[0]) + 1 || 999))
       .map(([label, list]) => ({ label, names: list.sort((p, q) => p.localeCompare(q)) }));
   })();
-  const toneLabel = tone === "in" ? tx(language, "Gelir", "Income", "Dahat") : tone === "out" ? tx(language, "Gider", "Expense", "Mesref") : tx(language, "Borç", "Debt", "Deyn");
+  const toneLabel = tone === "in" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref");
   const rfSource = (          <label>
             <span>{kind === "income"
                 ? tx(
@@ -402,38 +383,6 @@ export function RecordModal({
               </select>
             </label>
           );
-  const rfDebt = kind === "expense" && !initial && debtMode !== "" && (
-            <div className="wide debtBlock">
-              {(
-                <div className="debtBlockBody">
-                  <label>
-                    {tx(language, "Borç türü", "Debt type", "Cureyê deynê")}
-                    <select value={debtMode} onChange={(e) => setForm({ ...form, debtMode: e.target.value as "lent" | "repay", debtCashAccountId: null })}>
-                      <option value="lent">{tx(language, "Borç veriyorum (başka kasaya)", "I am lending (to another kasa)", "Deyn didim (ji qaseyeke din re)")}</option>
-                      <option value="repay">{tx(language, "Borcumu ödüyorum", "I am repaying a debt", "Deynê xwe didim")}</option>
-                    </select>
-                  </label>
-                  <label>
-                    {debtMode === "lent" ? tx(language, "Borç verilen kasa", "Kasa lent to", "Qaseya deyn lê hat dayîn") : tx(language, "Borcun ödeneceği kasa", "Kasa to repay", "Qaseya deyn lê tê dayîn")}
-                    <select required value={form.debtCashAccountId ?? ""} onChange={(e) => pickDebtKasa(e.target.value)}>
-                      <option value="" disabled>{tx(language, "Kasa seçin", "Select a kasa", "Qaseyekê hilbijêre")}</option>
-                      {debtMode === "lent"
-                        ? lentOptions.map((k) => <option key={k.id} value={k.id}>{localizeData(k.name, language)}</option>)
-                        : repayOptions.map((p) => <option key={p.creditorId} value={p.creditorId}>{localizeData(p.creditorName, language)} — {tx(language, "kalan", "remaining", "mayî")} {money(p.outstanding, p.currency)}</option>)}
-                    </select>
-                  </label>
-                  {debtMode === "repay" && repayOptions.length === 0 && (
-                    <small className="debtHint">{tx(language, "Bu kasanın seçili para biriminde kalan borcu yok.", "This kasa has no outstanding debt in the selected currency.", "Vê qaseyê bi vê diravê deynê mayî tune.")}</small>
-                  )}
-                  <small className="debtHint">
-                    {debtMode === "lent"
-                      ? tx(language, "Tutar bu kasanın giderinde görünür; borç alan kasaya otomatik giriş yazılır ve orada “Borç Tutarı” olarak görünür.", "The amount is shown as this kasa's expense; the borrowing kasa automatically gets an entry and shows it as “Debt Amount”.", "Mêjer wekî mesrefa vê qaseyê xuya dibe; qaseya deyn digire bixwe tê tomarkirin.")
-                      : tx(language, "Ödeme, borç alan kasanın giderinde görünür; borç miktarı ve borç veren kasanın verdiği gider ödeme kadar otomatik azalır.", "The payment appears in this kasa's expenses; the debt and the lender's lent expense decrease automatically by the amount paid.", "Dravdan di mesrefa vê qaseyê de xuya dibe; deyn û mesrefa qaseya deyn daye bixwe kêm dibin.")}
-                  </small>
-                </div>
-              )}
-            </div>
-          );
   const rfSection = sections.some((x) => x.scope === kind) && (
             <label>
               {tx(language, "Bölüm", "Section", "Beş")}
@@ -458,7 +407,7 @@ export function RecordModal({
         }}
       >
         <div className="modalHead rfHead">
-          <span className={`rfIcon ${tone}`} aria-hidden="true">{tone === "in" ? "↗" : tone === "out" ? "↘" : "⇄"}</span>
+          <span className={`rfIcon ${tone}`} aria-hidden="true">{tone === "in" ? "↗" : "↘"}</span>
           <div className="rfTitle">
             <h2>
               {initial
@@ -473,7 +422,7 @@ export function RecordModal({
           </div>
           {!initial && (
             <div className="rfType" role="tablist" aria-label={tx(language, "Kayıt türü", "Record type", "Cureyê qeydê")}>
-              {([["in", tx(language, "Gelir", "Income", "Dahat")], ["out", tx(language, "Gider", "Expense", "Mesref")], ["debt", tx(language, "Borç", "Debt", "Deyn")]] as const).map(([id, label]) => (
+              {([["in", tx(language, "Gelir", "Income", "Dahat")], ["out", tx(language, "Gider", "Expense", "Mesref")]] as const).map(([id, label]) => (
                 <button key={id} type="button" role="tab" aria-selected={tone === id} className={`${id}${tone === id ? " on" : ""}`} onClick={() => switchType(id)}>{label}</button>
               ))}
             </div>
@@ -487,7 +436,6 @@ export function RecordModal({
           {sec(tx(language, "NEREYE", "WHERE", "KU"))}
           {rfKasa}
           {rfDate}
-          {rfDebt}
           {rfSection}
           {sec(tx(language, "NE İÇİN", "WHAT FOR", "BI ÇI"))}
           {rfSource}

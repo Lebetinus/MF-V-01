@@ -341,7 +341,7 @@ export default function Home() {
     // Kullanım Kılavuzu is pure static help content, no real data — every
     // signed-in user can open it regardless of their page permissions.
     if (pageId === "guide") return true;
-    // Borç Detay: borçlar Gider/Kasa kayıtlarından türetilir; bu sayfalardan birine izni olan görebilir.
+    // Borç Detay: kasalar arası borçlar Gider/Kasa kayıtlarından türetilir; bu sayfalardan birine izni olan görebilir.
     // Analiz: kasa/gelir/gider kayıtlarından türetilir; bu sayfalardan birine izni olan görebilir.
     if (pageId === "areaDetails") return profile.permissions.includes("income") || profile.permissions.includes("expense") || profile.permissions.includes("cash");
     if (pageId === "analysis") return profile.permissions.includes("income") || profile.permissions.includes("expense") || profile.permissions.includes("cash");
@@ -380,8 +380,6 @@ export default function Home() {
       setRecords((r) => (id ? r.map((x) => (x.id === id ? data.record : x)) : [data.record, ...r]));
       if (data.archiveEntry) setArchive((a) => [data.archiveEntry, ...a]);
       setModal(null);
-      // Borç verme/ödeme başka kasalardaki kayıtları da değiştirir (otomatik giriş, azalan gider): listeyi yenile.
-      if (next.debtMode) refreshRecords();
     } catch {
       notify(tx(language, "Kayıt kaydedilemedi. Lütfen tekrar deneyin.", "The record could not be saved. Please try again.", "Qeyd nehat tomarkirin. Ji kerema xwe dîsa biceribîne."));
     }
@@ -542,18 +540,18 @@ export default function Home() {
           notify(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından silin.", "This record was generated from a list; delete it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste jê bibe."));
           return;
         }
-        notify(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
+        // 409: ör. geri ödemesi yapılmış bir borcu silmek — sunucunun açıklaması gösterilir.
+        const info = response.status === 409 ? await response.json().catch(() => ({})) : {};
+        notify(info.error || tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
         return;
       }
       const data = await response.json();
-      // Kasa aktarımı silinince iki taraf birlikte silinir (removedRecordIds).
+      // Kasa aktarımı ya da borç işlemi silinince iki taraf birlikte silinir (removedRecordIds).
       const removedIds = new Set<number>(Array.isArray(data.removedRecordIds) ? data.removedRecordIds : [item.id]);
       const archived = Array.isArray(data.archiveEntries) ? data.archiveEntries : data.archiveEntry ? [data.archiveEntry] : [];
       if (archived.length) setArchive((a) => [...archived, ...a]);
       setRecords((r) => r.filter((x) => !removedIds.has(x.id)));
       if (Array.isArray(data.removedRecordIds)) void refreshAfterCashTransfer();
-      // Borç ödemesi/verilen borç silinince ilgili kayıtlar da değişir: listeyi yenile.
-      if (item.debtRole) refreshRecords();
     } catch {
       notify(tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
     }
@@ -1065,7 +1063,17 @@ export default function Home() {
               cashTransfers={cashTransfers}
             />
           )}
-          {page === "debts" && <DebtDetail records={dashboardRecords} language={language} />}
+          {page === "debts" && (
+            <DebtDetail
+              records={dashboardRecords}
+              language={language}
+              cashAccounts={contextCashAccounts}
+              isSuperAdmin={profile.isSuperAdmin}
+              // "Kullanıcı gözüyle gör" salt okunurdur: borç düğmeleri gizlenir (sunucu da yazmayı reddeder).
+              readOnly={Boolean(viewAs)}
+              onChanged={refreshAfterCashTransfer}
+            />
+          )}
           {page === "notes" && (
             <Notes
               language={language}

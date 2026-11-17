@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "../../../../db";
 import { archive, cashAccounts, records, users } from "../../../../db/schema";
@@ -104,6 +104,13 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
     // Bu kasaya giren/çıkan aktarımların karşı kasadaki kayıtları da geri
     // alınır; yoksa karşı kasada yalnız bir taraf kalırdı.
     await reverseTransfersOfKasa(id, { userName: session.user.name, reason: `Kasa silindi: ${parsed.data.reason}` }, tx);
+    // Bu kasanın borç işlemlerinin karşı kasadaki kayıtları (ikizleri) da silinir; yoksa karşı kasada
+    // tek taraflı bir borç / alacak kalırdı (bkz. _lib/debts.ts).
+    const debtTwins = await tx.select().from(records).where(and(eq(records.debtCashAccountId, id), ne(records.debtRole, ""), ne(records.cashAccountId, id)));
+    if (debtTwins.length > 0) {
+      await tx.insert(archive).values(debtTwins.map((old) => ({ action: "Silindi", userName: session.user.name, oldRecord: old, reason: `Borç işleminin karşı kasası silindi: ${parsed.data.reason}` })));
+      await tx.delete(records).where(inArray(records.id, debtTwins.map((r) => r.id)));
+    }
     const rows = await tx.select().from(records).where(eq(records.cashAccountId, id));
     if (rows.length > 0) {
       await tx.insert(archive).values(rows.map((old) => ({ action: "Silindi", userName: session.user.name, oldRecord: old, reason: `Kasa silindi: ${parsed.data.reason}` })));

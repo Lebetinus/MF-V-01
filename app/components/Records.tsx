@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Title, DeleteConfirmModal } from "./shared";
-import { isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
+import { isDebtLeg, kasaDebtByCurrency, kasaDebtStatus } from "../lib/debts";
+import { DebtModal, type DebtModalMode } from "./DebtModal";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
 import { RecordCommentsModal } from "./Comments";
 import { KasaDeleteModal, KasaEditModal, NewKasaModal, workspaceOptions } from "./KasaManage";
@@ -152,6 +153,8 @@ export function Records({
   const [newKasaKey, setNewKasaKey] = useState<string | null>(null);
   // "Kasalar arası aktarım" penceresinin kaynak kasası.
   const [transferTarget, setTransferTarget] = useState<CashAccountSummary | null>(null);
+  // Kasa sayfasındaki "Borç ver" / "Borç öde" penceresi (bu kasa ön seçili).
+  const [debtTarget, setDebtTarget] = useState<{ mode: DebtModalMode; kasaId: number } | null>(null);
   const { shareBusyKey, dashboardShareBusy, toggleShare, toggleDashboardShare } = useKasaSharing({ language, shareTarget, setShareTarget, onCashAccountsChange });
   const { approvingId, approveTransfer } = useTransferApproval({ language, onTransfersChanged });
   const [source, setSource] = useState("Tümü");
@@ -390,7 +393,10 @@ export function Records({
     return list;
   };
   const detailKasa = detailMode ? cashWorkspaces.flatMap((w) => w.allKasas.map((k) => ({ k, w }))).find((x) => x.k.name === source) : undefined;
+  // Bu kasanın borç alan olarak kalan borcu ("Borç öde" düğmesi) ve "Borç durumu" kutusu (borç veren / alan olarak).
+  // Bu rakamlar Gelir/Gider kutularına girmez.
   const kasaDebt = kasaSplitActive ? kasaDebtByCurrency(allRecords, source) : {};
+  const debtStatus = kasaSplitActive ? kasaDebtStatus(allRecords, source) : { lender: null, borrower: null };
   const kasaIncomeRows = kasaSplitActive ? orderedRows.filter((x) => x.kind !== "expense") : [];
   const kasaExpenseRows = kasaSplitActive ? orderedRows.filter((x) => x.kind === "expense") : [];
   // Satır seçimi: seçili satırlar Excel'e çıkarılabilir, kopyalanabilir veya toplu silinebilir.
@@ -636,6 +642,57 @@ export function Records({
             {kasaActions(source, true)}
             {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc ? <button type="button" className="light compact" onClick={() => setShareTarget(acc)}>🔗 {tx(language, "Paylaş", "Share", "Parve bike")}</button> : null; })()}
             {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc && !readOnly && (acc.isOwner || isSuperAdmin) ? <button type="button" className="light compact" onClick={() => setTransferTarget(acc)}>⇄ {tx(language, "Kasalar arası aktarım", "Transfer to another cash account", "Veguhastin bo qaseyeke din")}</button> : null; })()}
+            {(() => {
+              // Borç düğmeleri aktarım düğmesi gibi: parası çıkan kasa bu kasadır, yazma yetkisi gerekir.
+              const acc = cashAccounts.find((a) => a.name === source);
+              if (!acc || readOnly || !(acc.isOwner || isSuperAdmin)) return null;
+              return (
+                <>
+                  <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "lend", kasaId: acc.id })}>↗ {tx(language, "Borç ver", "Lend", "Deyn bide")}</button>
+                  {Object.keys(kasaDebt).length > 0 && (
+                    <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "repay", kasaId: acc.id })}>↩ {tx(language, "Borç öde", "Repay debt", "Deyn vegerîne")}</button>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+      {detailMode && (debtStatus.lender || debtStatus.borrower) && (
+        <div className="debtStatusCard" role="group" aria-label={tx(language, "Borç durumu", "Debt status", "Rewşa deynê")}>
+          <h3>
+            ⇄ {tx(language, "Borç durumu", "Debt status", "Rewşa deynê")}
+            <small>{tx(language, "Ayrıntı için Borç Detay.", "See Debt Details for more.", "Ji bo hûrguliyan Hûrguliyên Deynê bibîne.")}</small>
+          </h3>
+          <div className="debtStatusSides">
+            {debtStatus.lender && (
+              <div className="debtStatusSide">
+                <b>{tx(language, "Borç veren olarak", "As lender", "Wek deyndêr")}</b>
+                <small>{tx(language, "Gelir/Gider toplamlarına girmez; yalnız bakiyeyi etkiler.", "Not part of the income/expense totals; affects the balance only.", "Nakeve giştiya dahat/mesrefê; tenê bandorê li bakiyeyê dike.")}</small>
+                <dl>
+                  <dt>{tx(language, "Verilen borç", "Lent", "Deynê hatî dayîn")}</dt>
+                  <dd>{moneyBreakdown(debtStatus.lender.given)}</dd>
+                  <dt>{tx(language, "Geri alınan", "Collected", "Hatî standin")}</dt>
+                  <dd className="pos">{moneyBreakdown(debtStatus.lender.returned)}</dd>
+                  <dt>{tx(language, "Alacak", "Receivable", "Deynê ku tê standin")}</dt>
+                  <dd className="pos">{moneyBreakdown(debtStatus.lender.receivable)}</dd>
+                </dl>
+              </div>
+            )}
+            {debtStatus.borrower && (
+              <div className="debtStatusSide">
+                <b>{tx(language, "Borç alan olarak", "As borrower", "Wek deyndar")}</b>
+                <small>{tx(language, "Alınan borç gelire, ödemeler gidere dahildir.", "Borrowed money counts as income, repayments as expenses.", "Deynê hatî girtin di dahatê de, dravdan di mesrefê de têne hesibandin.")}</small>
+                <dl>
+                  <dt>{tx(language, "Alınan borç", "Borrowed", "Deynê hatî girtin")}</dt>
+                  <dd>{moneyBreakdown(debtStatus.borrower.borrowed)}</dd>
+                  <dt>{tx(language, "Ödenen", "Repaid", "Hatî dayîn")}</dt>
+                  <dd className="pos">{moneyBreakdown(debtStatus.borrower.repaid)}</dd>
+                  <dt>{tx(language, "Kalan borç", "Remaining debt", "Deynê mayî")}</dt>
+                  <dd className="neg">{moneyBreakdown(debtStatus.borrower.remaining)}</dd>
+                </dl>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -996,11 +1053,6 @@ export function Records({
                     <strong className="positive">
                       {moneyBreakdown(combineByCurrency([{ rows: kasaIncomeRows.filter((x) => !isDebtLeg(x)) }]))}
                     </strong>
-                    {Object.keys(kasaDebt).length > 0 && (
-                      <strong className="negative kasaDebtTag" title={tx(language, "Bu kasanın başka kasalara kalan borcu (Borç Detay sayfasına bakın)", "Outstanding debt of this kasa to other kasas (see Debt Details)", "Deynê mayî yê vê qaseyê (Hûrguliyên Deynê bibîne)")}>
-                        {tx(language, "Borç Tutarı", "Debt Amount", "Mêjera Deynê")}: {moneyBreakdown(kasaDebt)}
-                      </strong>
-                    )}
                   </h3>
                   <small>
                     {kasaIncomeRows.length} {recordWord}
@@ -1021,7 +1073,7 @@ export function Records({
                   <h3>
                     {tx(language, "Giderler", "Expenses", "Mesref")}
                     <strong className="negative">
-                      {moneyBreakdown(combineByCurrency([{ rows: kasaExpenseRows.filter((x) => x.debtRole !== "repay") }]))}
+                      {moneyBreakdown(combineByCurrency([{ rows: kasaExpenseRows.filter((x) => !isDebtLeg(x)) }]))}
                     </strong>
                   </h3>
                   <small>
@@ -1122,6 +1174,18 @@ export function Records({
           users={users}
           onTransfersChanged={onTransfersChanged}
           onClose={() => setTransferTarget(null)}
+        />
+      )}
+      {debtTarget && (
+        <DebtModal
+          language={language}
+          cashAccounts={cashAccounts}
+          records={allRecords}
+          isSuperAdmin={isSuperAdmin}
+          initialMode={debtTarget.mode}
+          kasaId={debtTarget.kasaId}
+          onDone={onTransfersChanged}
+          onClose={() => setDebtTarget(null)}
         />
       )}
       {kasaResultOpen && kasaSplitActive && (

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { tx, localizeData } from "../../lib/i18n";
 import { combineByCurrency, moneyBreakdown } from "../../lib/finance";
+import { isDebtLeg } from "../../lib/debts";
 import type { CashAccountSummary, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
 import type { AccessKasa } from "../WorkspaceAccess";
 import type { CardGroup, useKasaSummaries } from "./useKasaSummaries";
@@ -62,7 +63,8 @@ export function monthlyOfKasa(name: string, allRecords: RecordItem[]) {
     .map(([month, rows]) => {
       const inc = rows.filter((x) => x.kind === "income");
       const exp = rows.filter((x) => x.kind === "expense");
-      return { month, inc: combineByCurrency([{ rows: inc }]), exp: combineByCurrency([{ rows: exp }]), res: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]) };
+      // Gelir/gider: borç veren tarafın borç kayıtları (lent/collected) hariç; sonuç: bakiyedeki değişim (hepsi dahil).
+      return { month, inc: combineByCurrency([{ rows: inc.filter((x) => !isDebtLeg(x)) }]), exp: combineByCurrency([{ rows: exp.filter((x) => !isDebtLeg(x)) }]), res: combineByCurrency([{ rows: inc }, { rows: exp, sign: -1 }]) };
     });
 }
 

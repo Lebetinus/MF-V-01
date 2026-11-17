@@ -86,6 +86,38 @@ export function Guide({ language }: { language: Language }) {
       ),
     },
     {
+      id: "debts",
+      title: tx(language, "Kasalar Arası Borç", "Debts Between Cash Accounts", "Deyn di Navbera Qaseyan de"),
+      body: (
+        <>
+          <p>
+            {tx(
+              language,
+              "Bir kasa (genellikle ana / sermaye kasası) başka bir kasaya (örneğin bir proje kasasına) borç verebilir. Borç Detay sayfasında \"＋ Borç ver\" ile ya da kasanın sayfasındaki \"Borç ver\" düğmesiyle borç veren kasayı, borç alan kasayı, tutarı ve para birimini seçin. Örnek: Örnek A.Ş. — Merkez Kasa, Şube Kasası'na 10.000 $ borç verir.",
+              "One kasa (usually the main / capital kasa) can lend money to another (e.g. a project kasa). On the Debt Details page use \"＋ Lend\", or the \"Lend\" button on the kasa's page, and pick the lending kasa, the borrowing kasa, the amount and the currency. Example: Örnek A.Ş. — Head Office lends $10,000 to the Branch kasa.",
+              "Qaseyek (bi gelemperî qaseya sereke / sermiyanê) dikare deyn bide qaseyeke din (mînak qaseya projeyekê). Li rûpela Hûrguliyên Deynê \"＋ Deyn bide\" an jî bişkoka \"Deyn bide\" ya li rûpela qaseyê bikar bînin û qaseya deyndêr, qaseya deyndar, mîqdar û diravê hilbijêrin.",
+            )}
+          </p>
+          <p>
+            {tx(
+              language,
+              "Her işlem iki kasaya birlikte yazılır: borç veren kasada gider, borç alan kasada gelir. Geri ödeme de böyledir (\"Borç öde\" ya da Borç Detay'daki \"Ödeme yap\"): borçlu kasada gider, alacaklı kasada tahsilat. Ödeme kalan borcu aşamaz. Kayıtlardan birini silmek karşı kasadaki kaydı da siler.",
+              "Every operation is written to both kasas at once: an expense in the lending kasa and income in the borrowing kasa. Repaying works the same way (\"Repay debt\", or \"Make payment\" on Debt Details): an expense in the debtor kasa and a collection in the creditor kasa. A payment cannot exceed the remaining debt. Deleting one of the records also deletes its counterpart in the other kasa.",
+              "Her karûbar bi hev re di her du qaseyan de tê nivîsandin: mesref di qaseya deyndêr de, dahat di qaseya deyndar de. Vegerandin jî wisa ye: mesref di qaseya deyndar de, berhevkirin di qaseya deyndêr de. Dravdan nikare ji deynê mayî zêdetir be. Jêbirina qeydekê qeyda din jî jê dibe.",
+            )}
+          </p>
+          <p>
+            {tx(
+              language,
+              "Borç veren kasa sermaye gibidir: verdiği borç ve geri aldığı tahsilat gelir/gider istatistiğine girmez, yalnız bakiyesini değiştirir; borç ödendikçe bakiyesi eski haline döner. Borç alan kasada ise alınan borç gelir, geri ödeme gider sayılır. Kasa sayfasındaki \"Borç durumu\" kutusu verilen / geri alınan / alacak ve alınan / ödenen / kalan borç rakamlarını gösterir; kayıt tablolarında borç kayıtlarının yanında \"Borç\" rozeti görünür.",
+              "The lending kasa works like capital: the money it lends and collects back is not counted in its income/expense statistics, it only moves its balance, which returns to where it was as the debt is repaid. In the borrowing kasa the borrowed money counts as income and the repayment as expense. The \"Debt status\" box on a kasa's page shows lent / collected / receivable and borrowed / repaid / remaining; debt records carry a \"Debt\" badge in the record tables.",
+              "Qaseya deyndêr wek sermiyanê ye: deynê dide û distîne nakeve statîstîka dahat/mesrefê, tenê balansê diguherîne. Di qaseya deyndar de deynê hatî girtin dahat e, vegerandin mesref e. Qutiya \"Rewşa deynê\" ya li rûpela qaseyê van hejmaran nîşan dide; qeydên deynê di tabloyan de nîşana \"Deyn\" digirin.",
+            )}
+          </p>
+        </>
+      ),
+    },
+    {
       id: "listRecords",
       title: tx(language, "Liste Kaydı", "List Record", "Qeyda Lîsteyê"),
       body: (

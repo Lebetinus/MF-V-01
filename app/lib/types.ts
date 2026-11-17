@@ -61,12 +61,13 @@ export type RecordItem = {
   // shared user's) by matching against CashAccountSummary.id; cashAccount
   // above is only the display-text name.
   cashAccountId?: number | null;
-  // Borç: lent (borç verilen gider) | borrowed (borç alan kasadaki giriş) | repay (borç ödemesi gideri); boş = borç değil.
-  // borrowed/repay kayıtları kasa bakiyesine girer ama Gelir/Gider toplamlarına girmez. debtCashAccountId = karşı kasa.
+  // Borç (kasalar arası; bkz. app/lib/debts.ts): lent (borç verenin gideri) | borrowed (borç alanın geliri) |
+  // repay (borçlunun geri ödeme gideri) | collected (alacaklının tahsilat geliri); boş = borç değil. Dördü de kasa
+  // bakiyesine girer; lent ve collected gelir/gider istatistiklerine girmez. debtCashAccountId = karşı kasa,
+  // debtLinkId = aynı işlemin karşı kasadaki kaydı.
   debtRole?: string;
   debtCashAccountId?: number | null;
-  // Yalnızca yeni Gider kaydı gönderirken: "lent" = borç veriyorum, "repay" = borcumu ödüyorum.
-  debtMode?: "" | "lent" | "repay";
+  debtLinkId?: number | null;
   // Sent back with edits so the server can detect a concurrent change
   // (see saveRecord's 409 handling) — meaningless on a not-yet-saved record.
   updatedAt?: string;

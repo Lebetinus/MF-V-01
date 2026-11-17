@@ -264,9 +264,10 @@ export const records = pgTable("records", {
   // Detay tablosunun görünümü: kullanıcının sürükleyerek ayarladığı sütun
   // genişlikleri ve satır yükseklikleri (px). { cols: number[]; rows: number[] }
   detailTableLayout: jsonb("detail_table_layout").notNull().default({}),
-  // Borç: Gider eklerken "borç" işaretlenirse. lent = borç verilen gider (alacaklı kasada), borrowed = borç alan kasadaki
-  // otomatik giriş, repay = borç ödemesi gideri (borçlu kasada). debtCashAccountId = karşı kasa; debtLinkId = lent ↔ borrowed
-  // eşi; debtMeta = ödemenin hangi "lent" giderlerini ne kadar azalttığı ([{ id, amount }], silinirse geri yüklenir).
+  // Borç (kasalar arası; bkz. app/api/_lib/debts.ts): her işlem iki kayıt yazar. lent = borç veren kasadaki gider,
+  // borrowed = borç alan kasadaki gelir, repay = borçlu kasanın geri ödeme gideri, collected = alacaklı kasadaki tahsilat
+  // geliri. debtCashAccountId = karşı kasa; debtLinkId = aynı işlemin karşı kaydı (ikiz). debtMeta artık kullanılmıyor
+  // (eskiden ödemenin azalttığı "lent" giderleri tutardı; geçmiş kayıtlar artık hiç değiştirilmez).
   debtRole: text("debt_role").notNull().default(""),
   debtCashAccountId: integer("debt_cash_account_id"),
   debtLinkId: integer("debt_link_id"),

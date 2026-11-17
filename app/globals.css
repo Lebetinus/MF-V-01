@@ -4348,9 +4348,6 @@ tr.rowSelected > td { background: #fff4d6; }
 
 
 /* Borç: Gider formundaki borç işareti, Gelirler başlığındaki "Borç Tutarı", Borç Detay sayfası */
-.debtBlock { border: 1px dashed #c9d1de; border-radius: 10px; padding: 8px 12px; background: #f8fafc; }
-.debtBlockBody { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-.debtBlockBody .debtHint { grid-column: 1 / -1; }
 .debtHint { color: #6b7686; font-size: 11px; }
 .debtBadge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #e8f0fb; color: #2c5aa0; font-size: 12px; font-weight: 800; vertical-align: middle; white-space: nowrap; }
 .kasaDebtTag { margin-left: 10px; padding: 1px 9px; border-radius: 999px; background: #fdeeea; font-size: 12px; }
@@ -4370,7 +4367,6 @@ tr.rowSelected > td { background: #fff4d6; }
 .debtMoves { margin-top: 10px; font-size: 12px; }
 .debtMoves td { padding: 5px 6px; border-top: 1px solid #edf0f4; }
 .debtMoves td.num { text-align: right; font-weight: 700; }
-@media (max-width: 640px) { .debtBlockBody { grid-template-columns: 1fr; } }
 
 /* Gelir/Gider görünüm kartı (noteDrawer tabanlı) */
 .recordViewAmount { font-size: 20px; font-weight: 800; }
@@ -4901,6 +4897,26 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .debtIcon { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-size: 13px; font-weight: 700; cursor: help; background: var(--amber-bg); color: var(--amber); border: 1px solid #f1dfb7; }
 .debtIcon.borrowed { background: var(--soft); color: var(--blue); border-color: #cdd9fb; }
 .debtIcon.repay { background: var(--green-bg); color: var(--green); border-color: #bfe8cf; }
+.debtIcon.collected { background: var(--green-bg); color: var(--green); border-color: #bfe8cf; }
+/* Kasalar arası borç: Borç ver / Borç öde penceresi, Borç Detay başlığı ve kasa sayfasındaki "Borç durumu" kutusu. */
+.debtModal { width: min(640px, 96vw); max-height: 92vh; overflow: auto; }
+.debtModeTabs { display: inline-flex; gap: 4px; padding: 3px; margin: 0 0 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.debtModeTabs button { border: 0; background: transparent; padding: 6px 14px; border-radius: 8px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.debtModeTabs button.on { background: #fff; color: var(--amber); box-shadow: 0 1px 2px rgba(18, 36, 60, .08); }
+.debtModal .amountCurrency button { white-space: nowrap; }
+.debtDetailHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.debtSummary b.debtSumReceivable { color: var(--green); }
+.debtStatusCard { margin: 0 0 14px; padding: 12px 16px; border: 1px solid #f1dfb7; border-left: 4px solid var(--amber); border-radius: 12px; background: var(--amber-bg); }
+.debtStatusCard > h3 { margin: 0 0 8px; font-size: 13px; color: var(--amber); display: flex; align-items: center; gap: 8px; }
+.debtStatusCard > h3 small { font-weight: 500; color: var(--muted); font-size: 11px; }
+.debtStatusSides { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 18px; }
+.debtStatusSide { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.debtStatusSide > b { display: block; font-size: 12px; margin-bottom: 6px; color: var(--ink); }
+.debtStatusSide dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+.debtStatusSide dt { color: var(--muted); }
+.debtStatusSide dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.debtStatusSide dd.pos { color: var(--green); }
+.debtStatusSide dd.neg { color: var(--red); }
 .debtIcon:hover, .debtIcon:focus-visible { box-shadow: 0 0 0 3px rgba(49, 95, 232, 0.18); }
 
 /* Sağdaki görünüm kartı */
@@ -4938,14 +4954,12 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .rfIcon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-size: 19px; font-weight: 700; flex: none; }
 .rfIcon.in { background: var(--green-bg); color: var(--green); }
 .rfIcon.out { background: var(--red-bg); color: var(--red); }
-.rfIcon.debt { background: #fff4de; color: var(--amber); }
 .rfIcon.cash { background: var(--soft); color: var(--blue); }
 .rfType { display: inline-flex; background: #eef1f6; border-radius: 10px; padding: 3px; gap: 2px; flex: none; }
 .rfHead .rfType button { border: 0; background: transparent; padding: 6px 13px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; width: auto; height: auto; }
 .rfHead .rfType button:hover { color: var(--ink); background: transparent; }
 .rfHead .rfType button.on.in { background: var(--green-bg); color: var(--green); box-shadow: 0 1px 2px rgba(18, 36, 60, .08); }
 .rfHead .rfType button.on.out { background: var(--red-bg); color: var(--red); box-shadow: 0 1px 2px rgba(18, 36, 60, .08); }
-.rfHead .rfType button.on.debt { background: #fff4de; color: var(--amber); box-shadow: 0 1px 2px rgba(18, 36, 60, .08); }
 
 /* Büyük tutar alanı */
 .rfHero { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; background: #f6f8fb; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
@@ -4957,7 +4971,6 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .formGrid .rfAmt input:focus { box-shadow: none; }
 .rf-in .formGrid .rfAmt input, .rf-in .rfAmt i { color: var(--green); }
 .rf-out .formGrid .rfAmt input, .rf-out .rfAmt i { color: var(--red); }
-.rf-debt .formGrid .rfAmt input, .rf-debt .rfAmt i { color: var(--amber); }
 .rfCur { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .rfCur button { border: 1px solid #d9e0ea; background: #fff; color: var(--ink); border-radius: 8px; padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .rfCur button:hover { border-color: var(--blue); }
@@ -4977,7 +4990,6 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .rfSave { padding: 10px 20px; border-radius: 10px; font-weight: 700; }
 .rfSave.in { background: var(--green); border-color: var(--green); }
 .rfSave.out { background: var(--red); border-color: var(--red); }
-.rfSave.debt { background: #b07612; border-color: #b07612; }
 
 @media (max-width: 640px) {
   .rfHead { flex-wrap: wrap; }
@@ -5134,3 +5146,4 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
   .metrics3 > .lpMetric.net { grid-column: 1 / -1; }
 }
 @media (max-width: 390px) { .metrics3 { grid-template-columns: 1fr; } }
+.debtStatusSide > small { display: block; margin: -2px 0 6px; font-size: 11px; color: var(--muted); }

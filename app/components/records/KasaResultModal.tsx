@@ -4,6 +4,7 @@ import { useState } from "react";
 import { downloadWorkbook, newWorkbook } from "../../lib/excel";
 import { tx, localizeData } from "../../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, total } from "../../lib/finance";
+import { isDebtLeg } from "../../lib/debts";
 import type { Language, RecordItem } from "../../lib/types";
 
 // "Sonuç Oluştur" ile açılan kasa özet raporu — bir kasanın Gelir/Gider
@@ -21,7 +22,8 @@ export type KasaReportData = {
   totalOutAmount: number;
 };
 
-// Bir kasanın gelir ve gider kayıtları (kasa bakiyesi = gelir − gider).
+// Bir kasanın gelir ve gider kayıtları (kasa bakiyesi = gelir − gider, tüm kayıtlar). Gelir/gider toplamlarına
+// borç veren tarafın borç kayıtları (lent / collected) girmez; bakiyeye girer (bkz. app/lib/debts.ts).
 export function computeKasaReportData(name: string, allRecords: RecordItem[]): KasaReportData {
   const incomeRows = allRecords.filter((x) => x.kind === "income" && x.cashAccount === name).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   const expenseRows = allRecords.filter((x) => x.kind === "expense" && x.cashAccount === name).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
@@ -29,11 +31,11 @@ export function computeKasaReportData(name: string, allRecords: RecordItem[]): K
     name,
     incomeRows,
     expenseRows,
-    totalInByCurrency: combineByCurrency([{ rows: incomeRows }]),
-    totalOutByCurrency: combineByCurrency([{ rows: expenseRows }]),
+    totalInByCurrency: combineByCurrency([{ rows: incomeRows.filter((x) => !isDebtLeg(x)) }]),
+    totalOutByCurrency: combineByCurrency([{ rows: expenseRows.filter((x) => !isDebtLeg(x)) }]),
     totalByCurrency: combineByCurrency([{ rows: incomeRows }, { rows: expenseRows, sign: -1 }]),
-    totalInAmount: total(incomeRows),
-    totalOutAmount: total(expenseRows),
+    totalInAmount: total(incomeRows.filter((x) => !isDebtLeg(x))),
+    totalOutAmount: total(expenseRows.filter((x) => !isDebtLeg(x))),
   };
 }
 

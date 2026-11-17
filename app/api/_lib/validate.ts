@@ -115,9 +115,12 @@ export const recordInputSchema = z.object({
   // Proje Aşaması 2: bağlı liste (varsa listName, listenin adından türetilir).
   listId: z.number().int().positive().nullable().optional(),
   sectionId: z.number().int().positive().nullable().optional(),
-  // Gider eklerken borç işareti: lent = başka bir kasaya borç verdim, repay = borcumu ödüyorum (debtCashAccountId = karşı kasa).
-  debtMode: z.enum(["lent", "repay"]).optional(),
-  debtCashAccountId: z.number().int().positive().nullable().optional(),
+  // Borç artık normal kayıtla oluşturulamaz (tek yol: POST /api/debts ve /api/debts/repay). Eski istemcinin
+  // gönderdiği bir borç işareti sessizce yok sayılıp sıradan gider yazılmasın diye reddedilir.
+  debtMode: z
+    .unknown()
+    .optional()
+    .refine((v) => v === undefined || v === null || v === "", "Borç kaydı yalnız “Borç ver / Borç öde” ile oluşturulabilir"),
   attachments: attachmentsSchema,
   detailTable: detailTableSchema.optional().default([]),
   detailTableLayout: detailTableLayoutSchema.optional().default({ cols: [], rows: [], colAlign: [], cellAlign: {} }),
@@ -240,6 +243,27 @@ export const cashAccountCreateSchema = z.object({
   openingAmount: amountSchema.optional().default(0),
   currency: currencySchema.optional().default("USD"),
   date: dateSchema.optional(),
+});
+
+// Kasalar arası borç (bkz. app/api/_lib/debts.ts). Tutar sıfırdan büyük olmalı; para birimi çiftin borç birimidir.
+const debtAmountSchema = amountSchema.refine((n) => n > 0, "Tutar sıfırdan büyük olmalıdır");
+export const debtLendSchema = z.object({
+  lenderCashAccountId: z.number().int().positive(),
+  borrowerCashAccountId: z.number().int().positive(),
+  amount: debtAmountSchema,
+  currency: currencySchema.optional().default("USD"),
+  date: dateSchema,
+  note: shortText(2000),
+  detail: shortText(2000),
+});
+export const debtRepaySchema = z.object({
+  debtorCashAccountId: z.number().int().positive(),
+  creditorCashAccountId: z.number().int().positive(),
+  amount: debtAmountSchema,
+  currency: currencySchema.optional().default("USD"),
+  date: dateSchema,
+  note: shortText(2000),
+  detail: shortText(2000),
 });
 
 export const cashTransferInputSchema = z.object({

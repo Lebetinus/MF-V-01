@@ -4,7 +4,7 @@ import { MoneyStack } from "./MoneyStack";
 import { useMemo, useState } from "react";
 import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, moneyBreakdown, toUsd } from "../lib/finance";
-import { kasaDebtByCurrency } from "../lib/debts";
+import { isDebtLeg, kasaDebtByCurrency, kasaReceivableByCurrency } from "../lib/debts";
 import type { CashAccountSummary, Language, RecordItem } from "../lib/types";
 
 // Kasa panosu: Kasalar sayfasının açılış görünümü. Her kasa bakiyesi, gelir/gider dengesi, son hareketi ve etiketleriyle
@@ -150,6 +150,9 @@ export function KasaBoard({
   const negative = sumBy(k.totalByCurrency, exchangeRates) < -0.005 || Object.values(k.totalByCurrency).some((v) => v < -0.005);
   const debt = kasaDebtByCurrency(allRecords, k.name);
   const hasDebt = Object.keys(debt).length > 0;
+  // Borç veren kasa olarak geri alınmayı bekleyen alacak.
+  const receivable = kasaReceivableByCurrency(allRecords, k.name);
+  const hasReceivable = Object.keys(receivable).length > 0;
   const shared = (account?.sharedWithUserIds?.length ?? 0) > 0;
   const inUsd = Math.abs(sumBy(k.totalInByCurrency, exchangeRates));
   const outUsd = Math.abs(sumBy(k.totalOutByCurrency, exchangeRates));
@@ -163,8 +166,9 @@ export function KasaBoard({
   for (const x of k.exp) { const m = x.date.slice(0, 7); byMonth.set(m, { inc: byMonth.get(m)?.inc ?? [], exp: [...(byMonth.get(m)?.exp ?? []), x] }); }
   const months = [...byMonth.entries()].sort((p, q2) => q2[0].localeCompare(p[0])).slice(0, 3).map(([month, r]) => ({
     month,
-    inc: combineByCurrency([{ rows: r.inc }]),
-    exp: combineByCurrency([{ rows: r.exp }]),
+    // Gelir/gider: borç veren tarafın borç kayıtları (lent/collected) hariç; sonuç: bakiyedeki değişim (hepsi dahil).
+    inc: combineByCurrency([{ rows: r.inc.filter((x) => !isDebtLeg(x)) }]),
+    exp: combineByCurrency([{ rows: r.exp.filter((x) => !isDebtLeg(x)) }]),
     res: combineByCurrency([{ rows: r.inc }, { rows: r.exp, sign: -1 }]),
   }));
   // Balon kartı örtüp tıklamayı engellemesin: sabit konumla kartın altına (yer yoksa üstüne) yerleşir.
@@ -202,6 +206,7 @@ export function KasaBoard({
         <span className="kbBadges">
           {negative && <span className="lpBadge bad">{tx(language, "Eksi bakiye", "Negative balance", "Balansa neyînî")}</span>}
           {hasDebt && <span className="lpBadge warn">{tx(language, "Borç", "Debt", "Deyn")}: {moneyBreakdown(debt)}</span>}
+          {hasReceivable && <span className="lpBadge good">{tx(language, "Alacak", "Receivable", "Deynê ku tê standin")}: {moneyBreakdown(receivable)}</span>}
         </span>
         {(account?.ownerName || shared) && (
           <span className="kbOwner">

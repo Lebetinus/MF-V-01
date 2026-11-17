@@ -93,7 +93,6 @@ let testUserId;
 let testUsername;
 let testUserCookie;
 let adminKasaId;
-let reporterKasaId;
 let reporterUserId;
 let reporterCookie;
 const createdRecordIds = [];
@@ -363,23 +362,6 @@ test("prepared reports: a user only sees and edits reports of kasas they can acc
   assert.equal(forOtherKasa.status, 403, "cannot file a report under someone else's kasa");
 });
 
-test("debts: the counter kasa must be one the user can access", async () => {
-  // A user with the Kasa Kontrol Merkezi ("cash") permission may open a kasa of their own.
-  const ownKasa = await call("POST", "/api/cash-accounts", { cookie: reporterCookie, body: { name: `${RUN_TAG}_repkasa` } });
-  assert.equal(ownKasa.status, 201);
-  reporterKasaId = ownKasa.json.cashAccount.id;
-
-  const res = await call("POST", "/api/records", {
-    cookie: reporterCookie,
-    body: {
-      kind: "expense", date: "2026-01-15", source: `${RUN_TAG}_debt`, amount: 5, currency: "USD",
-      cashAccount: `${RUN_TAG}_repkasa`, debtMode: "lent", debtCashAccountId: adminKasaId,
-    },
-  });
-  assert.equal(res.status, 400);
-  assert.match(res.json?.error ?? "", /erişim/);
-});
-
 test("database: import/clear need a super admin and the password, checked on the server", async () => {
   const notSuper = await call("POST", "/api/database/clear", { cookie: testUserCookie, body: { password: "ApiTest1234" } });
   assert.equal(notSuper.status, 403);
@@ -540,6 +522,215 @@ test("cash transfers: deleting a kasa also removes the counterpart leg on the ot
   const del = await call("DELETE", `/api/cash-accounts/${fromId}`, { cookie: adminCookie, body: { password: "admin123", reason: "test kasa delete" } });
   assert.equal(del.status, 200);
   assert.equal(await recordExists(t.toRecordId), false, "the receiver's +X leg does not survive alone");
+});
+
+// ---- Kasalar arası borç (app/api/debts, app/api/_lib/debts.ts) ----
+async function lend(lenderId, borrowerId, amount, { cookie = adminCookie, currency = "USD" } = {}) {
+  return call("POST", "/api/debts", {
+    cookie,
+    body: { lenderCashAccountId: lenderId, borrowerCashAccountId: borrowerId, amount, currency, date: "2026-02-01", note: "test" },
+  });
+}
+
+async function repay(debtorId, creditorId, amount, { cookie = adminCookie, currency = "USD" } = {}) {
+  return call("POST", "/api/debts/repay", {
+    cookie,
+    body: { debtorCashAccountId: debtorId, creditorCashAccountId: creditorId, amount, currency, date: "2026-02-10" },
+  });
+}
+
+// Kalan borç = borçlunun alınan borçları − geri ödemeleri (sunucunun kuralıyla aynı).
+async function outstanding(debtorId, creditorId, currency = "USD") {
+  const res = await call("GET", "/api/records", { cookie: adminCookie });
+  return res.json.records
+    .filter((r) => r.cashAccountId === debtorId && r.debtCashAccountId === creditorId && r.currency === currency)
+    .reduce((t, r) => t + (r.debtRole === "borrowed" ? r.amount : r.debtRole === "repay" ? -r.amount : 0), 0);
+}
+
+async function deleteRecord(id) {
+  return call("DELETE", `/api/records/${id}?reason=test%20debt%20delete`, { cookie: adminCookie });
+}
+
+let debtLender;
+let debtBorrower;
+let firstLend;
+
+test("debts: lending writes two linked legs; the lender's balance drops, the borrower's rises", async () => {
+  debtLender = await makeKasa(`${RUN_TAG}_dLender`, 1000);
+  debtBorrower = await makeKasa(`${RUN_TAG}_dBorrower`);
+  const res = await lend(debtLender, debtBorrower, 300);
+  assert.equal(res.status, 201);
+  const [lent, borrowed] = res.json.records;
+  firstLend = { lent, borrowed };
+
+  assert.equal(lent.kind, "expense");
+  assert.equal(lent.debtRole, "lent");
+  assert.equal(lent.cashAccountId, debtLender);
+  assert.equal(lent.debtCashAccountId, debtBorrower);
+  assert.equal(lent.source, "Borç verildi");
+  assert.equal(lent.detail, `Borç verildi → ${RUN_TAG}_dBorrower`);
+  assert.equal(borrowed.kind, "income");
+  assert.equal(borrowed.debtRole, "borrowed");
+  assert.equal(borrowed.cashAccountId, debtBorrower);
+  assert.equal(borrowed.debtCashAccountId, debtLender);
+  assert.equal(borrowed.source, "Borç alındı");
+  assert.equal(borrowed.detail, `Borç alındı ← ${RUN_TAG}_dLender`);
+  assert.equal(lent.amount, 300);
+  assert.equal(borrowed.amount, 300);
+  assert.equal(lent.debtLinkId, borrowed.id, "the legs point at each other");
+  assert.equal(borrowed.debtLinkId, lent.id);
+
+  assert.equal(await kasaBalance(debtLender), 700, "lender: 1000 opening − 300 lent");
+  assert.equal(await kasaBalance(debtBorrower), 300);
+  assert.equal(await outstanding(debtBorrower, debtLender), 300);
+
+  // The money-defining fields of a debt leg are locked; descriptive edits apply to that leg only.
+  const amountEdit = await call("PUT", `/api/records/${borrowed.id}`, { cookie: adminCookie, body: { amount: 1 } });
+  assert.equal(amountEdit.status, 400);
+  const noteEdit = await call("PUT", `/api/records/${borrowed.id}`, { cookie: adminCookie, body: { note: "only this leg" } });
+  assert.equal(noteEdit.status, 200);
+});
+
+test("debts: a repayment writes two legs, lowers the outstanding and never touches past records", async () => {
+  const res = await repay(debtBorrower, debtLender, 100);
+  assert.equal(res.status, 201);
+  const [repaid, collected] = res.json.records;
+  assert.equal(repaid.kind, "expense");
+  assert.equal(repaid.debtRole, "repay");
+  assert.equal(repaid.cashAccountId, debtBorrower);
+  assert.equal(repaid.source, "Borç ödemesi");
+  assert.equal(repaid.detail, `Borç ödemesi → ${RUN_TAG}_dLender`);
+  assert.equal(collected.kind, "income");
+  assert.equal(collected.debtRole, "collected");
+  assert.equal(collected.cashAccountId, debtLender);
+  assert.equal(collected.source, "Borç tahsilatı");
+  assert.equal(collected.detail, `Borç tahsilatı ← ${RUN_TAG}_dBorrower`);
+  assert.equal(repaid.debtLinkId, collected.id);
+  assert.equal(collected.debtLinkId, repaid.id);
+
+  assert.equal(await outstanding(debtBorrower, debtLender), 200);
+  assert.equal(await kasaBalance(debtLender), 800);
+  assert.equal(await kasaBalance(debtBorrower), 200);
+
+  // The original lending is not reduced any more.
+  const all = (await call("GET", "/api/records", { cookie: adminCookie })).json.records;
+  assert.equal(all.find((r) => r.id === firstLend.lent.id).amount, 300);
+  assert.equal(all.find((r) => r.id === firstLend.borrowed.id).amount, 300);
+
+  const overpay = await repay(debtBorrower, debtLender, 250);
+  assert.equal(overpay.status, 400);
+  assert.match(overpay.json?.error ?? "", /kalan borçtan büyük olamaz/);
+  const otherCurrency = await repay(debtBorrower, debtLender, 10, { currency: "EUR" });
+  assert.equal(otherCurrency.status, 400, "no debt in that currency");
+  const reversed = await repay(debtLender, debtBorrower, 10);
+  assert.equal(reversed.status, 400, "the lender owes nothing");
+  assert.match(reversed.json?.error ?? "", /borcu yok/);
+  const zero = await repay(debtBorrower, debtLender, 0);
+  assert.equal(zero.status, 400);
+  assert.equal(await outstanding(debtBorrower, debtLender), 200, "rejected payments change nothing");
+
+  // Deleting either repayment leg removes its twin and restores the outstanding.
+  const del = await deleteRecord(collected.id);
+  assert.equal(del.status, 200);
+  assert.deepEqual([...del.json.removedRecordIds].sort(), [repaid.id, collected.id].sort());
+  assert.equal(await recordExists(repaid.id), false);
+  assert.equal(await outstanding(debtBorrower, debtLender), 300);
+  assert.equal(await kasaBalance(debtLender), 700);
+  assert.equal(await kasaBalance(debtBorrower), 300);
+});
+
+test("debts: a lending cannot be deleted below its repayments; deleting a lend leg deletes its twin", async () => {
+  const pay = await repay(debtBorrower, debtLender, 250);
+  assert.equal(pay.status, 201);
+  const second = await lend(debtLender, debtBorrower, 100);
+  assert.equal(second.status, 201);
+  assert.equal(await outstanding(debtBorrower, debtLender), 150);
+
+  // 300 lent + 100 lent − 250 repaid: removing the 300 would leave −150.
+  const blocked = await deleteRecord(firstLend.lent.id);
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.json?.error ?? "", /önce borç ödemelerini silin/);
+  assert.equal(await recordExists(firstLend.lent.id), true);
+  assert.equal(await recordExists(firstLend.borrowed.id), true);
+
+  // Removing the second lending (via its borrowed leg) is fine: 150 − 100 = 50.
+  const [secondLent, secondBorrowed] = second.json.records;
+  const delSecond = await deleteRecord(secondBorrowed.id);
+  assert.equal(delSecond.status, 200);
+  assert.deepEqual([...delSecond.json.removedRecordIds].sort(), [secondLent.id, secondBorrowed.id].sort());
+  assert.equal(await outstanding(debtBorrower, debtLender), 50);
+
+  // Repayments can always be deleted; afterwards the first lending can go too.
+  const [payLeg] = pay.json.records;
+  assert.equal((await deleteRecord(payLeg.id)).status, 200);
+  const delFirst = await deleteRecord(firstLend.lent.id);
+  assert.equal(delFirst.status, 200);
+  assert.equal(await recordExists(firstLend.borrowed.id), false, "the borrowed twin is gone too");
+  assert.equal(await outstanding(debtBorrower, debtLender), 0);
+  assert.equal(await kasaBalance(debtLender), 1000, "the lender's balance is back where it started");
+  assert.equal(await kasaBalance(debtBorrower), 0);
+});
+
+test("debts: different kasas, the income+expense permissions and access to both kasas are required", async () => {
+  const same = await lend(debtLender, debtLender, 10);
+  assert.equal(same.status, 400);
+  assert.match(same.json?.error ?? "", /farklı olmalıdır/);
+  const zero = await lend(debtLender, debtBorrower, 0);
+  assert.equal(zero.status, 400);
+
+  // The reporter has "expense" but not "income": a debt writes both, so it is refused.
+  const noIncome = await lend(debtLender, debtBorrower, 5, { cookie: reporterCookie });
+  assert.equal(noIncome.status, 403);
+
+  const created = await call("POST", "/api/users", {
+    cookie: adminCookie,
+    body: { username: `${RUN_TAG}_debtor`, password: "ApiTest1234", name: "Debt User", roleLabel: "Test", isAdmin: false, permissions: ["cash", "income", "expense"] },
+  });
+  assert.equal(created.status, 201);
+  try {
+    const cookie = (await call("POST", "/api/auth/login", { body: { username: `${RUN_TAG}_debtor`, password: "ApiTest1234" } })).cookie;
+    const own = await call("POST", "/api/cash-accounts", { cookie, body: { name: `${RUN_TAG}_debtorKasa` } });
+    assert.equal(own.status, 201);
+    const ownId = own.json.cashAccount.id;
+    extraKasaIds.push(ownId);
+    // Lending to a kasa the user cannot see, or from one they do not own, is refused.
+    const toForeign = await lend(ownId, debtBorrower, 5, { cookie });
+    assert.equal(toForeign.status, 403);
+    assert.match(toForeign.json?.error ?? "", /erişim/);
+    const fromForeign = await lend(debtLender, ownId, 5, { cookie });
+    assert.equal(fromForeign.status, 403);
+    const repayForeign = await repay(ownId, debtLender, 5, { cookie });
+    assert.equal(repayForeign.status, 403);
+    assert.equal(await outstanding(debtBorrower, ownId), 0, "nothing was written");
+    assert.equal(await outstanding(ownId, debtLender), 0);
+  } finally {
+    await call("DELETE", `/api/users/${created.json.user.id}`, { cookie: adminCookie });
+  }
+});
+
+test("debts: POST /api/records no longer creates debt legs", async () => {
+  const res = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: {
+      kind: "expense", date: "2026-02-01", source: `${RUN_TAG}_olddebt`, amount: 5, currency: "USD",
+      cashAccount: `${RUN_TAG}_dLender`, debtMode: "lent", debtCashAccountId: debtBorrower,
+    },
+  });
+  assert.equal(res.status, 400);
+  const all = (await call("GET", "/api/records", { cookie: adminCookie })).json.records;
+  assert.ok(!all.some((r) => r.source === `${RUN_TAG}_olddebt`), "no record was written");
+  assert.equal(await outstanding(debtBorrower, debtLender), 0);
+});
+
+test("debts: deleting a kasa also removes the debt legs on the other kasa", async () => {
+  const lender = await makeKasa(`${RUN_TAG}_dKill`, 100);
+  const borrower = await makeKasa(`${RUN_TAG}_dKeep`);
+  const res = await lend(lender, borrower, 40);
+  assert.equal(res.status, 201);
+  const del = await call("DELETE", `/api/cash-accounts/${lender}`, { cookie: adminCookie, body: { password: "admin123", reason: "test kasa delete" } });
+  assert.equal(del.status, 200);
+  assert.equal(await recordExists(res.json.records[1].id), false, "the borrowed leg does not survive alone");
+  assert.equal(await kasaBalance(borrower), 0);
 });
 
 test("records: two saves from the same version — exactly one wins", async () => {
@@ -794,7 +985,7 @@ test.after(async () => {
   if (reporterUserId) {
     await call("DELETE", `/api/users/${reporterUserId}`, { cookie: adminCookie }).catch(() => {});
   }
-  for (const kasaId of [adminKasaId, reporterKasaId, ...extraKasaIds]) {
+  for (const kasaId of [adminKasaId, ...extraKasaIds]) {
     if (kasaId) await call("DELETE", `/api/cash-accounts/${kasaId}`, { cookie: adminCookie }).catch(() => {});
   }
   if (testUserId) {

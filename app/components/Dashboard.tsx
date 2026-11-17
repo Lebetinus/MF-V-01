@@ -62,7 +62,8 @@ export function Dashboard({
   profileName?: string;
   onTransfersChanged?: () => void;
 }) {
-  // Alınan borç girişi ve borç ödemesi kasa bakiyesine girer ama gelir/gider/net toplamlarına ve analize girmez.
+  // Borç: borç veren kasanın verdiği borç (lent) ve geri aldığı tahsilat (collected) kasa bakiyesine girer ama
+  // gelir/gider/net toplamlarına ve analize girmez; borç alan kasanın alınan borcu (gelir) ve geri ödemesi (gider) girer.
   // Kasa aktarımları da öyle: iki tarafı (gönderende gider, alanda gelir) bakiyeye girer, gelir/gider/net/analiz toplamlarına girmez.
   const isTransferLeg = makeIsTransferLeg(cashTransfers);
   const incomeRows = records.filter((x) => x.kind === "income" && !isDebtLeg(x) && !isTransferLeg(x));
@@ -294,9 +295,11 @@ export function Dashboard({
                 <tbody>
                   {visibleKasas.map((name) => {
                     const rows = records.filter((x) => kasaOf(x) === name);
-                    const inc = combineByCurrency([{ rows: rows.filter((x) => x.kind === "income") }]);
-                    const exp = combineByCurrency([{ rows: rows.filter((x) => x.kind === "expense") }]);
-                    const net = combineByCurrency([{ rows: rows.filter((x) => x.kind === "income") }, { rows: rows.filter((x) => x.kind === "expense"), sign: -1 }]);
+                    // Borç veren tarafın borç kayıtları (lent/collected) bu gelir/gider/net sütunlarına girmez.
+                    const statRows = rows.filter((x) => !isDebtLeg(x));
+                    const inc = combineByCurrency([{ rows: statRows.filter((x) => x.kind === "income") }]);
+                    const exp = combineByCurrency([{ rows: statRows.filter((x) => x.kind === "expense") }]);
+                    const net = combineByCurrency([{ rows: statRows.filter((x) => x.kind === "income") }, { rows: statRows.filter((x) => x.kind === "expense"), sign: -1 }]);
                     return (
                       <tr key={name}>
                         <td><strong>{localizeData(name, language)}</strong></td>
