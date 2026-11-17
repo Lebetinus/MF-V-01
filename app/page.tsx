@@ -69,8 +69,19 @@ export default function Home() {
   }
   const [records, setRecords] = useState<RecordItem[]>([]);
   // İlk veri (kayıtlar + kasalar + çalışma alanları) geldi mi: gelene kadar Kasa Kontrol Merkezi "Gösterilecek kasa yok"
-  // yerine "Yükleniyor…" gösterir.
+  // yerine "Yükleniyor…" gösterir. Üçü hangi yoldan (açılış paketi /api/bootstrap ya da 5 sn'lik yenileme) önce gelirse
+  // yeterlidir: bootstrap arşivi de taşıdığı için yavaş bağlantıda çok daha geç bitebiliyor.
   const [dataReady, setDataReady] = useState(false);
+  const firstLoad = useRef({ records: false, cash: false, sections: false });
+  function markLoaded(part: "records" | "cash" | "sections") {
+    firstLoad.current[part] = true;
+    const f = firstLoad.current;
+    if (f.records && f.cash && f.sections) setDataReady(true);
+  }
+  function resetLoaded() {
+    firstLoad.current = { records: false, cash: false, sections: false };
+    setDataReady(false);
+  }
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
   const [notes, setNotes] = useState<FinanceNote[]>([]);
   const [noteColumns, setNoteColumns] = useState<NoteColumn[]>([]);
@@ -256,6 +267,7 @@ export default function Home() {
         if (cancelled || !response.ok) return;
         const data = await response.json();
         setRecords((data.records ?? []).map(normalizeRecord));
+        markLoaded("records");
         setArchive(
           (data.archive ?? []).map((x: ArchiveItem) => ({
             ...x,
@@ -403,7 +415,7 @@ export default function Home() {
     lastEtag.current = {};
     setProfileOpen(false);
     setSignedIn(false);
-    setDataReady(false);
+    resetLoaded();
     notify(tx(language, "Oturumunuz sona erdi. Lütfen yeniden giriş yapın.", "Your session has expired. Please sign in again.", "Danişîna te bi dawî bû. Ji kerema xwe dîsa têkeve."));
   }
   async function fetchChanged(key: string, url: string): Promise<Record<string, unknown> | null> {
@@ -433,14 +445,17 @@ export default function Home() {
     if (data && Array.isArray(data.sections)) setSections(data.sections as KasaSection[]);
     const order = await fetchChanged("cash-order", "/api/cash-order");
     if (order && Array.isArray(order.workspaceOrder)) setWorkspaceOrder(order.workspaceOrder as string[]);
+    markLoaded("sections");
   }
   async function refreshCashAccounts() {
     const data = await fetchChanged("cash-accounts", "/api/cash-accounts");
     if (data && Array.isArray(data.cashAccounts)) setCashAccounts(data.cashAccounts as CashAccountSummary[]);
+    markLoaded("cash");
   }
   async function refreshRecords() {
     const data = await fetchChanged("records", "/api/records");
     if (data && Array.isArray(data.records)) setRecords((data.records as RecordItem[]).map(normalizeRecord));
+    markLoaded("records");
   }
   async function refreshCashTransfers() {
     const data = await fetchChanged("cash-transfers", "/api/cash-transfers");
@@ -715,7 +730,7 @@ export default function Home() {
     }
     setProfileOpen(false);
     setSignedIn(false);
-    setDataReady(false);
+    resetLoaded();
   }
 
   async function exitViewAs() {
