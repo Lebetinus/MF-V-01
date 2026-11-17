@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { kasaSections } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
@@ -31,7 +31,12 @@ export const POST = withErrorHandling(async (request: Request) => {
     }
   }
   try {
-    const [created] = await getDb().insert(kasaSections).values({ ...input, parentKey: parentKey ?? null }).returning();
+    // Yeni alan/bölüm kendi düzeyinin sonuna eklenir (alan listesi her ekranda aynı sırada gelsin).
+    const [last] = await getDb()
+      .select({ max: sql<number>`coalesce(max(${kasaSections.sortOrder}), 0)` })
+      .from(kasaSections)
+      .where(and(eq(kasaSections.scope, input.scope), parentKey ? eq(kasaSections.parentKey, parentKey) : isNull(kasaSections.parentKey)));
+    const [created] = await getDb().insert(kasaSections).values({ ...input, parentKey: parentKey ?? null, sortOrder: Number(last?.max ?? 0) + 1 }).returning();
     await logActivity(session.user, { category: "workspace", action: "create", summary: `${created.parentKey ? "Bölüm" : "Çalışma alanı"} oluşturuldu: ${created.name}`, workspace: created.name });
     return json({ section: { id: created.id, scope: created.scope, name: created.name, color: created.color, parentKey: created.parentKey } }, { status: 201 });
   } catch (error) {

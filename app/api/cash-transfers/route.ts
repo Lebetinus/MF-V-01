@@ -112,7 +112,9 @@ export const POST = withErrorHandling(async (request: Request) => {
         // The kasa row alone makes it show up as a card in Kasa Kontrol
         // Merkezi right away (cards come from cash_accounts), so the
         // recipient can find and open it to confirm the pending transfer.
-        const created = await createCashAccount(tx, { name, ownerUserId: ownerId, grantUserIds: [session.user.id] });
+        // Yeni kasa, gönderen kasanın çalışma alanında açılır (sonra taşınabilir).
+        const [sender] = await tx.select({ sectionId: cashAccounts.sectionId }).from(cashAccounts).where(eq(cashAccounts.id, payload.fromCashAccountId)).limit(1);
+        const created = await createCashAccount(tx, { name, ownerUserId: ownerId, grantUserIds: [session.user.id], sectionId: sender?.sectionId ?? null });
         toId = created.id;
         toName = created.name;
       }

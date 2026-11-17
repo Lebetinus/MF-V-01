@@ -48,7 +48,8 @@ export const PUT = withErrorHandling<Ctx>(async (request, { params }) => {
   }
 });
 
-// Bölümü siler: kasa/kayıtlar silinmez, yalnızca bölümden ayrılır (Genel Kasa / bölümsüz olur).
+// Bölümü / çalışma alanını siler. İçinde kasa olan bir kasa alanı silinemez (kasalar önce başka alana taşınır);
+// altındaki bölümler ana seviyeye çıkıp birer çalışma alanı olur. Gelir/Gider bölümünün kayıtları bölümsüz kalır.
 export const DELETE = withErrorHandling<Ctx>(async (request, { params }) => {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
@@ -57,6 +58,10 @@ export const DELETE = withErrorHandling<Ctx>(async (request, { params }) => {
   if (!Number.isFinite(id)) return json({ error: "Invalid id" }, { status: 400 });
   const db = getDb();
   const [gone] = await db.select().from(kasaSections).where(eq(kasaSections.id, id)).limit(1);
+  if (gone?.scope === "cash") {
+    const inside = await db.select({ id: cashAccounts.id }).from(cashAccounts).where(eq(cashAccounts.sectionId, id));
+    if (inside.length) return json({ error: `Bu alanda ${inside.length} kasa var; silmeden önce kasaları başka bir alana taşıyın` }, { status: 409 });
+  }
   await db.transaction(async (tx) => {
     await tx.update(cashAccounts).set({ sectionId: null }).where(eq(cashAccounts.sectionId, id));
     await tx.update(records).set({ sectionId: null }).where(eq(records.sectionId, id));

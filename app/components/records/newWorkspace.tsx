@@ -98,7 +98,7 @@ export function renderNewWorkspaceModal(c: NewWorkspaceContext) {
             {tx(language, "Tür", "Type", "Cure")}
             <select value={newWorkspaceParent} onChange={(e) => setNewWorkspaceParent(e.target.value)}>
               <option value="">{tx(language, "Çalışma alanı (kasaları doğrudan bağlanır)", "Workspace (cash accounts attach directly)", "Qada xebatê (qase rasterast girêdide)")}</option>
-              {parentWorkspaceOptions(sections, language).map((o) => (
+              {parentWorkspaceOptions(sections).map((o) => (
                 <option key={o.key} value={o.key}>{tx(language, "Bölüm → ", "Section in → ", "Beş li → ")}{o.label}</option>
               ))}
             </select>

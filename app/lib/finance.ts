@@ -81,7 +81,6 @@ export function normalizeRecord<T extends Omit<RecordItem, "kind"> & { kind: str
     tags: Array.isArray(x.tags) ? x.tags : [],
     link: x.link || "",
     cashAccount: x.cashAccount || "",
-    listName: x.listName || "",
     attachments: Array.isArray(x.attachments) ? x.attachments : [],
     detailTable: Array.isArray(x.detailTable) ? x.detailTable : [],
     detailTableLayout: {

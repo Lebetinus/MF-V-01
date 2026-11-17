@@ -111,9 +111,6 @@ export const recordInputSchema = z.object({
   tags: tagsSchema,
   link: linkSchema.optional().default(""),
   cashAccount: shortText(200),
-  listName: shortText(200),
-  // Proje Aşaması 2: bağlı liste (varsa listName, listenin adından türetilir).
-  listId: z.number().int().positive().nullable().optional(),
   sectionId: z.number().int().positive().nullable().optional(),
   // Borç artık normal kayıtla oluşturulamaz (tek yol: POST /api/debts ve /api/debts/repay). Eski istemcinin
   // gönderdiği bir borç işareti sessizce yok sayılıp sıradan gider yazılmasın diye reddedilir.
@@ -144,8 +141,6 @@ export const recordUpdateSchema = z.object({
   tags: z.array(z.string().max(64)).max(20).optional(),
   link: linkSchema.optional(),
   cashAccount: z.string().max(200).optional(),
-  listName: z.string().max(200).optional(),
-  listId: z.number().int().positive().nullable().optional(),
   sectionId: z.number().int().positive().nullable().optional(),
   attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional(),
   detailTable: detailTableSchema.optional(),
@@ -196,8 +191,7 @@ export function convertLegacyKasaItem<T extends { kind: string; amount: number; 
 export const excelImportSchema = z.object({
   batchId: z.string().min(6).max(64),
   kasaName: z.string().trim().min(1).max(200),
-  listKasa: z.boolean().optional().default(false),
-  rjKasa: z.boolean().optional().default(false),
+  // Yeni açılacak kasa için zorunlu; mevcut kasa verilirse oraya taşınır.
   sectionId: z.number().int().positive().nullable().optional(),
   items: z
     .array(
@@ -223,12 +217,12 @@ export const sectionInputSchema = z.object({
   scope: z.enum(["cash", "income", "expense"]),
   name: z.string().trim().min(1, "Ad gerekli").max(80),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().default("#7b52bf"),
-  // Doluysa yeni alan, üstündekinin içinde "bölüm" olarak oluşturulur.
-  parentKey: z.string().regex(/^(genel|liste|rj|sec-\d+)$/).nullable().optional(),
+  // Doluysa ("sec-<id>") yeni alan, üstündekinin içinde "bölüm" olarak oluşturulur.
+  parentKey: z.string().regex(/^sec-\d+$/).nullable().optional(),
 });
-// parentKey: "genel" | "liste" | "rj" | "sec-<id>" ya da null (üst alandan çıkar).
+// parentKey: "sec-<id>" ya da null (üst alandan çıkar, çalışma alanı olur).
 export const sectionUpdateSchema = z.object({
-  parentKey: z.string().regex(/^(genel|liste|rj|sec-\d+)$/).nullable().optional(),
+  parentKey: z.string().regex(/^sec-\d+$/).nullable().optional(),
   name: z.string().trim().min(1).max(80).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
@@ -237,9 +231,8 @@ export const sectionUpdateSchema = z.object({
 // bakiyesi verilirse kasaya "Açılış bakiyesi" başlıklı bir Gelir kaydı yazılır.
 export const cashAccountCreateSchema = z.object({
   name: z.string().trim().min(1, "Kasa adı gerekli").max(120),
-  sectionId: z.number().int().positive().nullable().optional(),
-  listKasa: z.boolean().optional().default(false),
-  rjKasa: z.boolean().optional().default(false),
+  // Her kasa bir çalışma alanında (ya da onun bir bölümünde) açılır.
+  sectionId: z.number({ error: "Çalışma alanı seçin" }).int().positive(),
   openingAmount: amountSchema.optional().default(0),
   currency: currencySchema.optional().default("USD"),
   date: dateSchema.optional(),
@@ -307,75 +300,6 @@ export const noteColumnsInputSchema = z.object({
 });
 
 export const noteCommentInputSchema = z.object({ text: z.string().trim().min(1).max(2000) });
-
-// Proje Aşaması 2 — Liste defteri girdileri (çalışma alanı = kasa).
-const listCodeSchema = z.string().trim().min(1, "Kod gerekli").max(40);
-const listNameSchema = z.string().trim().min(1, "Liste adı gerekli").max(200);
-const moneyAmount = z.number().finite().min(0).max(999_999_999_999.99);
-
-const allocationsSchema = z
-  .array(z.object({ recipientId: z.number().int().positive(), amount: moneyAmount }))
-  .max(200);
-
-export const listInputSchema = z.object({
-  cashAccountId: z.number().int().positive(),
-  code: listCodeSchema,
-  name: listNameSchema,
-  date: dateSchema,
-  // Liste gideri tutarı, not ve alıcılara dağılımı.
-  amount: moneyAmount.optional().default(0),
-  note: shortText(2000),
-  allocations: allocationsSchema.optional(),
-});
-
-export const workspaceInputSchema = z.object({
-  cashAccountId: z.number().int().positive(),
-  name: shortText(200),
-  // Elle girilen gelir tutarı; null/boş = kasadan otomatik.
-  amount: moneyAmount.nullable().optional().default(null),
-  note: shortText(2000),
-});
-
-export const workspaceUpdateSchema = z.object({
-  name: z.string().max(200).optional(),
-  amount: moneyAmount.nullable().optional(),
-  note: z.string().max(2000).optional(),
-});
-
-export const listAllocationsInputSchema = z.object({ allocations: allocationsSchema });
-
-export const listUpdateSchema = z.object({
-  code: listCodeSchema.optional(),
-  name: listNameSchema.optional(),
-  date: dateSchema.optional(),
-  status: z.enum(["open", "closed"]).optional(),
-  amount: moneyAmount.optional(),
-  note: z.string().max(2000).optional(),
-  allocations: allocationsSchema.optional(),
-});
-
-export const listItemsInputSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        name: z.string().trim().max(300),
-        quantity: z.number().finite().min(0).max(999_999_999),
-        unitPrice: moneyAmount,
-        recipientId: z.number().int().positive().nullable().optional(),
-        note: z.string().max(500).optional().default(""),
-      }),
-    )
-    .max(1000),
-});
-
-export const recipientInputSchema = z.object({ name: z.string().trim().min(1, "Ad gerekli").max(200) });
-
-export const workspaceDistributionSchema = z.object({
-  recipientId: z.number().int().positive(),
-  amount: moneyAmount.refine((n) => n > 0, "Tutar sıfırdan büyük olmalı"),
-  date: dateSchema,
-  note: shortText(500),
-});
 
 export const commentInputSchema = z.object({
   text: z.string().trim().min(1).max(2000),

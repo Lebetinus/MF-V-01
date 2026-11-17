@@ -18,7 +18,6 @@ import { Comments } from "./components/Comments";
 import { Users } from "./components/Users";
 import { Settings } from "./components/Settings";
 import { Guide } from "./components/Guide";
-import { Lists } from "./components/Lists";
 import { tx, localizedProfileName, localizedRole, kbGroupLogo, nav } from "./lib/i18n";
 import { normalizeRecord } from "./lib/finance";
 import { defaultTypography, typographyVariables } from "./lib/typography";
@@ -363,11 +362,6 @@ export default function Home() {
         body: JSON.stringify(next),
       });
       if (!response.ok) {
-        if (response.status === 423) {
-          const info = await response.json().catch(() => ({}));
-          notify(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından düzenleyin.", "This record was generated from a list; edit it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste biguherîne."));
-          return;
-        }
         if (response.status === 409) {
           notify(tx(language, "Bu kayıt siz düzenlerken başka bir kullanıcı tarafından değiştirildi. Lütfen sayfayı yenileyip tekrar deneyin.", "This record was changed by another user while you were editing it. Please refresh and try again.", "Dema te ev qeyd sererast dikir, bikarhênerek din ew guherand. Ji kerema xwe rûpelê nûve bike û dîsa biceribîne."));
           return;
@@ -535,11 +529,6 @@ export default function Home() {
     try {
       const response = await fetch(`/api/records/${item.id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
       if (!response.ok) {
-        if (response.status === 423) {
-          const info = await response.json().catch(() => ({}));
-          notify(info.error || tx(language, "Bu kayıt bir listeden otomatik oluşturuldu; Listeler sayfasından silin.", "This record was generated from a list; delete it on the Lists page.", "Ev qeyd ji lîsteyekê hate çêkirin; li rûpela Lîste jê bibe."));
-          return;
-        }
         // 409: ör. geri ödemesi yapılmış bir borcu silmek — sunucunun açıklaması gösterilir.
         const info = response.status === 409 ? await response.json().catch(() => ({})) : {};
         notify(info.error || tx(language, "Kayıt silinemedi. Lütfen tekrar deneyin.", "The record could not be deleted. Please try again.", "Qeyd nehat jêbirin. Ji kerema xwe dîsa biceribîne."));
@@ -777,7 +766,7 @@ export default function Home() {
               { key: "documents", label: tx(language, "Belgeler", "Documents", "Belge"), ids: ["reportBuilder", "notes", "comments", "activity", "archive"] },
               { key: "system", label: tx(language, "Sistem", "System", "Pergal"), ids: ["settings", "guide"] },
             ];
-            const hidden = ["lists", "income", "expense", "users"];
+            const hidden = ["income", "expense", "users"];
             const visible = nav.filter((n) => !hidden.includes(n.id) && canAccess(n.id));
             const placed = new Set(groups.flatMap((g) => g.ids));
             const rest = visible.filter((n) => !placed.has(n.id)).map((n) => n.id);
@@ -1140,7 +1129,6 @@ export default function Home() {
             />
           )}
           {page === "guide" && <Guide language={language} />}
-          {page === "lists" && <Lists language={language} onDataChanged={() => { refreshRecords(); refreshCashAccounts(); }} />}
         </section>
       </main>
       {modal && (

@@ -137,7 +137,6 @@ export async function importRecordsExcel(
             .map((x) => x.trim())
             .filter(Boolean),
           cashAccount: resolvedSource,
-          listName: "",
         };
       })
       .filter((x): x is Omit<RecordItem, "id"> & { rowNumber: number } => x !== null && Boolean(x.source) && Number.isFinite(x.amount))

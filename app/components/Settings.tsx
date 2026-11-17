@@ -626,8 +626,8 @@ function TypographyControl({ language, typeKey, value, onChange }: { language: L
 }
 
 
-// Ayarlar > Bölümler: Genel Kasa / Liste Kasası / RJ-Kasası eksenlerine ek olarak yöneticinin kasa, gelir ve gider
-// bölümleri oluşturması. Her bölüm ilgili sayfadaki kutu düzenine yeni bir kutu (satır) ekler.
+// Ayarlar > Bölümler: yöneticinin kasa çalışma alanlarını (ve içlerindeki bölümleri), gelir ve gider
+// bölümlerini oluşturması. Her bölüm ilgili sayfadaki kutu düzenine yeni bir kutu (satır) ekler.
 const SECTION_COLORS = ["#7b52bf", "#1d9e75", "#d85a30", "#378add", "#ba7517", "#d4537e", "#0f6e56", "#5f5e5a"];
 
 // Ayarlar > Döviz Kurları: "1 USD = X birim". Kasalar/Gelir/Gider tablolarındaki "USD Karşılığı"
@@ -820,9 +820,9 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
   const [error, setError] = useState("");
   // Kasa çalışma alanı eklerken doluysa yeni alan bu alanın içinde "bölüm" olur.
   const [cashParent, setCashParent] = useState("");
-  const parentLabel = (x: KasaSection) => (x.parentKey ? parentWorkspaceOptions(sections, language).find((o) => o.key === x.parentKey)?.label : undefined);
+  const parentLabel = (x: KasaSection) => (x.parentKey ? parentWorkspaceOptions(sections).find((o) => o.key === x.parentKey)?.label : undefined);
   const groups: [SectionScope, string, string][] = [
-    ["cash", tx(language, "Çalışma alanları (Proje Kasaları, Şirketler…)", "Workspaces (Project cash accounts, Companies…)", "Qadên xebatê (Qaseyên Projeyê, Şirket…)"), tx(language, "Kasalar sayfasında kasalar çalışma alanları başlığı altında görünür. Burada oluşturduğunuz her alan Kasalar sayfasına kendi renginde bir başlık ve kutu satırı ekler; Yeni Kasa penceresinde “Çalışma alanı” ile seçilir. Diğer, Liste Kasaları ve RJ-Kasaları hazır alanlardır.", "On the Kasalar page cash accounts appear under workspace headings. Each workspace created here adds a colored heading and box row; chosen with “Workspace” in the New Cash Account window. General, List and RJ cash accounts are built-in workspaces.", "Di rûpela Qase de qase di bin sernavên qadên xebatê de xuya dibin. Her qada ku li vir çêdikin sernavek û rêzeke qutiyê ya rengîn zêde dike; di pencereya Qaseya Nû de bi “Qada xebatê” tê hilbijartin. Qaseyên Giştî, Lîste û RJ qadên amade ne.")],
+    ["cash", tx(language, "Çalışma alanları (Proje Kasaları, Şirketler…)", "Workspaces (Project cash accounts, Companies…)", "Qadên xebatê (Qaseyên Projeyê, Şirket…)"), tx(language, "Kasalar sayfasında kasalar çalışma alanları başlığı altında görünür. Burada oluşturduğunuz her alan Kasalar sayfasına kendi renginde bir başlık ve kutu satırı ekler; Yeni Kasa penceresinde “Çalışma alanı” ile seçilir. Hazır bir alan yoktur; her alanın içinde bölümler açılabilir.", "On the Kasalar page cash accounts appear under workspace headings. Each workspace created here adds a colored heading and box row; chosen with “Workspace” in the New Cash Account window. There are no built-in workspaces; each can hold sections.", "Di rûpela Qase de qase di bin sernavên qadên xebatê de xuya dibin. Her qada ku li vir çêdikin sernavek û rêzeke qutiyê ya rengîn zêde dike; di pencereya Qaseya Nû de bi “Qada xebatê” tê hilbijartin. Qadeke amade tune; di her qadê de beş dikarin werin vekirin.")],
     ["income", tx(language, "Gelir bölümleri", "Income sections", "Beşên dahatê"), tx(language, "Gelir sayfasına yeni bir kutu ekler; gelir kaydında “Bölüm” ile seçilir.", "Adds a new box to the Income page; chosen with “Section” on an income record.", "Qutiyeke nû li rûpela Dahat zêde dike; di tomara dahatê de bi “Beş” tê hilbijartin.")],
     ["expense", tx(language, "Gider bölümleri", "Expense sections", "Beşên mesrefê"), tx(language, "Gider sayfasına yeni bir kutu ekler; gider kaydında “Bölüm” ile seçilir.", "Adds a new box to the Expense page; chosen with “Section” on an expense record.", "Qutiyeke nû li rûpela Mesref zêde dike; di tomara mesrefê de bi “Beş” tê hilbijartin.")],
   ];
@@ -842,7 +842,7 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
     <div className="panel sectionsPanel">
       <Title
         title={tx(language, "Çalışma Alanları", "Workspaces", "Qadên Xebatê")}
-        sub={tx(language, "Genel Kasa, Liste Kasası ve RJ-Kasası eksenlerine ek bölümler oluşturun; her bölüm kutu sistemine yeni bir kutu ekler.", "Create sections in addition to the Main, List and RJ cash axes; each section adds a new box to the box system.", "Ji bilî tevgerên Qaseya Giştî, Lîste û RJ beşan çêkin; her beş qutiyeke nû li pergala qutiyan zêde dike.")}
+        sub={tx(language, "Kasalar yalnızca burada oluşturduğunuz çalışma alanlarında ve onların bölümlerinde gruplanır; hazır bir alan yoktur.", "Cash accounts are grouped only in the workspaces you create here and their sections; there are no built-in workspaces.", "Qase tenê di qadên xebatê yên ku hûn li vir çêdikin û beşên wan de tên komkirin; qadeke amade tune.")}
       />
       {error && <p className="listsError">{error}</p>}
       {groups.map(([scope, title, hint]) => (
@@ -884,7 +884,7 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
             {scope === "cash" && (
               <select value={cashParent} onChange={(e) => setCashParent(e.target.value)} aria-label={tx(language, "Tür", "Type", "Cure")}>
                 <option value="">{tx(language, "Çalışma alanı", "Workspace", "Qada xebatê")}</option>
-                {parentWorkspaceOptions(sections, language).map((o) => (
+                {parentWorkspaceOptions(sections).map((o) => (
                   <option key={o.key} value={o.key}>{tx(language, "Bölüm → ", "Section in → ", "Beş li → ")}{o.label}</option>
                 ))}
               </select>
@@ -903,7 +903,11 @@ function SectionsPanel({ language, sections, onChanged, checkPassword }: { langu
         <DeleteConfirmModal
           language={language}
           itemLabel={deleteTarget.name}
-          warningText={tx(language, "Kasa ve kayıtlar silinmez; bölümsüz (Diğer) kalır.", "Cash accounts and records are kept without a section.", "Qase û tomar nayên jêbirin; bê beş dimînin.")}
+          warningText={
+            deleteTarget.scope === "cash"
+              ? tx(language, "İçinde kasa olan bir alan silinemez; önce kasaları başka bir alana taşıyın. Altındaki bölümler çalışma alanı olur.", "A workspace that still holds cash accounts cannot be deleted; move them to another workspace first. Its sections become workspaces.", "Qadeke ku qase tê de hene nayê jêbirin; pêşî qaseyan bibin qadeke din. Beşên wê dibin qadên xebatê.")
+              : tx(language, "Kayıtlar silinmez; bölümsüz kalır.", "Records are kept without a section.", "Tomar nayên jêbirin; bê beş dimînin.")
+          }
           checkPassword={checkPassword}
           onClose={() => setDeleteTarget(null)}
           onConfirm={(reason) => {

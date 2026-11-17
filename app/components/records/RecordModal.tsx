@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ConfirmModal } from "../shared";
-import { workspaceKeyOf, workspaceOptions } from "../KasaManage";
+import { noWorkspaceLabel, workspaceKeyOf, workspaceOptions } from "../KasaManage";
 import { tx, localizeData, noteRelationLabel } from "../../lib/i18n";
 import { openAttachment } from "../../lib/attachments";
 import { money, normalizeRecord } from "../../lib/finance";
@@ -74,7 +74,6 @@ export function RecordModal({
         tags: [],
         link: "",
         cashAccount: prefillCashAccount ?? "",
-        listName: "",
         attachments: [],
         detailTable: [],
         detailTableLayout: { cols: [], rows: [], colAlign: [], cellAlign: {} },
@@ -101,7 +100,7 @@ export function RecordModal({
   const [detailPasteHint, setDetailPasteHint] = useState("");
   const [excelView, setExcelView] = useState<{ name: string; data: string } | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const previous = (field: "source" | "person" | "project" | "listName") => [
+  const previous = (field: "source" | "person" | "project") => [
     ...new Set(
       records
         .filter((x) => field !== "source" || x.kind === kind)
@@ -256,11 +255,11 @@ export function RecordModal({
   );
   const sec = (text: string) => <div className="wide rfSec"><span>{text}</span></div>;
   // Kasa seçimi: Çalışma Alanı › Bölüm başlıkları altında gruplanır.
-  const rfWsOptions = workspaceOptions(sections, language);
+  const rfWsOptions = workspaceOptions(sections);
   const rfWsOf = (name: string) => {
     const a = cashAccounts.find((x) => x.name === name);
-    const key = a ? workspaceKeyOf({ sectionId: a.sectionId ?? null, rjKasa: !!a.isRjKasa, listKasa: !!a.isListWorkspace }, sections) : "genel";
-    return rfWsOptions.find((o) => o.key === key)?.label || tx(language, "Diğer", "Other", "Yên din");
+    const key = workspaceKeyOf(a?.sectionId, sections);
+    return rfWsOptions.find((o) => o.key === key)?.label || noWorkspaceLabel(language);
   };
   const kasaGroups = (() => {
     const names = [...new Set([...cashAccounts.map((a) => a.name), form.cashAccount || ""].filter(Boolean))];

@@ -5,7 +5,7 @@ import { money } from "../lib/finance";
 import { tx } from "../lib/i18n";
 import { PersonChip } from "./shared";
 import type { CashAccountSummary, KasaSection, Language } from "../lib/types";
-import { workspaceKeyOf, workspaceOptions, workspaceState } from "./KasaManage";
+import { NO_WORKSPACE, sectionIdOfKey, workspaceKeyOf, workspaceOptions } from "./KasaManage";
 import { notify } from "../lib/notify";
 import {
   aggregateMonthly,
@@ -48,7 +48,7 @@ export function ExcelImportModal({
   const [loading, setLoading] = useState(false);
   const [kasaChoice, setKasaChoice] = useState<string>("");
   const [newKasa, setNewKasa] = useState("");
-  const [wsKey, setWsKey] = useState("genel");
+  const [wsKey, setWsKey] = useState(() => workspaceOptions(sections)[0]?.key ?? NO_WORKSPACE);
   const [mode, setMode] = useState<"monthly" | "rows">("monthly");
   const [withDetail, setWithDetail] = useState(true);
   const [groupInvoices, setGroupInvoices] = useState(true);
@@ -61,9 +61,9 @@ export function ExcelImportModal({
   const [undone, setUndone] = useState(false);
 
   const kasaName = (kasaChoice === "__new" ? newKasa : kasaChoice).trim();
-  const wsOptions = workspaceOptions(sections, language);
+  const wsOptions = workspaceOptions(sections);
   const kasaOptions = cashAccounts
-    .filter((a) => workspaceKeyOf({ sectionId: a.sectionId ?? null, rjKasa: !!a.isRjKasa, listKasa: !!a.isListWorkspace }, sections) === wsKey)
+    .filter((a) => workspaceKeyOf(a.sectionId, sections) === wsKey)
     .map((a) => a.name)
     .sort((a, b) => a.localeCompare(b));
   const isNewKasa = kasaChoice === "__new";
@@ -124,7 +124,7 @@ export function ExcelImportModal({
     if (!kasaName) return;
     setBusy(true);
     setError("");
-    const ws = workspaceState(wsKey, { rjKasa: false, listKasa: false });
+    const sectionId = sectionIdOfKey(wsKey);
     const batchId = `xl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     let inserted = 0;
     let skipped = 0;
@@ -136,7 +136,7 @@ export function ExcelImportModal({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // Yeni kasa seçilen çalışma alanına bağlanır; var olan kasa zaten o alandadır, dokunulmaz.
-          body: JSON.stringify({ batchId, kasaName, items: chunk, ...(isNewKasa ? { listKasa: ws.listKasa, rjKasa: ws.rjKasa, sectionId: ws.sectionId } : {}) }),
+          body: JSON.stringify({ batchId, kasaName, items: chunk, ...(isNewKasa && sectionId != null ? { sectionId } : {}) }),
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);

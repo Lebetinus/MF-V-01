@@ -5,7 +5,6 @@ import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
 import { ensureCashAccountLink, fallbackKasaNameFor } from "../_lib/records";
-import { resolveRecordList } from "../_lib/lists";
 import { RECORD_KINDS, type Kind } from "../_lib/types";
 import { parseBody, recordInputSchema } from "../_lib/validate";
 import { formatAmount, logActivity } from "../_lib/activity";
@@ -63,8 +62,6 @@ export const POST = withErrorHandling(async (request: Request) => {
   if (!payload.cashAccount?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
 
   const db = getDb();
-  const listLink = await resolveRecordList(session.user, { listId: payload.listId, listName: payload.listName }, db);
-  if ("error" in listLink) return json({ error: listLink.error }, { status: 400 });
   const result = await db.transaction(async (tx) => {
     const link = await ensureCashAccountLink({ name: payload.cashAccount, kind: payload.kind, user: session.user }, tx);
     if (link.forbidden) return { forbidden: true as const };
@@ -86,8 +83,6 @@ export const POST = withErrorHandling(async (request: Request) => {
         cashAccount: payload.cashAccount || fallbackKasaNameFor(payload.kind),
         cashAccountId: link.cashAccountId,
         sectionId: payload.sectionId ?? null,
-        listName: listLink.listName ?? "",
-        listId: listLink.listId ?? null,
         attachments: payload.attachments,
         detailTable: payload.detailTable,
         detailTableLayout: payload.detailTableLayout,

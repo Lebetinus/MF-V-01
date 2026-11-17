@@ -4,8 +4,7 @@ import { cashAccounts, records } from "../../../../db/schema";
 import { requireSession } from "../../_lib/auth";
 import { canWriteCashAccount } from "../../_lib/cash-access";
 import { json, withErrorHandling } from "../../_lib/http";
-import { markListKasa, setRjKasa } from "../../_lib/lists";
-import { ensureWritableKasa } from "../../_lib/records";
+import { ensureWritableKasa, findCashAccountByName, isCashSection } from "../../_lib/records";
 import { excelImportSchema, parseBody } from "../../_lib/validate";
 
 // Excel aktarım sihirbazı: seçilen kasaya gelir/gider kayıtlarını (isteğe bağlı detay tablosuyla) toplu ekler.
@@ -28,13 +27,15 @@ export const POST = withErrorHandling(async (request: Request) => {
   }
 
   const db = getDb();
+  if (payload.sectionId != null && !(await isCashSection(payload.sectionId, db))) return json({ error: "Çalışma alanı bulunamadı" }, { status: 400 });
+  if (payload.sectionId == null && !(await findCashAccountByName(payload.kasaName, db))) {
+    return json({ error: "Yeni kasa için bir çalışma alanı seçin" }, { status: 400 });
+  }
   const result = await db.transaction(async (tx) => {
-    // Kasa: yoksa oluştur (kasa kendi başına açılır; yer tutucu kayıt yazılmaz).
-    const link = await ensureWritableKasa(payload.kasaName, session.user, tx);
+    // Kasa: yoksa seçilen çalışma alanında oluştur (kasa kendi başına açılır; yer tutucu kayıt yazılmaz).
+    const link = await ensureWritableKasa(payload.kasaName, session.user, tx, payload.sectionId ?? null);
     if (link.forbidden) return { forbidden: true as const };
-    if (payload.listKasa) await markListKasa(link.cashAccountId, tx);
-    if (payload.rjKasa) await setRjKasa(link.cashAccountId, true, tx);
-    if (payload.sectionId !== undefined) await tx.update(cashAccounts).set({ sectionId: payload.sectionId }).where(eq(cashAccounts.id, link.cashAccountId));
+    if (payload.sectionId != null && !link.created) await tx.update(cashAccounts).set({ sectionId: payload.sectionId }).where(eq(cashAccounts.id, link.cashAccountId));
 
     const keys = payload.items.map((i) => i.importKey).filter(Boolean);
     const existing = keys.length

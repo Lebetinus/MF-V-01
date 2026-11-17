@@ -6,7 +6,7 @@ import { isDebtLeg, kasaDebtByCurrency, kasaDebtStatus } from "../lib/debts";
 import { DebtModal, type DebtModalMode } from "./DebtModal";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
 import { RecordCommentsModal } from "./Comments";
-import { KasaDeleteModal, KasaEditModal, NewKasaModal, workspaceOptions } from "./KasaManage";
+import { KasaDeleteModal, KasaEditModal, NewKasaModal, NO_WORKSPACE, parentWorkspaceOptions, workspaceOptions } from "./KasaManage";
 import { WorkspaceAccessModal, type AccessKasa } from "./WorkspaceAccess";
 import { tx, localizeData } from "../lib/i18n";
 import { combineByCurrency, date, money, moneyBreakdown, type ExchangeRates } from "../lib/finance";
@@ -27,7 +27,6 @@ import {
   renderGroupTooltip as renderGroupTooltipView,
   renderKasaActions,
   renderKasaCard as renderKasaCardView,
-  renderListGroups,
   type KasaCardContext,
 } from "./records/kasaCards";
 import { renderNewWorkspaceModal } from "./records/newWorkspace";
@@ -134,7 +133,7 @@ export function Records({
   const { rowOrder, draggedRowId, setDraggedRowId, dragOverRowId, setDragOverRowId, persistRowOrder, sortMode, changeSortMode } = useRowOrder(kind);
   const { columnOrder, columnWidths, draggedColumn, setDraggedColumn, reorderColumn, startResize } = useColumnLayout();
 
-  const wsOptions = workspaceOptions(sections, language);
+  const wsOptions = workspaceOptions(sections);
   const [commentSummaries, setCommentSummaries] = useState<
     Record<number, { count: number; lastText: string; lastUserName: string; hasAttention: boolean; hasUnread: boolean }>
   >({});
@@ -158,13 +157,11 @@ export function Records({
   const { shareBusyKey, dashboardShareBusy, toggleShare, toggleDashboardShare } = useKasaSharing({ language, shareTarget, setShareTarget, onCashAccountsChange });
   const { approvingId, approveTransfer } = useTransferApproval({ language, onTransfersChanged });
   const [source, setSource] = useState("Tümü");
-  const [showListColumn] = useState(false);
-  const [activeList, setActiveList] = useState("");
   // Gelir/Gider sayfalarında kasa kutusuyla (ör. "Ana Kasa Giderleri") süzülen kasa adı.
   const [activeKasa, setActiveKasa] = useState("");
   // Gelir/Gider sayfalarında bölüm kutusuyla süzülen bölüm (Ayarlar > Bölümler).
   const [activeSection, setActiveSection] = useState<number | null>(null);
-  // Kasalar sayfasında çalışma alanı başlığıyla süzülen alan anahtarı (genel / liste / rj / sec-<id>).
+  // Kasalar sayfasında çalışma alanı başlığıyla süzülen alan anahtarı (sec-<id>).
   const [activeWs, setActiveWs] = useState<string | null>(null);
   // Gelir/Gider sayfalarında seçili çalışma alanı (kasa kutuları yalnız seçili alanın kasalarını gösterir).
   const [activeIeWs, setActiveIeWs] = useState<string | null>(null);
@@ -176,37 +173,22 @@ export function Records({
     setActiveIeWs(null);
     setActiveWs(null);
   }
-  const [showAllLists, setShowAllLists] = useState(false);
   const filters = useRecordFilters();
   const { filtersOpen, setFiltersOpen, filterFrom, filterTo, filterSource, filterPerson, filterProject, filterTag, activeFilterCount } = filters;
   const {
-    kasaRjNames,
     cashSections,
-    listOf,
-    isListLinked,
     groups,
     overallByCurrency,
-    listedRecords,
-    listGroups,
     overallInOut,
-    listKasaBoxes,
     cashWorkspaces,
     ieWorkspaces,
     sectionBoxes,
-    overallListInOut,
-    overallListByCurrency,
   } = useKasaSummaries({ records, allRecords, kind, cashAccounts, sections, language, workspaceOrder });
   const filterSourceOptions = [...new Set(records.map((x) => x.source).filter(Boolean))];
-  const openList = (name: string) => {
-    setActiveKasa("");
-    setSource("Tümü");
-    setSearch(name);
-    setActiveList(name);
-    setShowAllLists(false);
-  };
+
   // Gelir/Gider başlık kutusundaki 🗂: o başlığın en son kaydını düzenlemeye açar.
-  const openCardRecord = (field: "source" | "listName", value: string) => {
-    const candidates = records.filter((x) => (field === "source" ? x.source === value : listOf(x) === value));
+  const openCardRecord = (value: string) => {
+    const candidates = records.filter((x) => x.source === value);
     const rec = [...candidates].sort((a, b) => b.date.localeCompare(a.date))[0];
     if (rec) onEdit(rec);
   };
@@ -218,10 +200,8 @@ export function Records({
     cashAccounts,
     allRecords,
     source,
-    showAllLists,
     setSource,
     setActiveKasa,
-    setShowAllLists,
     setShareTarget,
     setKasaEditTarget,
     setKasaMoveTarget,
@@ -255,13 +235,11 @@ export function Records({
   // (kasa adına göre) gösterilir. Gelir/Gider sayfalarında `source` bir ana başlık kutusudur.
   const rows = records.filter(
     (x) =>
-      (source === "Tümü" || source === "__RJ" || (kasaPage ? x.cashAccount === source : x.source === source || x.cashAccount === source)) &&
-      (!showAllLists || listOf(x) || isListLinked(x)) &&
+      (source === "Tümü" || (kasaPage ? x.cashAccount === source : x.source === source || x.cashAccount === source)) &&
       (!activeKasa || x.cashAccount === activeKasa) &&
       (!activeIeWorkspace || activeIeNames.has(x.cashAccount)) &&
       (activeSection === null || x.sectionId === activeSection) &&
       (activeWs === null || activeWs === "__all" || !kasaPage || activeWsNames.has(x.cashAccount)) &&
-      (source !== "__RJ" || kasaRjNames.has(x.cashAccount)) &&
       (!filterFrom || x.date >= filterFrom) &&
       (!filterTo || x.date <= filterTo) &&
       (!filterSource || x.source === filterSource) &&
@@ -319,13 +297,11 @@ export function Records({
       cashAccounts,
       sections,
       wsOptions,
-      showListColumn,
       commentSummaries,
       approvingId,
       exchangeRates,
       onEdit,
       setViewTarget,
-      openList,
       setDetailViewTarget,
       setCommentTarget,
       approveTransfer,
@@ -352,7 +328,6 @@ export function Records({
   // sayfalarında (!kasaPage) tek, birleşik tablo olarak kalır.
   const kasaSplitActive = kasaPage && source !== "Tümü";
   // Kasalar sayfası: açılışta "kasa panosu" (boardMode), bir kasa seçilince kasanın kendi sayfası (detailMode).
-  // Liste bağlamıyla açılan eski görünüm (activeList / showAllLists / activeKasa) olduğu gibi kalır.
   // Kasa Kontrol Merkezi yönetimi: sıralama kaydı, alan/bölüm düzenleme + yetkiler, bölüm/kasa ekleme.
   async function saveOrder(payload: { workspaces?: string[]; sections?: number[]; kasas?: number[] }) {
     try {
@@ -380,7 +355,7 @@ export function Records({
       section: key.startsWith("sec-") ? sections.find((x) => x.id === Number(key.slice(4))) : undefined,
     });
   }
-  const boardMode = kasaPage && source === "Tümü" && !activeList && !showAllLists && !activeKasa;
+  const boardMode = kasaPage && source === "Tümü" && !activeKasa;
   const detailMode = kasaSplitActive;
   const boardActions = (name: string): BoardAction[] => {
     if (readOnly) return [];
@@ -516,7 +491,7 @@ export function Records({
                   </button>
                   {kasaPage && (
                     <>
-                      <button onClick={() => { setNewMenuOpen(false); setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(activeWs && activeWs !== "__all" && !activeSub ? activeWs : "genel"); setNewWorkspaceOpen(true); }}>
+                      <button onClick={() => { setNewMenuOpen(false); setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(activeWs && activeWs !== "__all" && activeWs !== NO_WORKSPACE && !activeSub ? activeWs : parentWorkspaceOptions(sections)[0]?.key ?? ""); setNewWorkspaceOpen(true); }}>
                         ▤ {tx(language, "Bölüm Ekle", "Add Section", "Beş Zêde Bike")}
                       </button>
                       <button onClick={() => { setNewMenuOpen(false); setNewWorkspaceName(""); setNewWorkspaceError(""); setNewWorkspaceParent(""); setNewWorkspaceOpen(true); }}>
@@ -604,7 +579,6 @@ export function Records({
           onDone={() => {
             setSource("Tümü");
             setActiveKasa("");
-            setShowAllLists(false);
             onRefreshData?.();
           }}
         />
@@ -617,7 +591,7 @@ export function Records({
           allRecords={allRecords}
           exchangeRates={exchangeRates}
           summary={{ total: overallByCurrency, inBy: overallInOut.inBy, outBy: overallInOut.outBy }}
-          onOpen={(name) => { setSource(name); setActiveKasa(""); setShowAllLists(false); }}
+          onOpen={(name) => { setSource(name); setActiveKasa(""); }}
           actionsFor={boardActions}
           onShare={(account) => setShareTarget(account)}
           canManage={isSuperAdmin && !readOnly}
@@ -631,7 +605,7 @@ export function Records({
       )}
       {detailMode && (
         <div className="kbDetailHead">
-          <button type="button" className="kbBack" onClick={() => { setSource("Tümü"); setActiveKasa(""); setActiveWs(null); setShowAllLists(false); setSelectedIds(new Set()); }}>
+          <button type="button" className="kbBack" onClick={() => { setSource("Tümü"); setActiveKasa(""); setActiveWs(null); setSelectedIds(new Set()); }}>
             ← {tx(language, "Tüm kasalar", "All cash accounts", "Hemû qase")}
           </button>
           <div className="kbDetailTitle">
@@ -699,14 +673,13 @@ export function Records({
       {!(boardMode || detailMode) && (
       <div className="groups">
         <button
-          className={source === "Tümü" && !showAllLists && !activeKasa && (activeWs === null || activeWs === "__all") && !activeIeWorkspace ? "selected" : ""}
+          className={source === "Tümü" && !activeKasa && (activeWs === null || activeWs === "__all") && !activeIeWorkspace ? "selected" : ""}
           onClick={() => {
             setSource("Tümü");
             setActiveKasa("");
             // Kasalar sayfasında "Tüm Kasalar" altta tüm kasaları açar/kapatır.
             setActiveWs(kasaPage && activeWs !== "__all" ? "__all" : null);
             setActiveIeWs(null);
-            setShowAllLists(false);
           }}
         >
           <b>
@@ -738,9 +711,7 @@ export function Records({
                   setActiveWs(activeWs === w.key ? null : w.key);
                   setSource("Tümü");
                   setSearch("");
-                  setActiveList("");
                   setActiveKasa("");
-                  setShowAllLists(false);
                 }}
               >
                 <b>{w.name} <span className="groupCount" style={{ color: w.color }}>({w.count})</span></b>
@@ -781,11 +752,10 @@ export function Records({
           return (
           <div className="groupCard" key={g.name}>
             <button
-              className={source === g.name && !showAllLists ? "selected" : ""}
+              className={source === g.name ? "selected" : ""}
               onClick={() => {
                 setSource(g.name);
                 setActiveKasa("");
-                setShowAllLists(false);
               }}
             >
               <b>{localizeData(g.name, language)} <span className="groupCount">({g.count})</span></b>
@@ -797,7 +767,7 @@ export function Records({
                 className="cashEditIcon"
                 title={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
                 aria-label={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
-                onClick={() => openCardRecord("source", g.name)}
+                onClick={() => openCardRecord(g.name)}
               >
                 🗂
               </button>
@@ -818,8 +788,6 @@ export function Records({
                     setActiveKasa("");
                     setSource("Tümü");
                     setSearch("");
-                    setActiveList("");
-                    setShowAllLists(false);
                   }}
                 >
                   <b>{w.name} <span className="groupCount" style={{ color: w.color }}>({w.count})</span></b>
@@ -838,8 +806,6 @@ export function Records({
                     setActiveKasa("");
                     setSource("Tümü");
                     setSearch("");
-                    setActiveList("");
-                    setShowAllLists(false);
                   }}
                 >
                   <b>{section.name} <span className="groupCount" style={{ color: section.color }}>({count})</span></b>
@@ -863,41 +829,16 @@ export function Records({
                   setActiveKasa(activeKasa === k.name ? "" : k.name);
                   setSource("Tümü");
                   setSearch("");
-                  setActiveList("");
-                  setShowAllLists(false);
                 }}
               >
                 <b>{localizeData(k.name, language)} <span className="groupCount">({k.count})</span></b>
                 <strong>{moneyBreakdown(k.totalByCurrency)}</strong>
               </button>
-              {kasaActions(k.name, activeKasa === k.name && !showAllLists)}
+              {kasaActions(k.name, activeKasa === k.name)}
             </div>
           ))}
         </div>
       )}
-      {/* Listeler menüsü kapatıldı: "Tüm Liste Giderleri/Gelirleri" satırı artık gösterilmez; liste kasaları çalışma alanı kutusunda görünür. */}
-      {false && !kasaPage && listGroups.length > 0 &&
-        renderListGroups({
-          language,
-          kind,
-          readOnly,
-          showAllLists,
-          activeList,
-          activeKasa,
-          listedRecords,
-          overallListByCurrency,
-          overallListInOut,
-          listGroups,
-          listKasaBoxes,
-          setSource,
-          setActiveKasa,
-          setSearch,
-          setActiveList,
-          setShowAllLists,
-          openList,
-          openCardRecord,
-          kasaActions,
-        })}
       {kasaPage && activeWs && !(boardMode || detailMode) && (
         <div className="groups workspaceGroups" style={{ borderLeft: `4px solid ${activeWorkspace?.color ?? "#315fe8"}` }}>
           {activeWorkspace?.subs.map((s) => (
@@ -967,7 +908,6 @@ export function Records({
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setActiveList("");
             }}
             placeholder={tx(
               language,
@@ -1161,7 +1101,6 @@ export function Records({
             if (kasaPage) {
               setSource(name);
               setActiveKasa("");
-              setShowAllLists(false);
             }
           }}
         />

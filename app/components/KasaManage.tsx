@@ -4,20 +4,13 @@ import { useState } from "react";
 import type { CashAccountSummary, KasaSection, Language } from "../lib/types";
 import { tx } from "../lib/i18n";
 
-// Çalışma alanı seçenekleri: hazır alanlar (Genel / Liste / RJ) + Ayarlar'dan oluşturulan kasa çalışma alanları.
-// Her kasa mutlaka tek bir alana bağlıdır; "alansız" seçenek yoktur (varsayılan Genel Kasalar).
-export function workspaceOptions(sections: KasaSection[], language: Language): { key: string; label: string; isSub?: boolean }[] {
+// Çalışma alanı seçenekleri: yöneticinin oluşturduğu kasa çalışma alanları (kasa_sections, scope=cash), her birinin
+// hemen altında bölümleri ("Alan › Bölüm"). Hazır/sabit bir alan yoktur.
+export function workspaceOptions(sections: KasaSection[]): { key: string; label: string; isSub?: boolean }[] {
   const cash = sections.filter((x) => x.scope === "cash");
-  const ids = new Set(cash.map((x) => `sec-${x.id}`));
-  const builtin = [
-    { key: "genel", label: tx(language, "Diğer", "Other", "Yên din") },
-    { key: "liste", label: tx(language, "Liste Kasaları", "List Cash Accounts", "Qaseyên Lîsteyê") },
-    { key: "rj", label: tx(language, "RJ-Kasaları", "RJ Cash Accounts", "Qaseyên RJ") },
-  ];
-  const known = new Set([...builtin.map((b) => b.key), ...ids]);
+  const known = new Set(cash.map((x) => `sec-${x.id}`));
   const isChild = (x: KasaSection) => Boolean(x.parentKey) && known.has(x.parentKey as string);
-  const tops = [...builtin, ...cash.filter((x) => !isChild(x)).map((x) => ({ key: `sec-${x.id}`, label: x.name }))];
-  // Her çalışma alanının hemen altında bölümleri: "Üst Alan › Bölüm".
+  const tops = cash.filter((x) => !isChild(x)).map((x) => ({ key: `sec-${x.id}`, label: x.name }));
   return tops.flatMap((t) => [
     t as { key: string; label: string; isSub?: boolean },
     ...cash.filter((x) => isChild(x) && x.parentKey === t.key).map((x) => ({ key: `sec-${x.id}`, label: `${t.label} › ${x.name}`, isSub: true })),
@@ -25,23 +18,21 @@ export function workspaceOptions(sections: KasaSection[], language: Language): {
 }
 
 // Bölüm oluştururken seçilebilecek üst çalışma alanları (bölümün içine bölüm eklenemez).
-export function parentWorkspaceOptions(sections: KasaSection[], language: Language): { key: string; label: string }[] {
-  return workspaceOptions(sections, language).filter((o) => !o.isSub);
+export function parentWorkspaceOptions(sections: KasaSection[]): { key: string; label: string }[] {
+  return workspaceOptions(sections).filter((o) => !o.isSub);
 }
 
-export function workspaceKeyOf(state: { sectionId: number | null; rjKasa: boolean; listKasa: boolean }, sections: KasaSection[]): string {
-  if (state.sectionId != null && sections.some((x) => x.scope === "cash" && x.id === state.sectionId)) return `sec-${state.sectionId}`;
-  if (state.listKasa) return "liste";
-  if (state.rjKasa) return "rj";
-  return "genel";
+// Kasanın bulunduğu alan/bölüm anahtarı ("sec-<id>"); alanı yoksa ya da alanı silinmişse NO_WORKSPACE.
+export const NO_WORKSPACE = "none";
+// Alanı olmayan (ya da alanı silinmiş) kasaların, yalnız böyle bir kasa varken görünen kutusu.
+export const noWorkspaceLabel = (language: Language) => tx(language, "Çalışma alanı yok", "No workspace", "Bê qada xebatê");
+export function workspaceKeyOf(sectionId: number | null | undefined, sections: KasaSection[]): string {
+  return sectionId != null && sections.some((x) => x.scope === "cash" && x.id === sectionId) ? `sec-${sectionId}` : NO_WORKSPACE;
 }
 
-// Seçilen çalışma alanına karşılık gelen kasa işaretleri. Özel bir alana taşınırken Liste/RJ işareti korunur.
-export function workspaceState(key: string, current: { rjKasa: boolean; listKasa: boolean }): { sectionId: number | null; rjKasa: boolean; listKasa: boolean } {
-  if (key.startsWith("sec-")) return { sectionId: Number(key.slice(4)), rjKasa: current.rjKasa, listKasa: current.listKasa };
-  if (key === "liste") return { sectionId: null, rjKasa: false, listKasa: true };
-  if (key === "rj") return { sectionId: null, rjKasa: true, listKasa: false };
-  return { sectionId: null, rjKasa: false, listKasa: false };
+// Seçilen anahtarın çalışma alanı / bölüm kimliği.
+export function sectionIdOfKey(key: string): number | null {
+  return key.startsWith("sec-") ? Number(key.slice(4)) : null;
 }
 
 // Seçili kasa için "Kasayı Düzenle" ve "Çalışma Alanına Taşı" (moveOnly) penceresi.
@@ -60,24 +51,22 @@ export function KasaEditModal({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const current = { sectionId: account.sectionId ?? null, rjKasa: !!account.isRjKasa, listKasa: !!account.isListWorkspace };
   const [name, setName] = useState(account.name);
-  const [wsKey, setWsKey] = useState(workspaceKeyOf(current, sections));
+  const [wsKey, setWsKey] = useState(workspaceKeyOf(account.sectionId, sections));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const options = workspaceOptions(sections, language);
-  const leavingList = account.isListWorkspace && workspaceState(wsKey, current).listKasa === false;
+  const options = workspaceOptions(sections);
 
   async function save() {
     if (!name.trim()) return;
     setBusy(true);
     setError("");
-    const next = workspaceState(wsKey, current);
+    const sectionId = sectionIdOfKey(wsKey);
     try {
       const response = await fetch(`/api/cash-accounts/${account.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), listKasa: next.listKasa, rjKasa: next.rjKasa, sectionId: next.sectionId }),
+        body: JSON.stringify({ name: name.trim(), ...(sectionId != null ? { sectionId } : {}) }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -113,19 +102,15 @@ export function KasaEditModal({
           <label>
             {tx(language, "Çalışma alanı", "Workspace", "Qada xebatê")}
             <select value={wsKey} onChange={(e) => setWsKey(e.target.value)}>
+              {wsKey === NO_WORKSPACE && <option value={NO_WORKSPACE} disabled>{tx(language, "Çalışma alanı seçin", "Select a workspace", "Qada xebatê hilbijêre")}</option>}
               {options.map((o) => (
                 <option key={o.key} value={o.key}>{o.label}</option>
               ))}
             </select>
           </label>
           <small className="kasaManageHint">
-            {tx(language, "Her kasa mutlaka bir çalışma alanına bağlıdır; taşımak kasanın kayıtlarını değiştirmez.", "Every cash account belongs to a workspace; moving it does not change its records.", "Her qase girêdayî qada xebatê ye; barkirin tomarên qaseyê naguherîne.")}
+            {tx(language, "Kasalar çalışma alanlarında ve onların bölümlerinde gruplanır; taşımak kasanın kayıtlarını değiştirmez.", "Cash accounts are grouped in workspaces and their sections; moving one does not change its records.", "Qase di qadên xebatê û beşên wan de tên komkirin; barkirin tomarên qaseyê naguherîne.")}
           </small>
-          {leavingList && (
-            <p className="kasaManageWarn">
-              {tx(language, "Bu kasa şu an bir Liste Kasası. Başka alana taşırsanız Listeler sayfasındaki çalışma alanı bağlantısı kalkar (veriler silinmez).", "This is currently a List cash account. Moving it elsewhere removes its link to the Lists page workspace (data is not deleted).", "Ev qase niha Qaseya Lîsteyê ye. Heke bibe cihekî din girêdana qada xebatê ya rûpela Lîsteyê radibe (dane nayên jêbirin).")}
-            </p>
-          )}
           {error && <p className="kasaManageError">{error}</p>}
         </div>
         <div className="modalActions">
@@ -158,9 +143,9 @@ export function NewKasaModal({
   onClose: () => void;
   onDone: (name: string) => void;
 }) {
-  const options = workspaceOptions(sections, language);
+  const options = workspaceOptions(sections);
   const [name, setName] = useState("");
-  const [wsKey, setWsKey] = useState(() => (initialWorkspaceKey && options.some((o) => o.key === initialWorkspaceKey) ? initialWorkspaceKey : "genel"));
+  const [wsKey, setWsKey] = useState(() => (initialWorkspaceKey && options.some((o) => o.key === initialWorkspaceKey) ? initialWorkspaceKey : options[0]?.key ?? NO_WORKSPACE));
   const [amount, setAmount] = useState(0);
   const [currency, setCurrency] = useState("USD");
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().slice(0, 10));
@@ -171,11 +156,13 @@ export function NewKasaModal({
   const [sectionError, setSectionError] = useState("");
 
   // Seçili çalışma alanının içinde yeni bölüm (bölümün içine bölüm olmaz: seçili bir bölümse onun üst alanı kullanılır).
+  // Henüz hiç çalışma alanı yoksa aynı düğme ilk çalışma alanını açar.
+  const noWorkspace = options.length === 0;
   async function createSection() {
     const trimmed = sectionName.trim();
     if (!trimmed) return;
-    const selected = wsKey.startsWith("sec-") ? sections.find((x) => `sec-${x.id}` === wsKey) : undefined;
-    const parentKey = selected?.parentKey ?? wsKey;
+    const selected = sections.find((x) => `sec-${x.id}` === wsKey);
+    const parentKey = noWorkspace ? null : selected?.parentKey ?? wsKey;
     try {
       const response = await fetch("/api/sections", {
         method: "POST",
@@ -208,16 +195,19 @@ export function NewKasaModal({
     if (!trimmed || busy) return;
     setBusy(true);
     setError("");
-    const ws = workspaceState(wsKey, { rjKasa: false, listKasa: false });
+    const sectionId = sectionIdOfKey(wsKey);
+    if (sectionId == null) {
+      setError(tx(language, "Bir çalışma alanı seçin.", "Select a workspace.", "Qada xebatê hilbijêre."));
+      setBusy(false);
+      return;
+    }
     try {
       const response = await fetch("/api/cash-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
-          sectionId: ws.sectionId,
-          listKasa: ws.listKasa,
-          rjKasa: ws.rjKasa,
+          sectionId,
           openingAmount: amount > 0 ? amount : 0,
           currency,
           date: openingDate,
@@ -267,17 +257,24 @@ export function NewKasaModal({
           </label>
           <label>
             {tx(language, "Çalışma alanı", "Workspace", "Qada xebatê")}
-            <select value={wsKey} onChange={(e) => setWsKey(e.target.value)}>
+            <select value={wsKey} onChange={(e) => setWsKey(e.target.value)} disabled={noWorkspace}>
+              {noWorkspace && <option value={NO_WORKSPACE}>{tx(language, "Henüz çalışma alanı yok", "No workspace yet", "Hê qada xebatê tune")}</option>}
               {options.map((o) => (
                 <option key={o.key} value={o.key}>{o.label}</option>
               ))}
             </select>
           </label>
-          <small className="kasaManageHint">{tx(language, "Her kasa mutlaka bir çalışma alanına (ya da onun bir bölümüne) bağlıdır.", "Every cash account belongs to a workspace (or one of its sections).", "Her qase girêdayî qada xebatê (an beşekî wê) ye.")}</small>
+          <small className="kasaManageHint">
+            {noWorkspace
+              ? tx(language, "Kasa açmadan önce bir çalışma alanı oluşturun.", "Create a workspace before opening a cash account.", "Berî vekirina qaseyê qadeke xebatê çêke.")
+              : tx(language, "Her kasa bir çalışma alanında (ya da onun bir bölümünde) açılır.", "Every cash account opens in a workspace (or one of its sections).", "Her qase di qadeke xebatê (an beşekî wê) de vedibe.")}
+          </small>
           <div className="inlineSectionRow">
             {!sectionOpen ? (
               <button type="button" className="light compact" onClick={() => setSectionOpen(true)}>
-                ＋ {tx(language, "Bölüm oluştur (seçili çalışma alanında)", "Create section (in selected workspace)", "Beş çêke (di qada hilbijartî de)")}
+                ＋ {noWorkspace
+                  ? tx(language, "Çalışma alanı oluştur", "Create workspace", "Qada xebatê çêke")
+                  : tx(language, "Bölüm oluştur (seçili çalışma alanında)", "Create section (in selected workspace)", "Beş çêke (di qada hilbijartî de)")}
               </button>
             ) : (
               <>
@@ -285,7 +282,7 @@ export function NewKasaModal({
                   value={sectionName}
                   autoFocus
                   maxLength={80}
-                  placeholder={tx(language, "Bölüm adı", "Section name", "Navê beşê")}
+                  placeholder={noWorkspace ? tx(language, "Çalışma alanı adı", "Workspace name", "Navê qada xebatê") : tx(language, "Bölüm adı", "Section name", "Navê beşê")}
                   onChange={(e) => setSectionName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -320,7 +317,7 @@ export function NewKasaModal({
         </div>
         <div className="modalActions">
           <button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
-          <button type="submit" className="primary" disabled={busy || !name.trim()}>{tx(language, "Kasayı oluştur", "Create cash account", "Qaseyê çêke")}</button>
+          <button type="submit" className="primary" disabled={busy || !name.trim() || noWorkspace}>{tx(language, "Kasayı oluştur", "Create cash account", "Qaseyê çêke")}</button>
         </div>
       </form>
     </div>

@@ -20,8 +20,7 @@ export type Page =
   | "activity"
   | "users"
   | "settings"
-  | "guide"
-  | "lists";
+  | "guide";
 export type RecordAttachment = { name: string; data: string };
 export type RecordItem = {
   id: number;
@@ -38,9 +37,6 @@ export type RecordItem = {
   // Kayda iliştirilen dış bağlantı (http/https); yoksa boş.
   link?: string;
   cashAccount: string;
-  listName: string;
-  // Proje Aşaması 2: bağlı liste (Listeler sayfası).
-  listId?: number | null;
   // Gelir/Gider bölümü (Ayarlar > Bölümler).
   sectionId?: number | null;
   // Excel aktarımıyla gelen kayıtların aktarım numarası (kasa kutusunda toplanır, başlık kutusu oluşturmaz).
@@ -160,9 +156,7 @@ export type CashAccountSummary = {
   createdAt?: string;
   isOwner: boolean;
   sharedWithUserIds: number[];
-  // "Liste Kasası" işaretli kasa — Listeler sayfasında otomatik çalışma alanıdır.
-  isListWorkspace?: boolean;
-  isRjKasa?: boolean;
+  // Kasanın çalışma alanı ya da bölümü (kasa_sections, scope=cash).
   sectionId?: number | null;
   // Kasa Kontrol Merkezi: elle sıralama (küçük olan önce; 0 = sıralanmamış).
   sortOrder?: number;
@@ -201,7 +195,7 @@ export type CashTransfer = {
   toRecordId: number | null;
   createdAt: string;
 };
-export const restrictablePages: Page[] = ["cash", "income", "expense", "reportBuilder", "notes", "comments", "activity", "archive", "lists"];
+export const restrictablePages: Page[] = ["cash", "income", "expense", "reportBuilder", "notes", "comments", "activity", "archive"];
 // A comment thread on one records row — added from the "💬" action on its
 // Kasalar/Gelir/Gider row, or replied to from Mali Özel Notlar > Yorumlar
 // (see Comments.tsx), which lists every record that has at least one.

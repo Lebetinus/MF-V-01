@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { CashAccountSummary, KasaSection, Language } from "../lib/types";
 import { tx } from "../lib/i18n";
-import { workspaceOptions, workspaceState } from "./KasaManage";
+import { NO_WORKSPACE, sectionIdOfKey, workspaceOptions } from "./KasaManage";
 
 type AccessUser = { id: number; name: string; username: string };
 export type AccessKasa = { id: number; name: string; ownerUserId?: number | null };
@@ -37,7 +37,7 @@ export function WorkspaceAccessModal({
   // Üst çalışma alanı: seçilirse bu alan onun içinde "bölüm" olarak görünür ("" = ana seviye).
   const [parentKey, setParentKey] = useState(section?.parentKey ?? "");
   const hasChildren = Boolean(section && sections.some((x) => x.parentKey === `sec-${section.id}`));
-  const parentChoices = workspaceOptions(sections, language).filter((o) => section && o.key !== `sec-${section.id}` && !sections.some((x) => `sec-${x.id}` === o.key && x.parentKey));
+  const parentChoices = workspaceOptions(sections).filter((o) => section && o.key !== `sec-${section.id}` && !sections.some((x) => `sec-${x.id}` === o.key && x.parentKey));
   const [people, setPeople] = useState<AccessUser[]>([]);
   const [grants, setGrants] = useState<Record<string, Set<number>>>({});
   const [loading, setLoading] = useState(true);
@@ -262,10 +262,10 @@ function WorkspaceDeleteModal({
   onDone: () => void;
 }) {
   const ownKey = `sec-${section.id}`;
-  const others = workspaceOptions(sections, language).filter((o) => o.key !== ownKey);
+  const others = workspaceOptions(sections).filter((o) => o.key !== ownKey);
   const [mode, setMode] = useState<"temp" | "existing">("temp");
   const [tempName, setTempName] = useState(tx(language, "Geçici Kasalar", "Temporary Cash Accounts", "Qaseyên Demkî"));
-  const [target, setTarget] = useState(others[0]?.key ?? "genel");
+  const [target, setTarget] = useState(others[0]?.key ?? NO_WORKSPACE);
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -298,13 +298,15 @@ function WorkspaceDeleteModal({
         targetKey = `sec-${body.section.id}`;
       }
       for (const account of kasas) {
-        const next = workspaceState(targetKey, { rjKasa: !!account.isRjKasa, listKasa: !!account.isListWorkspace });
-        const moved = await fetch(`/api/cash-accounts/${account.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: account.name, listKasa: next.listKasa, rjKasa: next.rjKasa, sectionId: next.sectionId }),
-        });
-        if (!moved.ok) {
+        const sectionId = sectionIdOfKey(targetKey);
+        const moved = sectionId == null
+          ? null
+          : await fetch(`/api/cash-accounts/${account.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: account.name, sectionId }),
+            });
+        if (!moved?.ok) {
           setError(tx(language, `“${account.name}” taşınamadı; çalışma alanı silinmedi.`, `“${account.name}” could not be moved; the workspace was not deleted.`, `“${account.name}” nehat barkirin; qada xebatê nehat jêbirin.`));
           return;
         }

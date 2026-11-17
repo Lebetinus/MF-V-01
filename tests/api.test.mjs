@@ -98,6 +98,8 @@ let reporterCookie;
 const createdRecordIds = [];
 const createdReportIds = [];
 const extraKasaIds = [];
+// Her kasa bir çalışma alanında açılır: testlerin kasaları bu alana konur.
+let testWsId;
 
 test("auth: rejects a wrong password", async () => {
   const res = await call("POST", "/api/auth/login", { body: { username: "admin", password: "definitely-wrong" } });
@@ -173,8 +175,11 @@ test("permission matrix: scoped user can reach a permitted page, not an unpermit
 });
 
 test("records: create, partial update, archive, delete", async () => {
-  // A kasa is created on its own (Yeni Kasa); income/expense then join it.
-  const kasa = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_kasa` } });
+  const ws = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_ws` } });
+  assert.equal(ws.status, 201);
+  testWsId = ws.json.section.id;
+  // A kasa is created on its own (Yeni Kasa) inside a workspace; income/expense then join it.
+  const kasa = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_kasa`, sectionId: testWsId } });
   assert.equal(kasa.status, 201);
   adminKasaId = kasa.json.cashAccount.id;
   assert.equal(kasa.json.record, null, "no opening balance → no record");
@@ -385,7 +390,7 @@ test("database: import/clear need a super admin and the password, checked on the
 async function makeKasa(name, openingAmount = 0) {
   const res = await call("POST", "/api/cash-accounts", {
     cookie: adminCookie,
-    body: { name, openingAmount, currency: "USD", date: "2026-01-15" },
+    body: { sectionId: testWsId, name, openingAmount, currency: "USD", date: "2026-01-15" },
   });
   assert.equal(res.status, 201, `create kasa ${name}`);
   extraKasaIds.push(res.json.cashAccount.id);
@@ -405,7 +410,7 @@ test("cash accounts: Yeni Kasa with an opening balance writes one income record"
   const name = `${RUN_TAG}_opening`;
   const res = await call("POST", "/api/cash-accounts", {
     cookie: adminCookie,
-    body: { name, openingAmount: 250, currency: "USD", date: "2026-02-01" },
+    body: { sectionId: testWsId, name, openingAmount: 250, currency: "USD", date: "2026-02-01" },
   });
   assert.equal(res.status, 201);
   const kasaId = res.json.cashAccount.id;
@@ -430,10 +435,10 @@ test("cash accounts: Yeni Kasa with an opening balance writes one income record"
 
 test("cash accounts: a duplicate kasa name is rejected with 409", async () => {
   await makeKasa(`${RUN_TAG}_dup`);
-  const again = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_dup` } });
+  const again = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { sectionId: testWsId, name: `${RUN_TAG}_dup` } });
   assert.equal(again.status, 409);
   assert.match(again.json?.error ?? "", /zaten var/);
-  const blank = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: "   " } });
+  const blank = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { sectionId: testWsId, name: "   " } });
   assert.equal(blank.status, 400);
 });
 
@@ -444,7 +449,7 @@ test("cash accounts: a user without the Kasa Kontrol Merkezi permission cannot o
   });
   assert.equal(created.status, 201);
   const cookie = (await call("POST", "/api/auth/login", { body: { username: `${RUN_TAG}_nokasa`, password: "ApiTest1234" } })).cookie;
-  const res = await call("POST", "/api/cash-accounts", { cookie, body: { name: `${RUN_TAG}_nokasa_kasa` } });
+  const res = await call("POST", "/api/cash-accounts", { cookie, body: { sectionId: testWsId, name: `${RUN_TAG}_nokasa_kasa` } });
   assert.equal(res.status, 403);
   assert.equal((await call("DELETE", `/api/users/${created.json.user.id}`, { cookie: adminCookie })).status, 200);
 });
@@ -463,7 +468,7 @@ test("cash accounts: only the owner shares a kasa; a user it was shared with can
   const viewer = await make("shareViewer");
   const third = await make("shareThird");
   try {
-    const kasa = await call("POST", "/api/cash-accounts", { cookie: owner.cookie, body: { name: `${RUN_TAG}_sharedKasa` } });
+    const kasa = await call("POST", "/api/cash-accounts", { cookie: owner.cookie, body: { sectionId: testWsId, name: `${RUN_TAG}_sharedKasa` } });
     assert.equal(kasa.status, 201);
     const kasaId = kasa.json.cashAccount.id;
     extraKasaIds.push(kasaId);
@@ -485,6 +490,44 @@ test("cash accounts: only the owner shares a kasa; a user it was shared with can
   } finally {
     for (const u of [owner, viewer, third]) await call("DELETE", `/api/users/${u.id}`, { cookie: adminCookie });
   }
+});
+
+test("workspaces: a kasa opens in a workspace; a workspace holding kasas cannot be deleted", async () => {
+  const noWs = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_noWs` } });
+  assert.equal(noWs.status, 400, "a workspace is required");
+  const badWs = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_badWs`, sectionId: 999999 } });
+  assert.equal(badWs.status, 400);
+  // The old built-in workspace keys are gone.
+  const oldParent = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_old`, parentKey: "rj" } });
+  assert.equal(oldParent.status, 400);
+
+  const other = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_ws2` } });
+  assert.equal(other.status, 201);
+  const otherId = other.json.section.id;
+  const sub = await call("POST", "/api/sections", { cookie: adminCookie, body: { scope: "cash", name: `${RUN_TAG}_sub`, parentKey: `sec-${otherId}` } });
+  assert.equal(sub.status, 201);
+  const subId = sub.json.section.id;
+
+  // A kasa can live in a section of a workspace and move between them.
+  const kasaId = await (async () => {
+    const res = await call("POST", "/api/cash-accounts", { cookie: adminCookie, body: { name: `${RUN_TAG}_inSub`, sectionId: subId } });
+    assert.equal(res.status, 201);
+    extraKasaIds.push(res.json.cashAccount.id);
+    return res.json.cashAccount.id;
+  })();
+  const listed = (await call("GET", "/api/cash-accounts", { cookie: adminCookie })).json.cashAccounts.find((a) => a.id === kasaId);
+  assert.equal(listed.sectionId, subId);
+  assert.equal("isListWorkspace" in listed, false);
+  assert.equal("isRjKasa" in listed, false);
+
+  const blocked = await call("DELETE", `/api/sections/${subId}?reason=test`, { cookie: adminCookie });
+  assert.equal(blocked.status, 409, "the section still holds a kasa");
+  const moved = await call("PUT", `/api/cash-accounts/${kasaId}`, { cookie: adminCookie, body: { name: `${RUN_TAG}_inSub`, sectionId: testWsId } });
+  assert.equal(moved.status, 200);
+  assert.equal((await call("DELETE", `/api/sections/${subId}?reason=test`, { cookie: adminCookie })).status, 200);
+  assert.equal((await call("DELETE", `/api/sections/${otherId}?reason=test`, { cookie: adminCookie })).status, 200);
+  const badMove = await call("PUT", `/api/cash-accounts/${kasaId}`, { cookie: adminCookie, body: { name: `${RUN_TAG}_inSub`, sectionId: otherId } });
+  assert.equal(badMove.status, 400, "cannot move into a deleted workspace");
 });
 
 async function transfer(fromId, toId, amount) {
@@ -727,7 +770,7 @@ test("debts: different kasas, the income+expense permissions and access to both 
   assert.equal(created.status, 201);
   try {
     const cookie = (await call("POST", "/api/auth/login", { body: { username: `${RUN_TAG}_debtor`, password: "ApiTest1234" } })).cookie;
-    const own = await call("POST", "/api/cash-accounts", { cookie, body: { name: `${RUN_TAG}_debtorKasa` } });
+    const own = await call("POST", "/api/cash-accounts", { cookie, body: { sectionId: testWsId, name: `${RUN_TAG}_debtorKasa` } });
     assert.equal(own.status, 201);
     const ownId = own.json.cashAccount.id;
     extraKasaIds.push(ownId);
@@ -1029,5 +1072,6 @@ test.after(async () => {
   if (testUserId) {
     await call("DELETE", `/api/users/${testUserId}`, { cookie: adminCookie }).catch(() => {});
   }
+  if (testWsId) await call("DELETE", `/api/sections/${testWsId}?reason=test%20cleanup`, { cookie: adminCookie }).catch(() => {});
   await call("DELETE", `/api/admin/blocked-ips/${encodeURIComponent(TEST_IP)}`, { cookie: adminCookie }).catch(() => {});
 });

@@ -1,10 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { cashAccountAccess, cashAccounts, kasaSections, records, users } from "../../../db/schema";
+import { cashAccountAccess, cashAccounts, records, users } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds, canCreateCashAccounts } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { createCashAccount, findCashAccountByName } from "../_lib/records";
+import { createCashAccount, findCashAccountByName, isCashSection } from "../_lib/records";
 import { cashAccountCreateSchema, parseBody } from "../_lib/validate";
 import { formatAmount, logActivity } from "../_lib/activity";
 
@@ -31,8 +31,6 @@ export const GET = withErrorHandling(async (request: Request) => {
         ownerName: users.name,
         createdAt: cashAccounts.createdAt,
         dashboardShareEnabled: cashAccounts.dashboardShareEnabled,
-        isListWorkspace: cashAccounts.isListWorkspace,
-        isRjKasa: cashAccounts.isRjKasa,
         sectionId: cashAccounts.sectionId,
         sortOrder: cashAccounts.sortOrder,
       })
@@ -71,8 +69,6 @@ export const GET = withErrorHandling(async (request: Request) => {
         ownerUserId: cashAccounts.ownerUserId,
         ownerName: users.name,
         dashboardShareEnabled: cashAccounts.dashboardShareEnabled,
-        isListWorkspace: cashAccounts.isListWorkspace,
-        isRjKasa: cashAccounts.isRjKasa,
         sectionId: cashAccounts.sectionId,
         sortOrder: cashAccounts.sortOrder,
       })
@@ -120,10 +116,7 @@ export const POST = withErrorHandling(async (request: Request) => {
   }
 
   const db = getDb();
-  if (payload.sectionId != null) {
-    const [section] = await db.select({ id: kasaSections.id }).from(kasaSections).where(and(eq(kasaSections.id, payload.sectionId), eq(kasaSections.scope, "cash"))).limit(1);
-    if (!section) return json({ error: "Çalışma alanı bulunamadı" }, { status: 400 });
-  }
+  if (!(await isCashSection(payload.sectionId, db))) return json({ error: "Çalışma alanı bulunamadı" }, { status: 400 });
   if (await findCashAccountByName(payload.name, db)) return json({ error: KASA_NAME_TAKEN }, { status: 409 });
 
   let result;
@@ -134,9 +127,7 @@ export const POST = withErrorHandling(async (request: Request) => {
       const account = await createCashAccount(tx, {
         name: payload.name,
         ownerUserId: session.user.id,
-        sectionId: payload.sectionId ?? null,
-        listKasa: payload.listKasa,
-        rjKasa: payload.rjKasa,
+        sectionId: payload.sectionId,
       });
       const [opening] = withOpening
         ? await tx

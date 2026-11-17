@@ -1,14 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { tx, localizeData } from "../../lib/i18n";
 import { combineByCurrency, moneyBreakdown } from "../../lib/finance";
 import { isDebtLeg } from "../../lib/debts";
-import type { CashAccountSummary, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
+import type { CashAccountSummary, KasaSection, Language, RecordItem } from "../../lib/types";
 import type { AccessKasa } from "../WorkspaceAccess";
-import type { CardGroup, useKasaSummaries } from "./useKasaSummaries";
-
-type KasaSummaries = ReturnType<typeof useKasaSummaries>;
+import type { CardGroup } from "./useKasaSummaries";
 
 // Kasa kartlarının ve kart düğmelerinin Records'tan aldığı durum ve geri çağrılar.
 export type KasaCardContext = {
@@ -18,10 +15,8 @@ export type KasaCardContext = {
   cashAccounts: CashAccountSummary[];
   allRecords: RecordItem[];
   source: string;
-  showAllLists: boolean;
   setSource: (name: string) => void;
   setActiveKasa: (name: string) => void;
-  setShowAllLists: (on: boolean) => void;
   setShareTarget: (account: CashAccountSummary) => void;
   setKasaEditTarget: (account: CashAccountSummary) => void;
   setKasaMoveTarget: (account: CashAccountSummary) => void;
@@ -139,18 +134,17 @@ export function renderGroupTooltip(g: CardGroup, matchingAccount: CashAccountSum
 // gizliyorduk, ekran dar olmasa bile. Artık tüm kartlar render ediliyor;
 // dar ekranda tarayıcı bunları kendiliğinden alt satıra sarar.
 export function renderKasaCard(g: CardGroup, tone: { background: string; borderColor: string } | undefined, c: KasaCardContext) {
-  const { language, readOnly, isSuperAdmin, cashAccounts, allRecords, source, showAllLists, setSource, setActiveKasa, setShowAllLists, setShareTarget, setTransferTarget } = c;
+  const { language, readOnly, isSuperAdmin, cashAccounts, allRecords, source, setSource, setActiveKasa, setShareTarget, setTransferTarget } = c;
   const matchingAccount = cashAccounts.find((a) => a.name === g.name);
   return (
     <div className="groupCard" key={g.name}>
       <button
-        className={source === g.name && !showAllLists ? "selected" : ""}
+        className={source === g.name ? "selected" : ""}
         style={tone}
         onClick={() => {
           // Çalışma alanı açık kalır: diğer kasalar arasında geçiş yapılabilsin.
           setSource(g.name);
           setActiveKasa("");
-          setShowAllLists(false);
         }}
       >
         <b>{localizeData(g.name, language)} <span className="groupCount">({g.count})</span></b>
@@ -180,160 +174,8 @@ export function renderKasaCard(g: CardGroup, tone: { background: string; borderC
           🔗
         </button>
       )}
-      {renderKasaActions(g.name, source === g.name && !showAllLists, c)}
+      {renderKasaActions(g.name, source === g.name, c)}
       {renderGroupTooltip(g, matchingAccount, language, allRecords)}
-    </div>
-  );
-}
-
-// Kapatılmış "Tüm Liste Kasaları/Gelirleri/Giderleri" satırı (Records'ta `false &&` ile devre dışı).
-export type ListGroupsContext = {
-  language: Language;
-  kind: RecordsView;
-  readOnly: boolean;
-  showAllLists: boolean;
-  activeList: string;
-  activeKasa: string;
-  listedRecords: KasaSummaries["listedRecords"];
-  overallListByCurrency: KasaSummaries["overallListByCurrency"];
-  overallListInOut: KasaSummaries["overallListInOut"];
-  listGroups: KasaSummaries["listGroups"];
-  listKasaBoxes: KasaSummaries["listKasaBoxes"];
-  setSource: (name: string) => void;
-  setActiveKasa: (name: string) => void;
-  setSearch: (v: string) => void;
-  setActiveList: (name: string) => void;
-  setShowAllLists: (on: boolean) => void;
-  openList: (name: string) => void;
-  openCardRecord: (field: "source" | "listName", value: string) => void;
-  kasaActions: (name: string, selected: boolean) => ReactNode;
-};
-
-export function renderListGroups(c: ListGroupsContext) {
-  const {
-    language,
-    kind,
-    readOnly,
-    showAllLists,
-    activeList,
-    activeKasa,
-    listedRecords,
-    overallListByCurrency,
-    overallListInOut,
-    listGroups,
-    listKasaBoxes,
-    setSource,
-    setActiveKasa,
-    setSearch,
-    setActiveList,
-    setShowAllLists,
-    openList,
-    openCardRecord,
-    kasaActions,
-  } = c;
-  const kasaPage = kind === "cash"; // Kasa Kontrol Merkezi sayfası (sayfa kimliği, kayıt türü değil)
-  return (
-    <div className="groups listGroups">
-      <button
-        className={showAllLists ? "selected" : ""}
-        onClick={() => {
-          setSource("Tümü");
-          setActiveKasa("");
-          setSearch("");
-          setActiveList("");
-          setShowAllLists(true);
-        }}
-      >
-        <b>
-          {kasaPage
-            ? tx(language, "Tüm Liste Kasaları", "All List Accounts", "Hemû Qaseyên Lîsteyê")
-            : kind === "income"
-              ? tx(language, "Tüm Liste Gelirleri", "All List Income", "Hemû Dahatên Lîsteyê")
-              : tx(language, "Tüm Liste Giderleri", "All List Expenses", "Hemû Mesrefên Lîsteyê")}{" "}
-          <span className="groupCount">({listedRecords.length})</span>
-        </b>
-        <strong>
-          {moneyBreakdown(overallListByCurrency)}
-        </strong>
-        {kasaPage && (
-          <span className="groupInOut">
-            <span className="in">↗ {moneyBreakdown(overallListInOut.inBy)}</span>
-            <span className="out">↘ {moneyBreakdown(overallListInOut.outBy)}</span>
-          </span>
-        )}
-      </button>
-      {(kasaPage ? listGroups : []).map((g) => (
-        <div className="groupCard" key={g.name}>
-          <button
-            className={activeList === g.name ? "selected" : ""}
-            onClick={() => openList(g.name)}
-          >
-            <b>{localizeData(g.name, language)} <span className="groupCount">({g.count})</span></b>
-            <strong>{moneyBreakdown(g.totalByCurrency)}</strong>
-            {kasaPage && (
-              <span className="groupInOut">
-                <span className="in">↗ {moneyBreakdown(g.totalInByCurrency)}</span>
-                <span className="out">↘ {moneyBreakdown(g.totalOutByCurrency)}</span>
-              </span>
-            )}
-          </button>
-          {!readOnly && activeList === g.name && (
-            <button
-              className="cashEditIcon"
-              title={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
-              aria-label={tx(language, "Kaydı Düzenle", "Edit Record", "Qeydê Biguherîne")}
-              onClick={() => openCardRecord("listName", g.name)}
-            >
-              🗂
-            </button>
-          )}
-          {kasaPage && (
-            <div className="groupCardTooltip">
-              <div>
-                <small>{tx(language, "Toplam Giriş", "Total In", "Têketina Giştî")}</small>
-                <strong>{moneyBreakdown(g.totalInByCurrency)}</strong>
-              </div>
-              <div>
-                <small>{tx(language, "Gider", "Expense", "Mesref")}</small>
-                <strong className="negative">{moneyBreakdown(g.totalOutByCurrency)}</strong>
-              </div>
-              <div>
-                <small>{tx(language, "Sonuç", "Result", "Encam")}</small>
-                <strong>{moneyBreakdown(g.totalByCurrency)}</strong>
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
-      {!kasaPage &&
-        listKasaBoxes.map((b) => (
-          <div className="groupCard" key={b.name}>
-            <button
-              className={activeKasa === b.name && showAllLists ? "selected" : ""}
-              onClick={() => {
-                const same = activeKasa === b.name && showAllLists;
-                setActiveKasa(same ? "" : b.name);
-                setSource("Tümü");
-                setSearch("");
-                setActiveList("");
-                setShowAllLists(true);
-              }}
-            >
-              <b>
-                {localizeData(b.name, language)}
-                {(kind === "income" ? /gelir|income|dahat/i : /gider|expense|mesref/i).test(b.name)
-                  ? ""
-                  : ` ${kind === "income" ? tx(language, "Gelirleri", "Income", "Dahat") : tx(language, "Giderleri", "Expenses", "Mesref")}`}{" "}
-                <span className="groupCount">({b.count})</span>
-              </b>
-              <em className="groupKasaTag" title={b.lists.join(", ")}>
-                ▣ {b.lists.length ? b.lists.join(", ") : tx(language, "Liste Kasası", "List cash account", "Qaseya Lîsteyê")}
-              </em>
-              <strong>{moneyBreakdown(b.totalByCurrency)}</strong>
-            </button>
-            {kasaActions(b.name, activeKasa === b.name && showAllLists)}
-          </div>
-        ))}
     </div>
   );
 }

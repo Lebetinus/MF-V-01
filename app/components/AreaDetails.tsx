@@ -7,6 +7,7 @@ import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, toUsd } from "../lib/finance";
 import { isDebtLeg, kasaDebtByCurrency } from "../lib/debts";
 import type { CashAccountSummary, KasaSection, Language, Page, RecordItem } from "../lib/types";
+import { NO_WORKSPACE, noWorkspaceLabel, workspaceKeyOf } from "./KasaManage";
 
 // Alan Detayları: çalışma alanı → bölüm → kasa ağacından istenen alanlar işaretlenir; seçilenlerin özeti, alanlar arası
 // karşılaştırma ve hiyerarşik dökümü görünür. Veri zaten kullanıcının yetkisine göre süzülmüş gelir (süper yönetici hepsini,
@@ -64,19 +65,18 @@ export function AreaDetails({
     const accountOf = new Map(cashAccounts.map((a) => [a.name, a]));
     const names = [...new Set([...cashAccounts.map((a) => a.name), ...records.map((x) => x.cashAccount)].filter(Boolean))];
     const inPeriod = (x: RecordItem) => (year === "all" || x.date.startsWith(year)) && (month === "all" || x.date.slice(5, 7) === month);
-    const builtin: { key: string; name: string; color: string }[] = [
-      { key: "genel", name: tx(language, "Diğer", "Other", "Yên din"), color: "#315fe8" },
-      { key: "liste", name: tx(language, "Liste Kasaları", "List Cash Accounts", "Qaseyên Lîsteyê"), color: "#b9951c" },
-      { key: "rj", name: tx(language, "RJ-Kasaları", "RJ Cash Accounts", "Qaseyên RJ"), color: "#7b52bf" },
-    ];
-    const defs = [...builtin, ...cashSections.map((s) => ({ key: `sec-${s.id}`, name: s.name, color: s.color, parentKey: s.parentKey ?? null, sortOrder: s.sortOrder ?? 0 }))] as { key: string; name: string; color: string; parentKey?: string | null; sortOrder?: number }[];
+    // Çalışma alanları ve bölümleri; alanı olmayan kasalar için yalnız gerektiğinde görünen "Çalışma alanı yok" kutusu.
+    const defs = [
+      ...cashSections.map((s) => ({ key: `sec-${s.id}`, name: s.name, color: s.color, parentKey: s.parentKey ?? null, sortOrder: s.sortOrder ?? 0 })),
+      { key: NO_WORKSPACE, name: noWorkspaceLabel(language), color: "#8a8f98" },
+    ] as { key: string; name: string; color: string; parentKey?: string | null; sortOrder?: number }[];
     const known = new Set(defs.map((d) => d.key));
     const bucket = new Map<string, KasaRow[]>(defs.map((d) => [d.key, []]));
     for (const name of names) {
       const acc = accountOf.get(name);
       const inc = records.filter((x) => x.kind === "income" && x.cashAccount === name);
       const exp = records.filter((x) => x.kind === "expense" && x.cashAccount === name);
-      const key = acc?.sectionId != null && cashSections.some((s) => s.id === acc.sectionId) ? `sec-${acc.sectionId}` : acc?.isListWorkspace ? "liste" : acc?.isRjKasa ? "rj" : "genel";
+      const key = workspaceKeyOf(acc?.sectionId, cashSections);
       const def = defs.find((d) => d.key === key)!;
       const isSub = Boolean(def.parentKey) && known.has(def.parentKey as string);
       bucket.get(key)!.push({

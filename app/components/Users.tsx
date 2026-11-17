@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import { Title, PasswordField, DeleteConfirmModal } from "./shared";
 import { tx, nav } from "../lib/i18n";
 import type { CashAccountSummary, KasaSection, Language, Page, UserAccount } from "../lib/types";
-import { workspaceKeyOf, workspaceOptions } from "./KasaManage";
+import { NO_WORKSPACE, noWorkspaceLabel, workspaceKeyOf, workspaceOptions } from "./KasaManage";
 import { restrictablePages } from "../lib/types";
 import { notify } from "../lib/notify";
 
-const accessPages = restrictablePages.filter((p) => p !== "lists");
+const accessPages = restrictablePages;
 
 // Mirrors db/passwords.ts's validatePasswordPolicy — checked client-side too
 // so the Kaydet button can disable itself instead of round-tripping to the
@@ -198,11 +198,12 @@ export function Users({
 
 // Kasaları çalışma alanlarına göre gruplar (boş alanlar atlanır).
 function groupKasasByWorkspace(accounts: CashAccountSummary[], sections: KasaSection[], language: Language) {
-  return workspaceOptions(sections, language)
+  // Alanı olmayan kasalar da (varsa) ayrı bir grupta görünür, yetki ekranından kaybolmaz.
+  return [...workspaceOptions(sections), { key: NO_WORKSPACE, label: noWorkspaceLabel(language) }]
     .map((w) => ({
       ...w,
       kasas: accounts
-        .filter((a) => workspaceKeyOf({ sectionId: a.sectionId ?? null, rjKasa: !!a.isRjKasa, listKasa: !!a.isListWorkspace }, sections) === w.key)
+        .filter((a) => workspaceKeyOf(a.sectionId, sections) === w.key)
         .sort((x, y) => x.name.localeCompare(y.name)),
     }))
     .filter((w) => w.kasas.length > 0);

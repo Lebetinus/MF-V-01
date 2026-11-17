@@ -64,7 +64,6 @@ export const POST = withErrorHandling(async (request: Request) => {
       link: item.link,
       cashAccount: item.cashAccount || fallbackKasaNameFor(item.kind),
       cashAccountId: linkCache.get(keyOf(item)) ?? null,
-      listName: item.listName,
     }));
 
     const insertedRows = await tx.insert(records).values(rowsToInsert).returning();

@@ -23,13 +23,11 @@ export type RecordCellContext = {
   cashAccounts: CashAccountSummary[];
   sections: KasaSection[];
   wsOptions: ReturnType<typeof workspaceOptions>;
-  showListColumn: boolean;
   commentSummaries: Record<number, CommentSummary>;
   approvingId: number | null;
   exchangeRates: ExchangeRates;
   onEdit: (x: RecordItem) => void;
   setViewTarget: (x: RecordItem) => void;
-  openList: (name: string) => void;
   setDetailViewTarget: (x: RecordItem) => void;
   setCommentTarget: (x: RecordItem) => void;
   approveTransfer: (transferId: number) => void;
@@ -79,7 +77,7 @@ export function debtTooltip(x: RecordItem, language: Language, allRecords: Recor
       : tx(language, "Borç alan kasanın kaydı: bakiyeye ve gelir/gider istatistiğine girer.", "Borrower-side record: counts in the balance and income/expense statistics.", "Qeyda deyndar: dikeve balans û statîstîka dahat/mesrefê."),
   ].join("\n");
 }
-export function columnLabel(id: ColumnId, language: Language, showListColumn: boolean): string {
+export function columnLabel(id: ColumnId, language: Language): string {
   switch (id) {
     case "date":
       return tx(language, "Tarih", "Date", "Tarîx");
@@ -92,9 +90,7 @@ export function columnLabel(id: ColumnId, language: Language, showListColumn: bo
     case "documents":
       return tx(language, "Belgeler", "Documents", "Belge");
     case "detail":
-      return showListColumn
-        ? tx(language, "Liste Kaydı", "List Record", "Qeyda Lîsteyê")
-        : tx(language, "Detay / Not", "Detail / Note", "Hûragahî / Nîşe");
+      return tx(language, "Detay / Not", "Detail / Note", "Hûragahî / Nîşe");
     case "messages":
       return tx(language, "Mesajlar", "Messages", "Peyam");
     case "person":
@@ -125,13 +121,11 @@ export function renderCell(
     cashAccounts,
     sections,
     wsOptions,
-    showListColumn,
     commentSummaries,
     approvingId,
     exchangeRates,
     onEdit,
     setViewTarget,
-    openList,
     setDetailViewTarget,
     setCommentTarget,
     approveTransfer,
@@ -173,25 +167,7 @@ export function renderCell(
         </>
       );
     case "detail":
-      return showListColumn ? (
-        x.listName ? (
-          <button
-            type="button"
-            className="linkButton"
-            onClick={() => openList(x.listName)}
-            title={tx(
-              language,
-              "Bu listeye ait tüm kayıtları göster",
-              "Show all records in this list",
-              "Hemû qeydên vê lîsteyê nîşan bide",
-            )}
-          >
-            {localizeData(x.listName, language)}
-          </button>
-        ) : (
-          "—"
-        )
-      ) : (
+      return (
         <>
           <span className="cellDetailText" title={localizeData(x.detail || x.note, language)}>
             {localizeData(x.detail || x.note, language)}
@@ -204,7 +180,7 @@ export function renderCell(
     case "workspace": {
       const account = cashAccounts.find((a) => a.name === x.cashAccount);
       const label = account
-        ? wsOptions.find((o) => o.key === workspaceKeyOf({ sectionId: account.sectionId ?? null, rjKasa: !!account.isRjKasa, listKasa: !!account.isListWorkspace }, sections))?.label
+        ? wsOptions.find((o) => o.key === workspaceKeyOf(account.sectionId, sections))?.label
         : undefined;
       return <span className="cellDetailText" title={label}>{label ? localizeData(label, language) : "—"}</span>;
     }
@@ -339,7 +315,6 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
     language,
     kind,
     cashAccounts,
-    showListColumn,
     columnOrder,
     columnWidths,
     kasaSplitActive,
@@ -405,7 +380,7 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
                   "Ji bo derbaskirina stûnê bikişîne, ji kêleka wê genîtiyê saz bike",
                 )}
               >
-                <span className="colHeaderLabel">{columnLabel(id, language, showListColumn)}</span>
+                <span className="colHeaderLabel">{columnLabel(id, language)}</span>
                 <span
                   className="colResizeHandle"
                   draggable={false}

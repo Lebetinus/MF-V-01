@@ -7,7 +7,7 @@ export type ActivityCategory = "income" | "expense" | "cash" | "workspace" | "us
 
 type Actor = { id: number; name: string };
 
-// Kasanın bağlı olduğu çalışma alanının adı (Diğer / Liste Kasaları / RJ-Kasaları / özel alan).
+// Kasanın bağlı olduğu çalışma alanının (ya da bölümünün) adı.
 export async function workspaceOfKasa(kasaName: string | null | undefined): Promise<string> {
   if (!kasaName) return "";
   try {
@@ -18,9 +18,7 @@ export async function workspaceOfKasa(kasaName: string | null | undefined): Prom
       const [section] = await db.select().from(kasaSections).where(eq(kasaSections.id, row.sectionId)).limit(1);
       if (section) return section.name;
     }
-    if (row.isListWorkspace) return "Liste Kasaları";
-    if (row.isRjKasa) return "RJ-Kasaları";
-    return "Diğer";
+    return "";
   } catch {
     return "";
   }

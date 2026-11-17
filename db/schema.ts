@@ -63,14 +63,15 @@ export const sessions = pgTable("sessions", {
   index("sessions_expires_at_idx").on(table.expiresAt),
 ]);
 
-// Bölümler (Ayarlar > Bölümler): Genel Kasa / Liste Kasası / RJ-Kasası dışında yöneticinin oluşturduğu ek kasa,
-// gelir ve gider bölümleri. Her bölüm Kasalar/Gelir/Gider sayfalarındaki kutu düzenine yeni bir kutu (satır) ekler.
+// Çalışma alanları ve bölümler. scope=cash: kasaları gruplayan çalışma alanı (parentKey boş) ya da onun içindeki
+// bölüm (parentKey = "sec-<üst id>"); hazır/sabit bir alan yoktur, hepsini yönetici oluşturur. scope=income/expense:
+// Gelir/Gider sayfalarındaki kayıt bölümleri.
 export const kasaSections = pgTable("kasa_sections", {
   id: serial("id").primaryKey(),
   scope: text("scope").notNull(),
   name: text("name").notNull(),
   color: text("color").notNull().default("#7b52bf"),
-  // Üst çalışma alanı anahtarı (genel / liste / rj / sec-<id>): doluysa bu alan, üstündekinin içinde "bölüm" olarak görünür.
+  // Üst çalışma alanı ("sec-<id>"): doluysa bu kayıt, o çalışma alanının içinde bir "bölüm"dür (tek seviye).
   parentKey: text("parent_key"),
   // Kasa Kontrol Merkezi: aynı seviyedeki alan/bölümlerin elle sıralaması (küçük olan önce).
   sortOrder: integer("sort_order").notNull().default(0),
@@ -95,11 +96,8 @@ export const cashAccounts = pgTable("cash_accounts", {
   // Independent of cashAccountAccess — a kasa can be shared for viewing
   // without ever appearing in anyone's dashboard aggregate, and vice versa.
   dashboardShareEnabled: boolean("dashboard_share_enabled").notNull().default(false),
-  // "Liste Kasası": Gelir/Kasa kaydında işaretlenen kasa Listeler sayfasında otomatik çalışma alanı olur.
-  isListWorkspace: boolean("is_list_workspace").notNull().default(false),
-  // "RJ-Kasası": Kasalar sayfasında üstteki kasa kartlarında değil, ayrı "RJ-Kasaları" bölümünde görünür.
-  isRjKasa: boolean("is_rj_kasa").notNull().default(false),
-  // Yönetici tanımlı "kasa bölümü" (kasa_sections, scope=cash); boşsa Genel Kasa.
+  // Kasanın çalışma alanı ya da bölümü (kasa_sections, scope=cash). Yeni kasa hep bir alanda açılır; boşsa
+  // (eski içe aktarım vb.) Kasalar sayfasında "Çalışma alanı yok" altında görünür.
   sectionId: integer("section_id"),
   // Kasa Kontrol Merkezi: aynı alan/bölüm içindeki kasaların elle sıralaması (küçük olan önce; 0 = sıralanmamış).
   sortOrder: integer("sort_order").notNull().default(0),
@@ -118,109 +116,6 @@ export const cashAccountAccess = pgTable("cash_account_access", {
   primaryKey({ columns: [table.cashAccountId, table.userId] }),
   index("cash_account_access_cash_account_id_idx").on(table.cashAccountId),
   index("cash_account_access_user_id_idx").on(table.userId),
-]);
-
-// Proje Aşaması 2 — Liste defteri: bir liste (ör. "V listesi") bir çalışma
-// alanına (ownerUserId = verinin sahibi) bağlıdır; tarihi, adı ve kodu vardır.
-// Liste geliri/gideri `records` tablosunda gelir/gider kaydı olarak kalır
-// (records.listId) — böylece Gelir, Gider, Kasalar ve Ana Sayfa toplamları
-// kendiliğinden güncel kalır. Kişi (üye), dağıtım ve gider paylaşımı aşağıdaki
-// tablolardadır. Bir liste tek para birimiyle çalışır.
-export const lists = pgTable("lists", {
-  id: serial("id").primaryKey(),
-  code: text("code").notNull(),
-  name: text("name").notNull(),
-  date: text("date").notNull(),
-  // Çalışma alanı = kasa: liste, bir kasanın (ör. "2026-V") altında yaşar.
-  cashAccountId: integer("cash_account_id").references(() => cashAccounts.id, { onDelete: "cascade" }),
-  // open | closed — kapalı listeye ürün eklenemez, sonuç sabitlenir.
-  status: text("status").notNull().default("open"),
-  // Listenin gider tutarı (çalışma alanı para biriminde) ve notu; alıcılara
-  // dağılımı list_allocations'ta tutulur. Ürün satırları isteğe bağlı detaydır.
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
-  note: text("note").notNull().default(""),
-  // Listenin gider tutarının Gider kaydı (records, kind=expense) olarak karşılığı — liste kaydedildikçe
-  // senkronlanır, böylece Gider sayfası ve Kasalar bakiyesi kendiliğinden güncel kalır.
-  expenseRecordId: integer("expense_record_id"),
-  currency: text("currency").notNull().default("USD"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  uniqueIndex("lists_cash_account_code_idx").on(table.cashAccountId, table.code),
-]);
-
-// Çalışma alanı (Listeler): bir kasaya bağlı kayıt; listeler, alıcılar bunun altında yaşar.
-// amount boşsa (null) alanın geliri kasadan otomatik hesaplanır; doluysa elle girilen tutar kullanılır.
-export const listWorkspaces = pgTable("list_workspaces", {
-  id: serial("id").primaryKey(),
-  cashAccountId: integer("cash_account_id").notNull().references(() => cashAccounts.id, { onDelete: "cascade" }),
-  name: text("name").notNull().default(""),
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }),
-  note: text("note").notNull().default(""),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  uniqueIndex("list_workspaces_cash_account_idx").on(table.cashAccountId),
-]);
-
-// Çalışma alanındaki (kasa) liste alıcıları: kasadan para dağıtılan ve listelerdeki
-// ürünleri alan kişiler.
-export const workspaceRecipients = pgTable("workspace_recipients", {
-  id: serial("id").primaryKey(),
-  cashAccountId: integer("cash_account_id").notNull().references(() => cashAccounts.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  index("workspace_recipients_cash_account_id_idx").on(table.cashAccountId),
-]);
-
-// Çalışma alanı kasasından bir alıcıya yapılan dağıtım.
-export const workspaceDistributions = pgTable("workspace_distributions", {
-  id: serial("id").primaryKey(),
-  cashAccountId: integer("cash_account_id").notNull().references(() => cashAccounts.id, { onDelete: "cascade" }),
-  recipientId: integer("recipient_id").notNull().references(() => workspaceRecipients.id, { onDelete: "cascade" }),
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull(),
-  date: text("date").notNull(),
-  note: text("note").notNull().default(""),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  index("workspace_distributions_cash_account_id_idx").on(table.cashAccountId),
-]);
-
-// Bir liste giderinin alıcılara dağılımı (liste başına alıcı başına tek satır).
-export const listAllocations = pgTable("list_allocations", {
-  id: serial("id").primaryKey(),
-  listId: integer("list_id").notNull().references(() => lists.id, { onDelete: "cascade" }),
-  recipientId: integer("recipient_id").notNull().references(() => workspaceRecipients.id, { onDelete: "cascade" }),
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
-}, (table) => [
-  uniqueIndex("list_allocations_list_recipient_idx").on(table.listId, table.recipientId),
-]);
-
-// Listenin ürün satırları; tutar = adet × birim fiyat, her ürünün bir alıcısı.
-export const listItems = pgTable("list_items", {
-  id: serial("id").primaryKey(),
-  listId: integer("list_id").notNull().references(() => lists.id, { onDelete: "cascade" }),
-  position: integer("position").notNull().default(0),
-  name: text("name").notNull().default(""),
-  quantity: numeric("quantity", { precision: 14, scale: 3, mode: "number" }).notNull().default(1),
-  unitPrice: numeric("unit_price", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
-  recipientId: integer("recipient_id").references(() => workspaceRecipients.id, { onDelete: "set null" }),
-  note: text("note").notNull().default(""),
-}, (table) => [
-  index("list_items_list_id_idx").on(table.listId),
-]);
-
-// Liste kasasındaki (çalışma alanı) bir Gider kaydının alıcılara (kişilere) dağıtılan kısmı: alıcıya yazılan tutar,
-// o alıcının bu giderdeki harcamasıdır. Gider kaydı silinirse dağıtımı da silinir.
-export const expenseAllocations = pgTable("expense_allocations", {
-  id: serial("id").primaryKey(),
-  recordId: integer("record_id").notNull().references(() => records.id, { onDelete: "cascade" }),
-  recipientId: integer("recipient_id").notNull().references(() => workspaceRecipients.id, { onDelete: "cascade" }),
-  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
-}, (table) => [
-  uniqueIndex("expense_allocations_record_recipient_idx").on(table.recordId, table.recipientId),
 ]);
 
 export const records = pgTable("records", {
@@ -242,10 +137,6 @@ export const records = pgTable("records", {
   // cash_accounts row, which shouldn't happen after the 0007 migration's
   // backfill but is not worth a hard constraint over) don't block writes.
   cashAccountId: integer("cash_account_id").references(() => cashAccounts.id, { onDelete: "set null" }),
-  listName: text("list_name").notNull().default(""),
-  // Proje Aşaması 2: kaydın bağlı olduğu liste (listName, listenin adının
-  // kopyası olarak kalır — eski ekranlar ve raporlar onu kullanmaya devam eder).
-  listId: integer("list_id").references(() => lists.id, { onDelete: "set null" }),
   // Excel aktarımı: aynı aktarımdaki kayıtlar tek tıkla geri alınabilsin (importBatch) ve aynı satırlar ikinci
   // yüklemede çift kayıt oluşturmasın (importKey).
   // Gelir/Gider bölümü (kasa_sections, scope=income/expense).
@@ -552,7 +443,7 @@ export const settings = pgTable("settings", {
   // Günlük otomatik kurlar (internetten, günde bir kez çekilir) ve çekildikleri gün (YYYY-MM-DD). Elle girilen kurlar bunların önüne geçer.
   autoExchangeRates: jsonb("auto_exchange_rates").notNull().default({}),
   autoExchangeRatesDate: text("auto_exchange_rates_date"),
-  // Kasa Kontrol Merkezi: hazır alanlar (genel/liste/rj) ve özel alanların (sec-<id>) elle sıralaması.
+  // Kasa Kontrol Merkezi: çalışma alanlarının (sec-<id>) elle sıralaması.
   cashWorkspaceOrder: jsonb("cash_workspace_order").notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

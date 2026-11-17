@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb, type DbClient } from "../../../db";
-import { cashAccounts } from "../../../db/schema";
+import { and } from "drizzle-orm";
+import { cashAccounts, kasaSections } from "../../../db/schema";
 import { canAccessCashAccount, canCreateCashAccounts, canWriteCashAccount, grantCashAccountAccess } from "./cash-access";
-import { markListKasa, setRjKasa } from "./lists";
 import type { SessionUser } from "./auth";
 
 export function fallbackKasaNameFor(kind: string): string {
@@ -15,6 +15,12 @@ function isFallbackKasaName(name: string): boolean {
   return name === fallbackKasaNameFor("income") || name === fallbackKasaNameFor("expense");
 }
 
+// Kasanın bağlanabileceği bir çalışma alanı / bölüm mü (kasa_sections, scope=cash)?
+export async function isCashSection(id: number, db: DbClient = getDb()): Promise<boolean> {
+  const rows = await db.select({ id: kasaSections.id }).from(kasaSections).where(and(eq(kasaSections.id, id), eq(kasaSections.scope, "cash"))).limit(1);
+  return rows.length > 0;
+}
+
 export async function findCashAccountByName(name: string, db: DbClient) {
   const rows = await db.select().from(cashAccounts).where(eq(cashAccounts.name, name)).limit(1);
   return rows[0] ?? null;
@@ -23,8 +29,9 @@ export async function findCashAccountByName(name: string, db: DbClient) {
 // Bir kasanın (cash_accounts satırı) açıldığı TEK yer: Yeni Kasa (POST
 // /api/cash-accounts), "Diğer" yedek kasaları, aktarımda yeni hedef kasa,
 // Excel aktarımı ve eski JSON içe aktarımı hep buradan geçer. Sahip ve
-// `grantUserIds` kasayı hemen görür; çalışma alanı (bölüm / Liste / RJ)
-// isteğe bağlı olarak aynı anda yazılır. Kasa artık kendi "kasa kaydı"yla
+// `grantUserIds` kasayı hemen görür; çalışma alanı (kasa_sections, scope=cash)
+// aynı anda yazılır. Alanı verilmeyen kasa (eski içe aktarım, "Diğer" yedek
+// kasası) Kasalar sayfasında "Çalışma alanı yok" altında görünür ve taşınabilir. Kasa artık kendi "kasa kaydı"yla
 // değil, bu satırla var olur — 0 tutarlı yer tutucu kayıt yazılmaz.
 export async function createCashAccount(
   db: DbClient,
@@ -33,9 +40,7 @@ export async function createCashAccount(
     ownerUserId,
     grantUserIds = [],
     sectionId,
-    listKasa,
-    rjKasa,
-  }: { name: string; ownerUserId: number | null; grantUserIds?: number[]; sectionId?: number | null; listKasa?: boolean; rjKasa?: boolean },
+  }: { name: string; ownerUserId: number | null; grantUserIds?: number[]; sectionId?: number | null },
 ) {
   const [created] = await db
     .insert(cashAccounts)
@@ -44,8 +49,6 @@ export async function createCashAccount(
   const grantees = new Set<number>(grantUserIds);
   if (ownerUserId !== null) grantees.add(ownerUserId);
   for (const userId of grantees) await grantCashAccountAccess(created.id, userId, db);
-  if (listKasa) await markListKasa(created.id, db);
-  if (rjKasa) await setRjKasa(created.id, true, db);
   return created;
 }
 
@@ -56,6 +59,7 @@ export async function ensureWritableKasa(
   name: string,
   user: SessionUser,
   db: DbClient = getDb(),
+  sectionId: number | null = null,
 ): Promise<{ forbidden: true } | { forbidden: false; cashAccountId: number; created: boolean }> {
   const existing = await findCashAccountByName(name, db);
   if (existing) {
@@ -63,7 +67,7 @@ export async function ensureWritableKasa(
     return { forbidden: false, cashAccountId: existing.id, created: false };
   }
   if (!canCreateCashAccounts(user)) return { forbidden: true };
-  const created = await createCashAccount(db, { name, ownerUserId: user.id });
+  const created = await createCashAccount(db, { name, ownerUserId: user.id, sectionId });
   return { forbidden: false, cashAccountId: created.id, created: true };
 }
 

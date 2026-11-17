@@ -61,7 +61,6 @@ export const POST = withErrorHandling(async (request: Request) => {
           link: r.link,
           cashAccount: r.cashAccount,
           cashAccountId: kasaIdByName.get(r.cashAccount) ?? null,
-          listName: r.listName,
         })),
       );
     }

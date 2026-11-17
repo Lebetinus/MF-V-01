@@ -6,6 +6,7 @@ import { localizeData, tx } from "../lib/i18n";
 import { combineByCurrency, date, moneyBreakdown, toUsd } from "../lib/finance";
 import { isDebtLeg, kasaDebtByCurrency, kasaReceivableByCurrency } from "../lib/debts";
 import type { CashAccountSummary, Language, RecordItem } from "../lib/types";
+import { NO_WORKSPACE } from "./KasaManage";
 
 // Kasa panosu: Kasalar sayfasının açılış görünümü. Her kasa bakiyesi, gelir/gider dengesi, son hareketi ve etiketleriyle
 // tek kartta görünür; karta tıklayınca kasanın kendi sayfası (Gelirler / Giderler tabloları) açılır.
@@ -124,7 +125,9 @@ export function KasaBoard({
     return next;
   };
   const moveWorkspace = (key: string, dir: -1 | 1) => {
-    const next = swapIn(workspaces.map((w) => w.key), groups.map((g) => g.w.key), key, dir);
+    // "Çalışma alanı yok" kutusu sıralamaya girmez (her zaman en sonda).
+    const real = (k: string) => k !== NO_WORKSPACE;
+    const next = swapIn(workspaces.map((w) => w.key).filter(real), groups.map((g) => g.w.key).filter(real), key, dir);
     if (next) onReorder?.({ workspaces: next });
   };
   const moveSection = (w: BoardWorkspace, key: string, dir: -1 | 1, visibleKeys: string[]) => {
@@ -309,11 +312,15 @@ export function KasaBoard({
                 </div>
                 {canManage && (
                   <div className="kbCtl" role="group" aria-label={tx(language, "Çalışma alanı yönetimi", "Workspace controls", "Kontrola qada xebatê")}>
+                    {w.key !== NO_WORKSPACE && (<>
                     <button type="button" disabled={groups.findIndex((g) => g.w.key === w.key) === 0} onClick={() => moveWorkspace(w.key, -1)} title={tx(language, "Yukarı taşı", "Move up", "Bibe jor")} aria-label={tx(language, "Çalışma alanını yukarı taşı", "Move workspace up", "Qada xebatê bibe jor")}>↑</button>
                     <button type="button" disabled={groups.findIndex((g) => g.w.key === w.key) === groups.length - 1} onClick={() => moveWorkspace(w.key, 1)} title={tx(language, "Aşağı taşı", "Move down", "Bibe jêr")} aria-label={tx(language, "Çalışma alanını aşağı taşı", "Move workspace down", "Qada xebatê bibe jêr")}>↓</button>
+                    </>)}
                     <button type="button" onClick={() => onEditGroup?.(w.key, w.name, wsKasas(w).map((k) => k.name))}>✎ {tx(language, "Düzenle / Yetkiler", "Edit / Access", "Biguherîne / Destûr")}</button>
-                    <button type="button" onClick={() => onAddSection?.(w.key)}>＋ {tx(language, "Bölüm", "Section", "Beş")}</button>
-                    <button type="button" onClick={() => onAddKasa?.(w.key)}>＋ {tx(language, "Kasa", "Cash account", "Qase")}</button>
+                    {w.key !== NO_WORKSPACE && (<>
+                      <button type="button" onClick={() => onAddSection?.(w.key)}>＋ {tx(language, "Bölüm", "Section", "Beş")}</button>
+                      <button type="button" onClick={() => onAddKasa?.(w.key)}>＋ {tx(language, "Kasa", "Cash account", "Qase")}</button>
+                    </>)}
                   </div>
                 )}
                 <div className="kbWsMeta">

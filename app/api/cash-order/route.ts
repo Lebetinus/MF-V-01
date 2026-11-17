@@ -22,8 +22,8 @@ export const GET = withErrorHandling(async (request: Request) => {
 });
 
 const orderSchema = z.object({
-  // Çalışma alanı anahtarları sırayla (genel / liste / rj / sec-<id>).
-  workspaces: z.array(z.string().regex(/^(genel|liste|rj|sec-\d+)$/)).max(200).optional(),
+  // Çalışma alanı anahtarları sırayla (sec-<id>).
+  workspaces: z.array(z.string().regex(/^sec-\d+$/)).max(200).optional(),
   // Bölüm kimlikleri sırayla (aynı üst alanın bölümleri).
   sections: z.array(z.number().int().positive()).max(500).optional(),
   // Kasa kimlikleri sırayla (aynı alan / bölümün kasaları).
@@ -43,6 +43,9 @@ export const PUT = withErrorHandling(async (request: Request) => {
       const existing = await tx.select({ id: settings.id }).from(settings).where(eq(settings.id, SINGLETON_ID)).limit(1);
       if (existing[0]) await tx.update(settings).set({ cashWorkspaceOrder: workspaces, updatedAt: new Date() }).where(eq(settings.id, SINGLETON_ID));
       else await tx.insert(settings).values({ id: SINGLETON_ID, typography: {}, cashWorkspaceOrder: workspaces });
+      // Alanların kendi sıra numarası da güncellenir: alan listesi (ör. Yeni Kasa seçenekleri) her yerde aynı sırada gelir.
+      const ids = workspaces.map((k) => Number(k.slice(4)));
+      for (const [i, id] of ids.entries()) await tx.update(kasaSections).set({ sortOrder: i + 1 }).where(eq(kasaSections.id, id));
     }
     if (sections?.length) {
       const found = await tx.select({ id: kasaSections.id }).from(kasaSections).where(inArray(kasaSections.id, sections));

@@ -358,6 +358,13 @@
       "when": 1794875161032,
       "tag": "0050_unify_record_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794920007625,
+      "tag": "0051_workspaces_only",
+      "breakpoints": true
     }
   ]
 }

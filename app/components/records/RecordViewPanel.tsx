@@ -19,7 +19,6 @@ export function RecordViewPanel({ language, record: x, sectionName, canEdit, inl
     [tx(language, "Bölüm", "Section", "Beş"), sectionName],
     [tx(language, "Kişi", "Person", "Kes"), x.person],
     [tx(language, "Birim", "Unit", "Yekîne"), x.project],
-    [tx(language, "Liste", "List", "Lîste"), x.listName],
     [tx(language, "Etiketler", "Tags", "Etîket"), (x.tags ?? []).join(", ")],
   ].filter(([, v]) => v && v.trim()) as [string, string][];
   return (

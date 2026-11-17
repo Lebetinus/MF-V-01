@@ -29,9 +29,9 @@ export function Guide({ language }: { language: Language }) {
           <p>
             {tx(
               language,
-              "Sol menüden Kasalar, Gelir, Gider, Listeler, Rapor Hazırla, Mali Özel Notlarım, Yorumlar, Arşiv, Kullanıcılar ve Ayarlar bölümlerine ulaşabilirsiniz. Her bölüm, yalnızca yetkiniz olan verileri gösterir.",
-              "The left menu gives you access to Kasalar (Cash), Gelir (Income), Gider (Expense), Listeler (Lists), Rapor Hazırla (Prepare Report), Mali Özel Notlarım (Private Notes), Yorumlar (Comments), Arşiv (Archive), Kullanıcılar (Users) and Ayarlar (Settings). Each section only shows data you're permitted to see.",
-              "Ji menuya çepê hûn dikarin bigihîjin beşên Qase, Dahat, Mesref, Lîste, Raporê Amade Bike, Nîşeyên Min ên Taybet, Şîrove, Arşîv, Bikarhêner û Mîheng. Her beş tenê daneyên ku destûra we jê heye nîşan dide.",
+              "Sol menüden Kasalar, Gelir, Gider, Rapor Hazırla, Mali Özel Notlarım, Yorumlar, Arşiv, Kullanıcılar ve Ayarlar bölümlerine ulaşabilirsiniz. Her bölüm, yalnızca yetkiniz olan verileri gösterir.",
+              "The left menu gives you access to Kasalar (Cash), Gelir (Income), Gider (Expense), Rapor Hazırla (Prepare Report), Mali Özel Notlarım (Private Notes), Yorumlar (Comments), Arşiv (Archive), Kullanıcılar (Users) and Ayarlar (Settings). Each section only shows data you're permitted to see.",
+              "Ji menuya çepê hûn dikarin bigihîjin beşên Qase, Dahat, Mesref, Raporê Amade Bike, Nîşeyên Min ên Taybet, Şîrove, Arşîv, Bikarhêner û Mîheng. Her beş tenê daneyên ku destûra we jê heye nîşan dide.",
             )}
           </p>
         </>
@@ -53,9 +53,9 @@ export function Guide({ language }: { language: Language }) {
           <p>
             {tx(
               language,
-              "Bir kasaya tıkladığınızda o kasanın toplam gelir/gider dökümünü ve bakiyesini görürsünüz. Kasalar > Paylaş ile başka bir kullanıcıyla salt-okunur paylaşabilirsiniz.",
-              "Clicking a kasa shows its full income/expense breakdown and balance. Use Kasalar > Share to give another user read-only access to it.",
-              "Dema hûn li qasekê bitikînin, tevahiya dahat/mesref û bakiya wê xuya dike. Bi Qase > Parve Bike hûn dikarin bikarhênerekî din re gihîştina tenê-xwendinê bidin.",
+              "Bir kasaya tıkladığınızda o kasanın toplam gelir/gider dökümünü ve bakiyesini görürsünüz. Kasalar > Paylaş ile kendi kasanızı başka bir kullanıcıyla salt-okunur paylaşabilirsiniz; sizinle paylaşılan bir kasayı başkasıyla paylaşamazsınız.",
+              "Clicking a kasa shows its full income/expense breakdown and balance. Use Kasalar > Share to give another user read-only access to your own cash account; a cash account shared with you cannot be shared on.",
+              "Dema hûn li qasekê bitikînin, tevahiya dahat/mesref û bakiya wê xuya dike. Bi Qase > Parve Bike hûn dikarin qaseya xwe bi bikarhênerekî din re tenê-xwendinê parve bikin; qaseyek ku bi we re hatiye parvekirin nayê parvekirin.",
             )}
           </p>
         </>
@@ -118,86 +118,6 @@ export function Guide({ language }: { language: Language }) {
       ),
     },
     {
-      id: "listRecords",
-      title: tx(language, "Liste Kaydı", "List Record", "Qeyda Lîsteyê"),
-      body: (
-        <p>
-          {tx(
-            language,
-            "Birbiriyle ilgili birden fazla kaydı ortak bir başlık altında toplamak isterseniz \"Liste Kaydı\" seçeneğini işaretleyip bir liste adı girin — örneğin Örnek A.Ş.'nin \"2026 Fuar Bütçesi\" için yaptığı tüm harcamaları \"Fuar 2026\" listesinde toplayabilirsiniz. Bu kayıtlar, sayfanın altındaki sarı \"Tüm Liste Gelirleri/Giderleri\" satırında ayrıca özetlenir.",
-            "To group several related records under one label, check \"List Record\" and give it a name — e.g. all of Örnek A.Ş.'s spending on its \"2026 Trade Fair Budget\" could be grouped under \"Fair 2026\". These records are also summarized separately in the yellow \"All List Income/Expenses\" row below the main grid.",
-            "Ji bo çend qeydên têkildar bin sernavekî hevpar bicivînin, \"Qeyda Lîsteyê\" nîşan bikin û navekî lê bikin — mînak hemû lêçûnên Örnek A.Ş. yên \"Bûdceya Pêşangeha 2026\" dikare di lîsteya \"Pêşangeh 2026\" de bicive. Ev qeyd di rêza zer a \"Hemû Dahat/Mesrefên Lîsteyê\" de jî bi taybetî tên kurtkirin.",
-          )}
-        </p>
-      ),
-    },
-    {
-      id: "lists",
-      title: tx(language, "Listeler (Liste Kasaları)", "Lists (List Cash Accounts)", "Lîste (Qaseyên Lîsteyê)"),
-      body: (
-        <>
-          <p>
-            {tx(
-              language,
-              "Listeler sayfası bir liste kasasının (çalışma alanının) gelirini, giderlerini ve giderlerin kişilere dağılımını gösterir. Örnek A.Ş.'nin \"2026-V\" kasasında olduğu gibi: kasa geliri, kasaya bağlı Gider kayıtları ve her giderden hangi kişiye ne kadar düştüğü tek tabloda görülür.",
-              "The Lists page shows a list cash account's (workspace's) income, its expenses and how those expenses are allocated to people. As in Örnek A.Ş.'s \"2026-V\" account: cash income, the Expense records linked to the account and how much of each expense went to each person are shown in one table.",
-              "Rûpela Lîste dahat, mesref û dabeşkirina mesrefan ji kesan re ya qaseyeke lîsteyê (qada xebatê) nîşan dide. Wekî di qaseya \"2026-V\" a Örnek A.Ş. de: dahata qaseyê, tomarên Mesrefê yên girêdayî qaseyê û ji her mesrefê çiqas ketiye ser kîjan kesî di tabloyekê de tê dîtin.",
-            )}
-          </p>
-          <ul>
-            <li>
-              {tx(
-                language,
-                "Yeni çalışma alanı: Listeler sayfasında \"＋ Yeni Çalışma Alanı\" ile bir kasa seçin. Ad, gelir tutarı (kasadan otomatik ya da elle; \"Kasadaki tutarı getir\" düğmesi mevcut tutarı yazar) ve not isteğe bağlıdır. Yeni Kasa penceresinde çalışma alanı olarak \"Liste Kasaları\"nı seçerseniz de kasa Listeler'de otomatik çalışma alanı olur.",
-                "New workspace: on the Lists page use \"＋ New Workspace\" and pick a cash account. Name, income amount (automatic from the cash account or manual; the \"Fetch the cash account amount\" button fills the current amount) and note are optional. If you pick \"List Cash Accounts\" as the workspace in the New Cash Account window, the account also becomes a workspace automatically.",
-                "Qada xebatê ya nû: li rûpela Lîste bi \"＋ Qada Xebatê ya Nû\" qaseyekê hilbijêrin. Nav, mîqdara dahatê (ji qaseyê bixweber an bi destî; bişkoka \"Mîqdara qaseyê bîne\" mîqdara heyî dinivîse) û nîşe bijarte ne. Heke di pencereya Qaseya Nû de \"Qaseyên Lîsteyê\" wek qada xebatê hilbijêrin, qase bixweber dibe qada xebatê.",
-              )}
-            </li>
-            <li>
-              {tx(
-                language,
-                "Kasa geliri ve kasa gideri: kasanın gelir kayıtları kasa gelirini; Gider sayfasında bu kasa seçilerek girilen giderler kasa giderini oluşturur. Kasada kalan = kasa geliri − kasa gideri. Gider eklemek için Gider sayfasında ilgili Liste Kasası'nı seçin.",
-                "Cash income and cash expense: the account's income records make the cash income; expenses entered on the Expense page with this account selected make the cash expense. Cash left = cash income − cash expense. To add an expense, pick the List Cash Account on the Expense page.",
-                "Dahata qaseyê û mesrefa qaseyê: tomarên dahatê yên qaseyê dahata qaseyê pêk tînin; mesrefên di rûpela Mesref de bi hilbijartina vê qaseyê têne tomarkirin mesrefa qaseyê pêk tînin. Mayî di qaseyê de = dahat − mesref. Ji bo zêdekirina mesrefê di rûpela Mesref de Qaseya Lîsteyê hilbijêrin.",
-              )}
-            </li>
-            <li>
-              {tx(
-                language,
-                "Kişilere dağıtım: tabloda her gider bir satırdır; soldan sağa Tarih, Gider, Not, Gider tutarı, sonra her kişi için bir sütun, Dağıtılan ve Kalan gelir. Kişinin hücresine yazdığınız tutar o kişinin bu giderdeki harcamasıdır (Enter ile kaydedilir). \"Kalan\", giderin henüz kimseye yazılmamış kısmıdır. Kişi eklemek için \"Kalan\" başlığındaki \"＋ Kişi ekle\" ya da alttaki \"Kişileri yönet\" sekmesini kullanın. Kişi sütunları \"◂ / ▸\" düğmesiyle kapanıp açılır. \"Kişilerde kalan\" diye bir tutar yoktur.",
-                "Allocation to people: in the table each expense is a row; from left to right Date, Expense, Note, Expense amount, then one column per person, Allocated and Left. The amount you type in a person's cell is that person's spending in this expense (Enter saves). \"Left\" is the part of the expense not yet written to anyone. To add a person use \"＋ Add person\" in the \"Left\" header or the \"Manage people\" tab below. Person columns collapse and expand with the \"◂ / ▸\" button. There is no \"left with people\" amount.",
-                "Dabeşkirin ji kesan re: di tabloyê de her mesref rêzek e; ji çepê ber bi rastê Dîrok, Mesref, Nîşe, Mîqdara mesrefê, paşê ji bo her kesî stûnek, Hatiye dabeşkirin û Mayî tên. Mîqdara ku hûn di şaneya kesî de dinivîsin lêçûna wî/wê di vê mesrefê de ye (Enter tomar dike). \"Mayî\" beşa mesrefê ye ku hê ji tu kesî re nehatiye nivîsandin. Ji bo zêdekirina kesekî \"＋ Kes zêde bike\" a di sernavê \"Mayî\" de an tabloya \"Kesan birêve bibe\" ya jêrîn bikar bînin. Stûnên kesan bi bişkoka \"◂ / ▸\" vedibin û digirin. Mîqdareke \"li cem kesan\" tune.",
-              )}
-            </li>
-            <li>
-              {tx(
-                language,
-                "Alt sekmeler: \"Dağıtılan miktarı görüntüle\" her kişinin toplam harcamasını ve dağıtılmamış tutarı, \"Kişileri yönet\" kişi ekleme/adlandırma/silmeyi, \"Kişi hesapları\" kişi × gider dökümünü gösterir.",
-                "Sub-tabs: \"View distributed amount\" shows each person's total spending and the unallocated amount, \"Manage people\" handles adding/renaming/deleting people and \"Person accounts\" shows the person × expense breakdown.",
-                "Tabloyên jêrîn: \"Mîqdara hatiye dabeşkirin nîşan bide\" lêçûna giştî ya her kesî û mîqdara nehatiye dabeşkirin, \"Kesan birêve bibe\" zêdekirin/guherîn/jêbirina kesan û \"Hesabên kesan\" dabeşkirina kes × mesref nîşan dide.",
-              )}
-            </li>
-            <li>
-              {tx(
-                language,
-                "Sonuçları Görüntüle: hem Listeler ana sayfasında hem çalışma alanında bulunur; kasa geliri, kasa giderleri, kişi harcamaları ve kasada kalan tutarı Kasalar'daki \"Sonuç Oluştur\" raporuyla aynı görünümde gösterir; Excel'e aktarılabilir.",
-                "View Results: available on the Lists main page and inside a workspace; it shows cash income, cash expenses, people's spending and cash left in the same layout as the Kasalar \"Create Result\" report, and can be exported to Excel.",
-                "Encaman Nîşan Bide: li rûpela serekî ya Lîste û di nav qada xebatê de heye; dahata qaseyê, mesrefên qaseyê, lêçûnên kesan û mayî di qaseyê de bi heman dîmenê raporê \"Encamê Biafirîne\" a Qase nîşan dide; dikare ji Excelê re were derxistin.",
-              )}
-            </li>
-            <li>
-              {tx(
-                language,
-                "Tablo sütunları: Tarih, Gider, Not, Gider tutarı ve kişi sütunlarının genişliği başlığın sağ kenarındaki tutamaçtan sürüklenerek ayarlanır; çift tıklayınca varsayılana döner. Tarayıcı ayarı hatırlar.",
-                "Table columns: drag the handle on a header's right edge to change the width of Date, Expense, Note, Expense amount and person columns; double-click resets it. The browser remembers your settings.",
-                "Stûnên tabloyê: firehiya stûnên Dîrok, Mesref, Nîşe, Mîqdara mesrefê û kesan bi kişandina tutamaka li kêleka rastê ya sernavê tê guhertin; du caran bitikînin vedigere bingehîn. Gerok mîhengê tomar dike.",
-              )}
-            </li>
-          </ul>
-        </>
-      ),
-    },
-    {
       id: "kasaBoxes",
       title: tx(language, "Gelir, Gider ve Kasa Kutuları", "Income, Expense and Cash Boxes", "Qutiyên Dahat, Mesref û Qaseyê"),
       body: (
@@ -213,9 +133,9 @@ export function Guide({ language }: { language: Language }) {
           <p>
             {tx(
               language,
-              "Kasalar sayfasında her kasa kartı o kasanın geliri (↗), gideri (↘) ve sonucunu gösterir; \"Tüm Kasalar\" ve \"Tüm Liste Kasaları\" kutuları da aynı satırlara sahiptir. Listelerle ilişkili (Liste Kasası) kasalar üstteki kasa kartlarında değil, ikinci satırdaki \"Tüm Liste Kasaları\" bölümünde görünür. Geliri ya da gideri olmayan (tutarı sıfır) kasa ve liste kutuları Gelir/Gider sayfalarında gizlenir.",
-              "On the Kasalar page each cash card shows that account's income (↗), expense (↘) and result; the \"All Cash Accounts\" and \"All List Accounts\" boxes have the same lines. Cash accounts linked to lists (List Cash Accounts) do not appear among the top cards but in the second-row \"All List Accounts\" section. Cash and list boxes with a zero amount are hidden on the Income/Expense pages.",
-              "Di rûpela Qase de her karta qaseyê dahat (↗), mesref (↘) û encama wê qaseyê nîşan dide; qutiyên \"Hemû Qase\" û \"Hemû Qaseyên Lîsteyê\" jî heman rêzan hene. Qaseyên bi lîsteyan ve girêdayî (Qaseya Lîsteyê) di kartên jorîn de nayên xuyakirin, di beşa \"Hemû Qaseyên Lîsteyê\" ya rêza duyemîn de ne. Qutiyên qase û lîsteyê yên mîqdara wan sifir e di rûpelên Dahat/Mesref de têne veşartin.",
+              "Kasalar sayfasında her kasa kartı o kasanın geliri (↗), gideri (↘) ve sonucunu gösterir; \"Tüm Kasalar\" kutusu da aynı satırlara sahiptir. Geliri ya da gideri olmayan (tutarı sıfır) kasa kutuları Gelir/Gider sayfalarında gizlenir.",
+              "On the Kasalar page each cash card shows that account's income (↗), expense (↘) and result; the \"All Cash Accounts\" box has the same lines. Cash boxes with a zero amount are hidden on the Income/Expense pages.",
+              "Di rûpela Qase de her karta qaseyê dahat (↗), mesref (↘) û encama wê qaseyê nîşan dide; qutiya \"Hemû Qase\" jî heman rêzan heye. Qutiyên qaseyê yên mîqdara wan sifir e di rûpelên Dahat/Mesref de têne veşartin.",
             )}
           </p>
         </>
@@ -229,9 +149,9 @@ export function Guide({ language }: { language: Language }) {
           <li>
             {tx(
               language,
-              "Çalışma Alanları: Kasalar sayfasında kasalar çalışma alanları başlığı altında görünür. Üstte “Tüm Kasalar” kutusu ve hemen yanında her çalışma alanı kendi renginde bir kutu olarak yer alır; bir çalışma alanına tıklayınca kasaları altında açılır, bir kasaya tıklayınca o kasanın gelir ve gider kayıtları iki tabloda görünür. Diğer (hiçbir alana bağlanmamış kasalar), Liste Kasaları ve RJ-Kasaları hazır alanlardır; Proje Kasaları, Şirketler gibi yenilerini Kasalar sayfasındaki “＋ Çalışma Alanı Ekle” düğmesinden ya da Ayarlar > Çalışma Alanları'ndan oluşturabilirsiniz. Her kasa mutlaka bir çalışma alanına bağlıdır (varsayılan: Diğer). Kasa açılırken Yeni Kasa penceresinde “Çalışma alanı” seçilir; mevcut bir kasayı seçip ⇄ “Çalışma alanına taşı” düğmesiyle başka bir alana taşıyabilirsiniz. Alan başlığına tıklayınca tablo o alanın kasalarına göre süzülür. Alanı silmek kasa ve kayıtları silmez; kasalar hazır alanlara döner. Gelir ve Gider sayfalarındaki bölümler (Ayarlar > Çalışma Alanları altındaki gelir/gider grupları) ayrıdır.",
-              "Workspaces: on the Kasalar page cash accounts appear under workspace headings. “All Cash Accounts” sits on top with each workspace as its own colored box next to it; click a workspace to open its cash accounts below, then click a cash account to see its income and expense records in two tables. General, List and RJ cash accounts are built-in workspaces; create new ones such as Project Cash Accounts or Companies with “＋ Add Workspace” on the Kasalar page or under Settings > Workspaces. Every cash account must belong to a workspace (default: General Cash Accounts). Pick “Workspace” in the New Cash Account window; to change it later, select the cash account and use the ⇄ “Move to workspace” button. Clicking a workspace heading filters the table to its cash accounts. Deleting a workspace does not delete cash accounts or records; the accounts return to the built-in workspaces. The Income/Expense sections (the income/expense groups under Settings > Workspaces) are separate.",
-              "Qadên Xebatê: di rûpela Qase de qase di bin sernavên qadên xebatê de xuya dibin. Li jor “Hemû Qase” giştiya giştî nîşan dide; li jêr her qada xebatê sernavek û qutiyên qaseyê yên bi rengê xwe heye. Qaseyên Giştî, Lîste û RJ qadên amade ne; yên nû wekî Qaseyên Projeyê an Şirket bi “＋ Qada Xebatê Zêde Bike” an di Mîheng > Qadên Xebatê de çêbikin. Ji bo girêdana qaseyekê, di pencereya Qaseya Nû de “Qada xebatê” hilbijêrin. Bi tikandina sernavê tablo li gorî qaseyên wê qadê tê parzûnkirin. Jêbirina qadê qase û tomaran jê nabe.",
+              "Çalışma Alanları: Kasalar sayfasında kasalar çalışma alanları başlığı altında görünür. Üstte “Tüm Kasalar” kutusu ve hemen yanında her çalışma alanı kendi renginde bir kutu olarak yer alır; bir çalışma alanına tıklayınca kasaları altında açılır, bir kasaya tıklayınca o kasanın gelir ve gider kayıtları iki tabloda görünür. Hazır bir çalışma alanı yoktur: Proje Kasaları, Şirketler gibi alanları Kasalar sayfasındaki “＋ Çalışma Alanı Ekle” düğmesinden ya da Ayarlar > Çalışma Alanları'ndan siz oluşturursunuz; her alanın içinde bölümler (ör. “Projeler › 2026”) açabilirsiniz. Alanlar ve bölümler yalnızca kasaları gruplar; kasalar arasında üst/alt bağı kurmaz. Her kasa bir çalışma alanında (ya da bölümünde) açılır: Yeni Kasa penceresinde “Çalışma alanı” seçilir; mevcut bir kasayı seçip ⇄ “Çalışma alanına taşı” düğmesiyle başka bir alana taşıyabilirsiniz. Alan başlığına tıklayınca tablo o alanın kasalarına göre süzülür. İçinde kasa olan bir alan silinirken kasaları başka bir alana taşınır; kasa ve kayıtlar silinmez. Gelir ve Gider sayfalarındaki bölümler (Ayarlar > Çalışma Alanları altındaki gelir/gider grupları) ayrıdır.",
+              "Workspaces: on the Kasalar page cash accounts appear under workspace headings. “All Cash Accounts” sits on top with each workspace as its own colored box next to it; click a workspace to open its cash accounts below, then click a cash account to see its income and expense records in two tables. There are no built-in workspaces: you create workspaces such as Project Cash Accounts or Companies with “＋ Add Workspace” on the Kasalar page or under Settings > Workspaces, and you can open sections inside each (e.g. “Projects › 2026”). Workspaces and sections only group cash accounts; they create no parent/child link between them. Every cash account opens in a workspace (or one of its sections): pick “Workspace” in the New Cash Account window; to change it later, select the cash account and use the ⇄ “Move to workspace” button. Clicking a workspace heading filters the table to its cash accounts. When a workspace that still holds cash accounts is deleted, its accounts are moved to another workspace first; no cash account or record is deleted. The Income/Expense sections (the income/expense groups under Settings > Workspaces) are separate.",
+              "Qadên Xebatê: di rûpela Qase de qase di bin sernavên qadên xebatê de xuya dibin. Li jor “Hemû Qase” giştiya giştî nîşan dide; li jêr her qada xebatê sernavek û qutiyên qaseyê yên bi rengê xwe heye. Qadeke amade tune: qadên wekî Qaseyên Projeyê an Şirket hûn bi “＋ Qada Xebatê Zêde Bike” an di Mîheng > Qadên Xebatê de çêdikin, û di her qadê de dikarin beşan vekin. Qad û beş tenê qaseyan kom dikin. Ji bo girêdana qaseyekê, di pencereya Qaseya Nû de “Qada xebatê” hilbijêrin. Bi tikandina sernavê tablo li gorî qaseyên wê qadê tê parzûnkirin. Jêbirina qadê qase û tomaran jê nabe.",
             )}
           </li>
           <li>
@@ -253,9 +173,9 @@ export function Guide({ language }: { language: Language }) {
           <li>
             {tx(
               language,
-              "Hücre hesabı (Excel gibi): Kasalar, Gelir, Gider, Listeler, Arşiv ve Rapor tablolarında, örneğin Miktar sütununda hücrelere tıklayıp aşağı doğru sürükleyerek seçin (Ctrl ile tek tek, Shift ile aralık). Altta Seçili, Toplam, Ortalama, Sayı, En az ve En çok görünür; Esc veya ✕ ile kapanır.",
-              "Cell calculations (like Excel): in the Kasalar, Income, Expense, Lists, Archive and Report tables, click and drag down over cells, e.g. in the Amount column (Ctrl for single cells, Shift for a range). A bar at the bottom shows Selected, Sum, Average, Count, Min and Max; close it with Esc or ✕.",
-              "Hesaba şaneyan (wekî Excel): di tabloyên Qase, Dahat, Mesref, Lîste, Arşîv û Raporê de, mînak di stûna Mîqdar de bi tikandin û kişandina ber bi jêr şaneyan hilbijêrin (Ctrl ji bo yek bi yek, Shift ji bo navber). Li jêr Hilbijartî, Giştî, Navîn, Hejmar, Kêmtirîn û Zêdetirîn tê dîtin; bi Esc an ✕ tê girtin.",
+              "Hücre hesabı (Excel gibi): Kasalar, Gelir, Gider, Arşiv ve Rapor tablolarında, örneğin Miktar sütununda hücrelere tıklayıp aşağı doğru sürükleyerek seçin (Ctrl ile tek tek, Shift ile aralık). Altta Seçili, Toplam, Ortalama, Sayı, En az ve En çok görünür; Esc veya ✕ ile kapanır.",
+              "Cell calculations (like Excel): in the Kasalar, Income, Expense, Archive and Report tables, click and drag down over cells, e.g. in the Amount column (Ctrl for single cells, Shift for a range). A bar at the bottom shows Selected, Sum, Average, Count, Min and Max; close it with Esc or ✕.",
+              "Hesaba şaneyan (wekî Excel): di tabloyên Qase, Dahat, Mesref, Arşîv û Raporê de, mînak di stûna Mîqdar de bi tikandin û kişandina ber bi jêr şaneyan hilbijêrin (Ctrl ji bo yek bi yek, Shift ji bo navber). Li jêr Hilbijartî, Giştî, Navîn, Hejmar, Kêmtirîn û Zêdetirîn tê dîtin; bi Esc an ✕ tê girtin.",
             )}
           </li>
         </ul>
@@ -278,9 +198,9 @@ export function Guide({ language }: { language: Language }) {
             <li>
               {tx(
                 language,
-                "1) Dosya ve kasa: .xlsx dosyasını seçin, hedef kasayı seçin ya da yeni kasa adı yazın. İsterseniz kasayı Liste Kasası yapın.",
-                "1) File and cash account: choose the .xlsx file, then pick the target cash account or type a new name. You can also make it a List cash account.",
-                "1) Pel û qase: pela .xlsx hilbijêrin, qaseya armanc hilbijêrin an navekî nû binivîsin. Her wiha dikarin wê bikin Qaseya Lîsteyê.",
+                "1) Dosya ve kasa: .xlsx dosyasını seçin, çalışma alanını ve hedef kasayı seçin ya da yeni kasa adı yazın (yeni kasa seçili alanda açılır).",
+                "1) File and cash account: choose the .xlsx file, pick the workspace and the target cash account, or type a new name (a new account opens in the chosen workspace).",
+                "1) Pel û qase: pela .xlsx hilbijêrin, qada xebatê û qaseya armanc hilbijêrin an navekî nû binivîsin (qaseya nû di qada hilbijartî de vedibe).",
               )}
             </li>
             <li>

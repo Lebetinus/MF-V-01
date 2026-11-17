@@ -6,16 +6,15 @@ import { verifyPassword } from "../../../../db/passwords";
 import { requireSession } from "../../_lib/auth";
 import { canWriteCashAccount } from "../../_lib/cash-access";
 import { json, withErrorHandling } from "../../_lib/http";
-import { markListKasa, setRjKasa, unmarkListKasa } from "../../_lib/lists";
+import { isCashSection } from "../../_lib/records";
 import { clearAttempts, isRateLimited, recordFailedAttempt } from "../../_lib/rate-limit";
 import { parseBody } from "../../_lib/validate";
 import { reverseTransfersOfKasa } from "../../_lib/transfers";
 
 const kasaUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120),
-  listKasa: z.boolean().optional(),
-  rjKasa: z.boolean().optional(),
-  sectionId: z.number().int().nullable().optional(),
+  // Kasanın çalışma alanı ya da bölümü (kasa_sections, scope=cash).
+  sectionId: z.number().int().positive().optional(),
 });
 
 const kasaDeleteSchema = z.object({ password: z.string().min(1).max(200), reason: z.string().trim().min(3).max(500) });
@@ -25,7 +24,7 @@ function parseId(value: string): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// PUT /api/cash-accounts/:id — kasayı düzenle (ad, Liste/RJ işareti, bölüm).
+// PUT /api/cash-accounts/:id — kasayı düzenle (ad, çalışma alanı / bölüm).
 // Ad değişirse kasaya bağlı tüm kayıtların kasa adı da güncellenir.
 import { logActivity, withReason } from "../../_lib/activity";
 
@@ -44,6 +43,8 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   if (!account) return json({ error: "Kasa bulunamadı" }, { status: 404 });
   if (!(await canWriteCashAccount(session.user, id, db))) return json({ error: "Forbidden" }, { status: 403 });
 
+  if (payload.sectionId !== undefined && !(await isCashSection(payload.sectionId, db))) return json({ error: "Çalışma alanı bulunamadı" }, { status: 400 });
+
   const [clash] = await db.select({ id: cashAccounts.id }).from(cashAccounts).where(eq(cashAccounts.name, payload.name)).limit(1);
   if (clash && clash.id !== id) return json({ error: "Bu isimde bir kasa zaten var" }, { status: 409 });
 
@@ -55,9 +56,6 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
     if (payload.name !== account.name) {
       await tx.update(records).set({ cashAccount: payload.name }).where(eq(records.cashAccountId, id));
     }
-    if (payload.listKasa) await markListKasa(id, tx);
-    else if (payload.listKasa === false) await unmarkListKasa(id, tx);
-    if (payload.rjKasa !== undefined) await setRjKasa(id, payload.rjKasa, tx);
   });
   await logActivity(session.user, {
     category: "cash",

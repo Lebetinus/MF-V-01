@@ -1,7 +1,7 @@
 # MF-V-01 — Maliye-Finans
 
 KB Group için çok kullanıcılı, sunucu tabanlı muhasebe uygulaması: kasa,
-gelir, gider, kasa aktarımları, borçlar, listeler, mali notlar,
+gelir, gider, çalışma alanları, kasa aktarımları, borçlar, mali notlar,
 hazırlanan raporlar, arşiv ve kullanıcı/erişim yönetimi. Arayüz Türkçe,
 İngilizce ve Kurmancî.
 
@@ -111,11 +111,12 @@ yayındaki sürümün hemen kontrol edilmesi gerektiği anlamına gelir.
 ## Yedekleme
 
 - **Asıl yedek: Coolify** — `mfv01-postgres` için günlük `pg_dump` yedeği
-  (Coolify → veritabanı → Backups). Kullanıcılar, kasalar, listeler dahil
-  her şeyi kapsar; `pg_restore` ile geri yüklenir.
+  (Coolify → veritabanı → Backups). Her şeyi kapsar; `pg_restore` ile geri
+  yüklenir.
 - **Uygulama içi** (Ayarlar → Yedekleme ve veritabanı, yalnız süper admin):
-  kayıt/arşiv/not/rapor verisini JSON olarak dışa/içe aktarır. Kasaları,
-  listeleri ve aktarımları kapsamaz; tam yedek yerine geçmez.
+  oturumlar dışındaki tüm tabloların tam yedeği (`.json.gz`) alınır ve geri
+  yüklenir. Yalnız aynı veritabanı şemasında (aynı migration'larla) alınmış
+  bir yedek geri yüklenebilir; daha eski yedekler için Coolify yedeği kullanılır.
 
 ## Proje yapısı
 

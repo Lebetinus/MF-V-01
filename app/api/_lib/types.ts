@@ -6,7 +6,7 @@
 // sayfa/izin kimliğidir (Page).
 export type Kind = "income" | "expense";
 export const RECORD_KINDS: Kind[] = ["income", "expense"];
-export type Page = "dashboard" | "cash" | Kind | "reportBuilder" | "notes" | "comments" | "archive" | "activity" | "users" | "settings" | "lists";
+export type Page = "dashboard" | "cash" | Kind | "reportBuilder" | "notes" | "comments" | "archive" | "activity" | "users" | "settings";
 // Mirrors app/page.tsx's restrictablePages const — the set of pages a
 // non-admin user's `permissions` can actually contain.
-export const restrictablePages: Page[] = ["cash", "income", "expense", "reportBuilder", "notes", "comments", "activity", "archive", "lists"];
+export const restrictablePages: Page[] = ["cash", "income", "expense", "reportBuilder", "notes", "comments", "activity", "archive"];
