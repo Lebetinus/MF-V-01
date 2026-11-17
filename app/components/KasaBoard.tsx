@@ -103,14 +103,17 @@ export function KasaBoard({
   const scopedWs = workspaces.filter((w) => ws === "all" || w.key === ws);
   const emptyCount = scopedWs.reduce((n, w) => n + wsKasas(w).filter((k) => visible(k) && isEmpty(k)).length, 0);
   const pick = (list: BoardKasa[]) => list.filter((k) => visible(k) && (showEmpty || !isEmpty(k))).sort(byBalance);
+  // Gizlenen boş kasa sayısı: başlıktaki sayının alan düğmesindeki toplamla neden farklı olduğunu gösterir.
+  const hiddenIn = (list: BoardKasa[]) => (showEmpty ? 0 : list.filter((k) => visible(k) && isEmpty(k)).length);
+  const hiddenNote = (n: number) => (n > 0 ? ` · ${tx(language, `${n} boş kasa gizli`, `${n} empty hidden`, `${n} qaseya vala veşartî`)}` : "");
   // Çalışma alanı → bölümler → kasalar; boş kasalar gizliyse ve içinde gösterilecek kasa kalmadıysa bölüm/alan gizlenir.
   // Yönetici boş çalışma alanı/bölümleri de görür (içine kasa eklemek için); arama yapılırken gizlenir.
   const showAlways = canManage && !q;
   const groups = scopedWs
     .map((w) => {
       const direct = pick(w.kasas);
-      const subs = w.subs.map((x) => ({ ...x, shown: pick(x.kasas) })).filter((x) => x.shown.length > 0 || showAlways);
-      return { w, direct, subs, total: direct.length + subs.reduce((n, x) => n + x.shown.length, 0) };
+      const subs = w.subs.map((x) => ({ ...x, shown: pick(x.kasas), hidden: hiddenIn(x.kasas) })).filter((x) => x.shown.length > 0 || showAlways);
+      return { w, direct, subs, total: direct.length + subs.reduce((n, x) => n + x.shown.length, 0), hidden: hiddenIn(wsKasas(w)) };
     })
     .filter((g) => g.total > 0 || showAlways);
   const shownCount = groups.reduce((n, g) => n + g.total, 0);
@@ -302,7 +305,7 @@ export function KasaBoard({
         <p className="lpEmpty">{tx(language, "Gösterilecek kasa yok.", "No cash accounts to show.", "Qase tune ne.")}</p>
       ) : (
         <div className="kbTree">
-          {groups.map(({ w, direct, subs, total }) => (
+          {groups.map(({ w, direct, subs, total, hidden }) => (
             <section key={w.key} className="kbWs">
               <header className="kbWsHead" style={{ borderLeftColor: w.color }}>
                 <button type="button" className="kbToggle2" aria-expanded={!collapsed.has(w.key)} aria-label={`${w.name} — ${collapsed.has(w.key) ? tx(language, "aç", "expand", "veke") : tx(language, "kapat", "collapse", "bigire")}`} onClick={() => toggleWs(w.key)}>{collapsed.has(w.key) ? "▸" : "▾"}</button>
@@ -324,7 +327,7 @@ export function KasaBoard({
                   </div>
                 )}
                 <div className="kbWsMeta">
-                  <span>{subs.length > 0 ? `${subs.length} ${tx(language, "bölüm", "sections", "beş")} · ` : ""}{total} {tx(language, "kasa", "cash accounts", "qase")}</span>
+                  <span>{subs.length > 0 ? `${subs.length} ${tx(language, "bölüm", "sections", "beş")} · ` : ""}{total} {tx(language, "kasa", "cash accounts", "qase")}{hiddenNote(hidden)}</span>
                   <strong><MoneyStack by={sumMaps([...direct, ...subs.flatMap((x) => x.shown)], (k) => k.totalByCurrency)} /></strong>
                 </div>
               </header>
@@ -340,7 +343,7 @@ export function KasaBoard({
                 <div key={x.key} className="kbSec">
                   <h4 className="kbSecHead" style={{ borderLeftColor: x.color }}>
                     <span><small>{tx(language, "BÖLÜM", "SECTION", "BEŞ")}</small>{x.name}</span>
-                    <em>{x.shown.length} {tx(language, "kasa", "cash accounts", "qase")} · {moneyBreakdown(sumMaps(x.shown, (k) => k.totalByCurrency))}</em>
+                    <em>{x.shown.length} {tx(language, "kasa", "cash accounts", "qase")}{hiddenNote(x.hidden)} · {moneyBreakdown(sumMaps(x.shown, (k) => k.totalByCurrency))}</em>
                     {canManage && (
                       <span className="kbCtl" role="group" aria-label={tx(language, "Bölüm yönetimi", "Section controls", "Kontrola beşê")}>
                         <button type="button" disabled={subs.findIndex((y) => y.key === x.key) === 0} onClick={() => moveSection(w, x.key, -1, subs.map((y) => y.key))} title={tx(language, "Yukarı taşı", "Move up", "Bibe jor")} aria-label={tx(language, "Bölümü yukarı taşı", "Move section up", "Beşê bibe jor")}>↑</button>
