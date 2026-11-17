@@ -170,7 +170,7 @@ export function renderKasaCard(g: CardGroup, tone: { background: string; borderC
           ⇄
         </button>
       )}
-      {source === g.name && matchingAccount && (
+      {!readOnly && source === g.name && matchingAccount && (matchingAccount.isOwner || isSuperAdmin) && (
         <button
           className="cashEditIcon"
           title={tx(language, "Kasayı Paylaş", "Share Kasa", "Qaseyê Parve Bike")}

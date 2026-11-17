@@ -74,28 +74,14 @@ export async function canWriteCashAccount(
 }
 
 // Whether `user` may manage sharing (grant/revoke view access, or toggle
-// dashboard-share) for a given kasa. A super admin can manage any kasa.
-// Everyone else gets the same right super admin has for any kasa they can
-// already see — owner or an existing shared viewer — so managing sharing is
-// no longer an owner-only privilege; it just can't be exercised on a kasa
-// the user has no visibility into in the first place (nothing new leaks:
-// canAccessCashAccount is the actual visibility gate, this only decides who
-// may flip the switches on a kasa already visible to them).
+// dashboard-share) for a given kasa: only its owner, or a super admin. A user
+// a kasa was shared with can see it but cannot share it on to anyone else.
 export async function canManageCashAccountAccess(
   user: Pick<SessionUser, "id" | "isSuperAdmin">,
   cashAccountId: number,
   db: DbClient = getDb(),
 ): Promise<boolean> {
-  if (user.isSuperAdmin) return true;
-  const [ownerRows, accessRows] = await Promise.all([
-    db.select({ ownerUserId: cashAccounts.ownerUserId }).from(cashAccounts).where(eq(cashAccounts.id, cashAccountId)).limit(1),
-    db
-      .select({ cashAccountId: cashAccountAccess.cashAccountId })
-      .from(cashAccountAccess)
-      .where(and(eq(cashAccountAccess.userId, user.id), eq(cashAccountAccess.cashAccountId, cashAccountId)))
-      .limit(1),
-  ]);
-  return ownerRows[0]?.ownerUserId === user.id || accessRows.length > 0;
+  return canWriteCashAccount(user, cashAccountId, db);
 }
 
 // Ensures the given user can see their own newly-created kasa immediately

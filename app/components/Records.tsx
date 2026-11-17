@@ -640,7 +640,7 @@ export function Records({
           </div>
           <div className="kbDetailActions">
             {kasaActions(source, true)}
-            {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc ? <button type="button" className="light compact" onClick={() => setShareTarget(acc)}>🔗 {tx(language, "Paylaş", "Share", "Parve bike")}</button> : null; })()}
+            {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc && !readOnly && (acc.isOwner || isSuperAdmin) ? <button type="button" className="light compact" onClick={() => setShareTarget(acc)}>🔗 {tx(language, "Paylaş", "Share", "Parve bike")}</button> : null; })()}
             {(() => { const acc = cashAccounts.find((a) => a.name === source); return acc && !readOnly && (acc.isOwner || isSuperAdmin) ? <button type="button" className="light compact" onClick={() => setTransferTarget(acc)}>⇄ {tx(language, "Kasalar arası aktarım", "Transfer to another cash account", "Veguhastin bo qaseyeke din")}</button> : null; })()}
             {(() => {
               // Borç düğmeleri aktarım düğmesi gibi: parası çıkan kasa bu kasadır, yazma yetkisi gerekir.

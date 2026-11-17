@@ -449,6 +449,44 @@ test("cash accounts: a user without the Kasa Kontrol Merkezi permission cannot o
   assert.equal((await call("DELETE", `/api/users/${created.json.user.id}`, { cookie: adminCookie })).status, 200);
 });
 
+test("cash accounts: only the owner shares a kasa; a user it was shared with cannot share it on", async () => {
+  const make = async (suffix) => {
+    const res = await call("POST", "/api/users", {
+      cookie: adminCookie,
+      body: { username: `${RUN_TAG}_${suffix}`, password: "ApiTest1234", name: suffix, roleLabel: "Test", isAdmin: false, permissions: ["cash", "income", "expense"] },
+    });
+    assert.equal(res.status, 201);
+    const cookie = (await call("POST", "/api/auth/login", { body: { username: `${RUN_TAG}_${suffix}`, password: "ApiTest1234" } })).cookie;
+    return { id: res.json.user.id, cookie };
+  };
+  const owner = await make("shareOwner");
+  const viewer = await make("shareViewer");
+  const third = await make("shareThird");
+  try {
+    const kasa = await call("POST", "/api/cash-accounts", { cookie: owner.cookie, body: { name: `${RUN_TAG}_sharedKasa` } });
+    assert.equal(kasa.status, 201);
+    const kasaId = kasa.json.cashAccount.id;
+    extraKasaIds.push(kasaId);
+
+    assert.equal((await call("POST", `/api/cash-accounts/${kasaId}/access`, { cookie: owner.cookie, body: { userId: viewer.id } })).status, 201);
+    const seen = await call("GET", "/api/cash-accounts", { cookie: viewer.cookie });
+    assert.ok(seen.json.cashAccounts.some((a) => a.id === kasaId), "the viewer sees the shared kasa");
+
+    // The viewer can neither share it further, nor remove anyone, nor toggle its dashboard share.
+    assert.equal((await call("POST", `/api/cash-accounts/${kasaId}/access`, { cookie: viewer.cookie, body: { userId: third.id } })).status, 403);
+    assert.equal((await call("DELETE", `/api/cash-accounts/${kasaId}/access?userId=${viewer.id}`, { cookie: viewer.cookie })).status, 403);
+    assert.equal((await call("PUT", `/api/cash-accounts/${kasaId}/dashboard-share`, { cookie: viewer.cookie, body: { enabled: true } })).status, 403);
+    const thirdSees = await call("GET", "/api/cash-accounts", { cookie: third.cookie });
+    assert.ok(!thirdSees.json.cashAccounts.some((a) => a.id === kasaId), "the third user got nothing");
+
+    // The owner and a super admin still can.
+    assert.equal((await call("POST", `/api/cash-accounts/${kasaId}/access`, { cookie: adminCookie, body: { userId: third.id } })).status, 201);
+    assert.equal((await call("DELETE", `/api/cash-accounts/${kasaId}/access?userId=${third.id}`, { cookie: owner.cookie })).status, 200);
+  } finally {
+    for (const u of [owner, viewer, third]) await call("DELETE", `/api/users/${u.id}`, { cookie: adminCookie });
+  }
+});
+
 async function transfer(fromId, toId, amount) {
   const res = await call("POST", "/api/cash-transfers", {
     cookie: adminCookie,

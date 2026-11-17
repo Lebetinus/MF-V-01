@@ -238,7 +238,7 @@ export function KasaBoard({
           {menuFor === k.name && (
             <div className="kbMenu" role="menu" onMouseLeave={() => setMenuFor(null)}>
               <button type="button" role="menuitem" onClick={() => { setMenuFor(null); onOpen(k.name); }}>{tx(language, "Aç", "Open", "Veke")}</button>
-              {account && <button type="button" onClick={() => { setMenuFor(null); onShare(account); }}>{tx(language, "Paylaş", "Share", "Parve bike")}</button>}
+              {account && (account.isOwner || canManage) && <button type="button" onClick={() => { setMenuFor(null); onShare(account); }}>{tx(language, "Paylaş", "Share", "Parve bike")}</button>}
               {account && onTransfer && (account.isOwner || canManage) && <button type="button" onClick={() => { setMenuFor(null); onTransfer(account); }}>⇄ {tx(language, "Kasalar arası aktarım", "Transfer to another cash account", "Veguhastin bo qaseyeke din")}</button>}
               {canManage && ctx && ctx.list.indexOf(k) > 0 && <button type="button" onClick={() => { setMenuFor(null); moveKasa(ctx.full, ctx.list, k, -1); }}>{tx(language, "← Öne al", "← Move earlier", "← Bîne pêş")}</button>}
                         {canManage && ctx && ctx.list.indexOf(k) < ctx.list.length - 1 && <button type="button" onClick={() => { setMenuFor(null); moveKasa(ctx.full, ctx.list, k, 1); }}>{tx(language, "Geri al →", "Move later →", "Bibe paş →")}</button>}
