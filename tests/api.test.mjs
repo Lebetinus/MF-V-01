@@ -367,6 +367,58 @@ test("prepared reports: a user only sees and edits reports of kasas they can acc
   assert.equal(forOtherKasa.status, 403, "cannot file a report under someone else's kasa");
 });
 
+test("attachments: lists carry only names and sizes; contents load per file and survive an edit by ref", async () => {
+  const pdf = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 api test").toString("base64")}`;
+  const pdf2 = `data:application/pdf;base64,${Buffer.from("%PDF-1.4 second").toString("base64")}`;
+  const created = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "expense", date: "2026-01-15", source: `${RUN_TAG}_slim`, amount: 1, currency: "USD", cashAccount: `${RUN_TAG}_kasa`, attachments: [{ name: "a.pdf", data: pdf }] },
+  });
+  assert.equal(created.status, 201);
+  const record = created.json.record;
+  createdRecordIds.push(record.id);
+
+  const list = await call("GET", "/api/records", { cookie: adminCookie });
+  const listed = list.json.records.find((r) => r.id === record.id);
+  assert.deepEqual(listed.attachments, [{ name: "a.pdf", data: "", size: Buffer.from("%PDF-1.4 api test").length, ref: 0 }]);
+
+  const boot = await call("GET", "/api/bootstrap", { cookie: adminCookie });
+  assert.equal(boot.status, 200);
+  assert.equal(boot.json.archive, undefined, "the archive is loaded by the Arşiv page, not bootstrap");
+  assert.equal(boot.json.records.find((r) => r.id === record.id).attachments[0].data, "");
+
+  const file = await call("GET", `/api/records/${record.id}/attachments/0`, { cookie: adminCookie });
+  assert.equal(file.status, 200);
+  assert.deepEqual(file.json.attachment, { name: "a.pdf", data: pdf });
+  assert.equal((await call("GET", `/api/records/${record.id}/attachments/1`, { cookie: adminCookie })).status, 404);
+  // Same rules as the list: kind permission and access to the record's kasa.
+  assert.equal((await call("GET", `/api/records/${record.id}/attachments/0`, { cookie: testUserCookie })).status, 403, "no expense permission");
+  assert.equal((await call("GET", `/api/records/${record.id}/attachments/0`, { cookie: reporterCookie })).status, 403, "no access to the kasa");
+
+  // Editing keeps the unchanged file by ref and adds a new one with its contents.
+  const edited = await call("PUT", `/api/records/${record.id}`, {
+    cookie: adminCookie,
+    body: { note: "edited", updatedAt: record.updatedAt, attachments: [{ name: "b.pdf", data: pdf2 }, { ...listed.attachments[0] }] },
+  });
+  assert.equal(edited.status, 200);
+  assert.deepEqual(edited.json.record.attachments, [{ name: "b.pdf", data: pdf2 }, { name: "a.pdf", data: pdf }]);
+  assert.equal(edited.json.archiveEntry.old.attachments[0].data, "", "archive snapshots carry no file contents");
+
+  const archived = await call("GET", "/api/archive", { cookie: adminCookie });
+  const snapshot = archived.json.archive.find((a) => a.id === edited.json.archiveEntry.id);
+  assert.deepEqual(snapshot.old.attachments, [{ name: "a.pdf", data: "", size: Buffer.from("%PDF-1.4 api test").length, ref: 0 }]);
+
+  const staleRef = await call("PUT", `/api/records/${record.id}`, { cookie: adminCookie, body: { attachments: [{ name: "x.pdf", ref: 4 }] } });
+  assert.equal(staleRef.status, 409, "a ref to a file the record no longer has is rejected");
+  const noContent = await call("PUT", `/api/records/${record.id}`, { cookie: adminCookie, body: { attachments: [{ name: "x.pdf", data: "" }] } });
+  assert.equal(noContent.status, 400, "a file needs either contents or a ref");
+  const svgByRef = await call("PUT", `/api/records/${record.id}`, {
+    cookie: adminCookie,
+    body: { attachments: [{ name: "x.svg", data: `data:image/svg+xml;base64,${Buffer.from("<svg/>").toString("base64")}` }] },
+  });
+  assert.equal(svgByRef.status, 400, "new contents are still checked");
+});
+
 test("database: import/clear need a super admin and the password, checked on the server", async () => {
   const notSuper = await call("POST", "/api/database/clear", { cookie: testUserCookie, body: { password: "ApiTest1234" } });
   assert.equal(notSuper.status, 403);

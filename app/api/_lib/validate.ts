@@ -67,14 +67,29 @@ const MAX_ATTACHMENTS = 5;
 // içi açar (app/lib/attachments.ts), bu sunucu kontrolü ikinci katmandır.
 // Office türleri (…openxmlformats…) "xml" içerir ama pasiftir, eşleşmemeli.
 const ACTIVE_CONTENT_MIME = /^\s*(text\/html|(text|application)\/xml|(text|application)\/(x-)?(java|ecma)script|application\/x-shockwave-flash|[\w.-]+\/[\w.-]*\+xml)\s*$/i;
+const attachmentDataSchema = z
+  .string()
+  .max(MAX_ATTACHMENT_BASE64_LENGTH, "Dosya çok büyük (en fazla ~6MB)")
+  .refine((v) => v.startsWith("data:"), "Geçersiz dosya verisi")
+  .refine((v) => !ACTIVE_CONTENT_MIME.test(/^data:([^;,]*)/i.exec(v)?.[1] ?? ""), "Bu dosya türü güvenlik nedeniyle eklenemez (SVG/HTML/XML/JS)");
 const attachmentSchema = z.object({
   name: z.string().max(255),
-  data: z
-    .string()
-    .max(MAX_ATTACHMENT_BASE64_LENGTH, "Dosya çok büyük (en fazla ~6MB)")
-    .refine((v) => v.startsWith("data:"), "Geçersiz dosya verisi")
-    .refine((v) => !ACTIVE_CONTENT_MIME.test(/^data:([^;,]*)/i.exec(v)?.[1] ?? ""), "Bu dosya türü güvenlik nedeniyle eklenemez (SVG/HTML/XML/JS)"),
+  data: attachmentDataSchema,
 });
+// Düzenlemede ek ya yeni içerikle (`data`) ya da kayıtta zaten duran bir eke
+// sırasıyla (`ref`, `data` boş) gelir: liste yanıtları içeriği göndermediği
+// için istemci değişmeyen eki yeniden yükleyemez (bkz. _lib/records.ts).
+const attachmentUpdateSchema = z
+  .object({
+    name: z.string().max(255),
+    data: z.string().optional().default(""),
+    ref: z.number().int().min(0).max(MAX_ATTACHMENTS - 1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.data && value.ref !== undefined) return;
+    const result = attachmentDataSchema.safeParse(value.data);
+    if (!result.success) for (const issue of result.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: ["data"] });
+  });
 const attachmentsSchema = z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional().default([]);
 
 // Gider detay tablosu (Excel/Sheets'ten yapıştırılan) — satır/hücre sayısı
@@ -140,7 +155,7 @@ export const recordUpdateSchema = z.object({
   tags: z.array(z.string().max(64)).max(20).optional(),
   link: linkSchema.optional(),
   cashAccount: z.string().max(200).optional(),
-  attachments: z.array(attachmentSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional(),
+  attachments: z.array(attachmentUpdateSchema).max(MAX_ATTACHMENTS, `En fazla ${MAX_ATTACHMENTS} dosya eklenebilir`).optional(),
   detailTable: detailTableSchema.optional(),
   detailTableLayout: detailTableLayoutSchema.optional(),
   // Optimistic-locking token: the updatedAt the client last saw. If it

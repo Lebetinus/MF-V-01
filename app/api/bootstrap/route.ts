@@ -1,10 +1,10 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { archive, noteColumns, preparedReports, records, settings, users } from "../../../db/schema";
+import { noteColumns, preparedReports, records, settings, users } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds, accessibleCashAccountNames } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { archivedKasaName, toClientArchiveItem } from "../_lib/archive";
+import { toListRecord } from "../_lib/records";
 import { listClientNotes } from "../_lib/notes";
 import { RECORD_KINDS } from "../_lib/types";
 
@@ -34,13 +34,15 @@ function scopeRecordsToAccessibleKasas<T extends { cashAccountId: number | null 
   return rows.filter((row) => row.cashAccountId === null || allowed.has(row.cashAccountId));
 }
 
-// Archive entries and prepared reports only carry the kasa's free-text name
-// (jsonb snapshot / cashAccount column), not a cashAccountId — see
-// accessibleCashAccountNames and archivedKasaName.
+// Prepared reports only carry the kasa's free-text name (cashAccount column),
+// not a cashAccountId — see accessibleCashAccountNames.
 
 // Returns everything the client needs right after login in one round trip,
 // scoped to what the signed-in user is actually allowed to see: unpermitted
 // collections come back empty rather than relying on the client to hide them.
+// Kept small on purpose: the archive is not included (the Arşiv page loads
+// it from /api/archive when opened) and records carry only attachment names
+// and sizes, not their base64 contents.
 export const GET = withErrorHandling(async (request: Request) => {
   const session = await requireSession(request);
   if ("response" in session) return session.response;
@@ -49,16 +51,14 @@ export const GET = withErrorHandling(async (request: Request) => {
   const allowedKinds = user.isAdmin ? RECORD_KINDS : RECORD_KINDS.filter((kind) => user.permissions.includes(kind));
   const canNotes = user.isAdmin || user.permissions.includes("notes");
   const canReports = user.isAdmin || user.permissions.includes("reportBuilder");
-  const canArchive = user.isAdmin || user.permissions.includes("archive");
 
   const db = getDb();
-  const [accessibleIds, accessibleNames, recordRows, archiveRows, noteRows, reportRows, settingsRows, userRows, noteColumnRows] = await Promise.all([
+  const [accessibleIds, accessibleNames, recordRows, noteRows, reportRows, settingsRows, userRows, noteColumnRows] = await Promise.all([
     accessibleCashAccountIds(user, db),
     accessibleCashAccountNames(user, db),
     allowedKinds.length
       ? db.select().from(records).where(inArray(records.kind, allowedKinds)).orderBy(desc(records.date), desc(records.id))
       : Promise.resolve([]),
-    canArchive ? db.select().from(archive).orderBy(desc(archive.at), desc(archive.id)) : Promise.resolve([]),
     canNotes ? listClientNotes(user.id, db) : Promise.resolve([]),
     canReports ? db.select().from(preparedReports).orderBy(desc(preparedReports.createdAt)) : Promise.resolve([]),
     db.select().from(settings).where(eq(settings.id, SETTINGS_ID)).limit(1),
@@ -70,19 +70,12 @@ export const GET = withErrorHandling(async (request: Request) => {
   ]);
 
   const allowedNames = accessibleNames === null ? null : new Set(accessibleNames);
-  const scopedArchive = allowedNames === null
-    ? archiveRows
-    : archiveRows.filter((row) => {
-        const name = archivedKasaName(row.oldRecord as { kind: string; source: string; cashAccount: string });
-        return !name || allowedNames.has(name);
-      });
   const scopedReports = allowedNames === null
     ? reportRows
     : reportRows.filter((row) => !row.cashAccount || allowedNames.has(row.cashAccount));
 
   return json({
-    records: scopeRecordsToAccessibleKasas(recordRows, accessibleIds),
-    archive: scopedArchive.map(toClientArchiveItem),
+    records: scopeRecordsToAccessibleKasas(recordRows, accessibleIds).map(toListRecord),
     notes: noteRows,
     noteColumns: noteColumnRows.map((c) => ({ id: c.id, key: c.key, label: c.label, color: c.color })),
     preparedReports: scopedReports,

@@ -4,7 +4,7 @@ import { archive, records } from "../../../../db/schema";
 import { requireSession } from "../../_lib/auth";
 import { json, withErrorHandling } from "../../_lib/http";
 import { canWriteCashAccount } from "../../_lib/cash-access";
-import { ensureCashAccountLink } from "../../_lib/records";
+import { ensureCashAccountLink, resolveAttachmentUpdate } from "../../_lib/records";
 import type { Kind } from "../../_lib/types";
 import { toClientArchiveItem } from "../../_lib/archive";
 import { parseBody, recordUpdateSchema } from "../../_lib/validate";
@@ -75,6 +75,10 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   // Hiçbir gelir/gider kasadan kopuk olamaz.
   if (!cashAccount?.trim()) return json({ error: "Gelir/gider bir kasaya bağlı olmalıdır" }, { status: 400 });
 
+  // Değişmeyen ekler `{ name, ref }` olarak gelir; içerikleri kayıttaki ekten alınır.
+  const attachments = payload.attachments ? resolveAttachmentUpdate(payload.attachments, old.attachments) : old.attachments;
+  if (!attachments) return json({ error: "Kaydın belgeleri siz düzenlerken değişti. Lütfen sayfayı yenileyip tekrar deneyin." }, { status: 409 });
+
   let result;
   try {
   result = await db.transaction(async (tx) => {
@@ -97,7 +101,7 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
         link: payload.link ?? old.link,
         cashAccount,
         cashAccountId: link.cashAccountId,
-        attachments: payload.attachments ?? old.attachments,
+        attachments,
         detailTable: payload.detailTable ?? old.detailTable,
         detailTableLayout: payload.detailTableLayout ?? old.detailTableLayout,
         updatedAt: new Date(),

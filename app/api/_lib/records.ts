@@ -5,6 +5,45 @@ import { cashAccounts, kasaSections } from "../../../db/schema";
 import { canAccessCashAccount, canCreateCashAccounts, canWriteCashAccount, grantCashAccountAccess } from "./cash-access";
 import type { SessionUser } from "./auth";
 
+type StoredAttachment = { name: string; data: string };
+
+// Liste yanıtları ekin base64 içeriğini taşımaz (canlıda bootstrap'ın ~%90'ı buydu): yalnız adı, boyutu ve
+// kayıttaki sırası gider. İçerik GET /api/records/:id/attachments/:index ile tek tek indirilir.
+export function attachmentSummaries(attachments: unknown): { name: string; data: ""; size: number; ref: number }[] {
+  if (!Array.isArray(attachments)) return [];
+  return (attachments as StoredAttachment[]).map((a, ref) => {
+    const data = typeof a?.data === "string" ? a.data : "";
+    const comma = data.indexOf(",");
+    const body = comma >= 0 ? data.slice(comma + 1) : data;
+    const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
+    return { name: String(a?.name ?? ""), data: "", size: Math.max(0, Math.floor((body.length * 3) / 4) - padding), ref };
+  });
+}
+
+export function toListRecord<T extends { attachments: unknown }>(row: T): Omit<T, "attachments"> & { attachments: ReturnType<typeof attachmentSummaries> } {
+  return { ...row, attachments: attachmentSummaries(row.attachments) };
+}
+
+// PUT ile gelen ek listesini saklanacak hâle getirir: içeriği olan ek olduğu gibi, `{ name, ref }` olarak gelen
+// (değişmemiş) ek kayıttaki `ref`. ekten alınır. Bulunamayan bir ref (kayıt bu arada değişti) null döndürür.
+export function resolveAttachmentUpdate(
+  incoming: { name: string; data: string; ref?: number }[],
+  stored: unknown,
+): StoredAttachment[] | null {
+  const current = Array.isArray(stored) ? (stored as StoredAttachment[]) : [];
+  const resolved: StoredAttachment[] = [];
+  for (const item of incoming) {
+    if (item.data) {
+      resolved.push({ name: item.name, data: item.data });
+      continue;
+    }
+    const kept = item.ref === undefined ? undefined : current[item.ref];
+    if (!kept) return null;
+    resolved.push({ name: kept.name, data: kept.data });
+  }
+  return resolved;
+}
+
 export function fallbackKasaNameFor(kind: string): string {
   if (kind === "income") return "Diğer";
   if (kind === "expense") return "Diğer Giderler";

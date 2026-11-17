@@ -1,4 +1,5 @@
 import type { archive } from "../../../db/schema";
+import { attachmentSummaries } from "./records";
 
 // The client's ArchiveItem shape (action/at/user/old) predates the DB schema
 // and is used throughout app/page.tsx — translate DB rows to it here instead
@@ -9,9 +10,17 @@ export function toClientArchiveItem(row: typeof archive.$inferSelect) {
     action: row.action,
     at: row.at instanceof Date ? row.at.toISOString() : row.at,
     user: row.userName,
-    old: row.oldRecord,
+    // Arşiv görüntüsündeki eklerin içeriği gönderilmez (Arşiv sayfası ekleri göstermez; canlıda arşiv yanıtının
+    // ~%90'ı buydu) — yalnız adları kalır.
+    old: withoutAttachmentData(row.oldRecord),
     reason: row.reason,
   };
+}
+
+function withoutAttachmentData(oldRecord: unknown): unknown {
+  if (!oldRecord || typeof oldRecord !== "object") return oldRecord;
+  const snapshot = oldRecord as { attachments?: unknown };
+  return { ...snapshot, attachments: attachmentSummaries(snapshot.attachments) };
 }
 
 // Arşivdeki bir anlık görüntünün (archive.old_record) kasa adı. 0050 göçünden

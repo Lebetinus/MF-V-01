@@ -111,9 +111,13 @@ export function Archive({
   notes,
   preparedReports,
   onUnarchiveNote,
+  loading = false,
 }: {
   language: Language;
   rows: ArchiveItem[];
+  // Kasa arşivi sayfa açılınca /api/archive'den yüklenir (bootstrap'ta gelmez); ilk yanıt gelene kadar
+  // "0 kayıt" yerine "Yükleniyor…" yazılır.
+  loading?: boolean;
   cashAccounts?: CashAccountSummary[];
   notes: FinanceNote[];
   preparedReports: PreparedReport[];
@@ -223,7 +227,7 @@ export function Archive({
       <details className="archiveAccordion" open>
         <summary>
           <span><b>▣</b><strong>{tx(language, "Kasa Arşivi", "Cash Archive", "Arşîva Qase")}</strong></span>
-          <em>{rows.length} {tx(language, "kayıt", "records", "qeyd")}</em>
+          <em>{loading ? tx(language, "Yükleniyor…", "Loading…", "Tê barkirin…") : `${rows.length} ${tx(language, "kayıt", "records", "qeyd")}`}</em>
         </summary>
         <div className="archiveAccordionBody">
           <p className="archiveDescription">{tx(language, "Düzenlenen veya silinen kasa ve mali kayıtların önceki halleri", "Previous versions of edited or deleted cash and finance records", "Guhertoyên berê yên qeydên qase û darayî")}</p>

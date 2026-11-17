@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { tx } from "../../lib/i18n";
-import { openAttachment } from "../../lib/attachments";
-import type { Language } from "../../lib/types";
+import { loadRecordAttachment, openRecordAttachment } from "../../lib/attachments";
+import type { Language, RecordAttachment } from "../../lib/types";
 
 // Belgeler hücresi: üzerine gelince belge özeti tablo kutusunun dışında (portal) görünür; böylece kaydırma alanında kesilmez.
 // Belge adını kısaltır, uzantıyı korur: "çok-uzun-belge-adı.pdf" → "çok-uzun-be….pdf"
@@ -15,7 +15,7 @@ export function shortDocName(name: string, max = 14): string {
   return `${name.slice(0, Math.max(4, max - ext.length - 1))}…${ext}`;
 }
 
-export function DocCell({ language, docs, tableRows, onOpen, onOpenDetail }: { language: Language; docs: { name: string; data: string }[]; tableRows: number; onOpen: () => void; onOpenDetail: () => void }) {
+export function DocCell({ language, recordId, docs, tableRows, onOpen, onOpenDetail }: { language: Language; recordId: number; docs: RecordAttachment[]; tableRows: number; onOpen: () => void; onOpenDetail: () => void }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [excelView, setExcelView] = useState<{ name: string; data: string } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,14 +34,15 @@ export function DocCell({ language, docs, tableRows, onOpen, onOpenDetail }: { l
     setPos({ x: Math.min(rect.left, window.innerWidth - 340), y: rect.bottom + 2 });
   };
   // Excel: tablo olarak açılır; PDF/resim yeni sekmede, diğerleri indirilir.
-  function openDoc(doc: { name: string; data: string }) {
+  // Liste ekin içeriğini taşımaz: tıklanınca önce tek istekle indirilir (bkz. lib/attachments).
+  async function openDoc(doc: RecordAttachment, index: number) {
     setPos(null);
-    if (/\.(xlsx|xlsm)$/i.test(doc.name)) {
-      setExcelView(doc);
-      return;
-    }
     try {
-      openAttachment(doc);
+      if (/\.(xlsx|xlsm)$/i.test(doc.name)) {
+        setExcelView(await loadRecordAttachment(recordId, doc, index));
+        return;
+      }
+      await openRecordAttachment(recordId, doc, index);
     } catch {
       onOpen();
     }
@@ -67,9 +68,9 @@ export function DocCell({ language, docs, tableRows, onOpen, onOpenDetail }: { l
             <ul>
               {docs.map((d, i) => (
                 <li key={`${d.name}-${i}`}>
-                  <button type="button" className="docItem" title={tx(language, "Açmak için tıklayın", "Click to open", "Ji bo vekirinê bitikîne")} onClick={() => openDoc(d)}>
+                  <button type="button" className="docItem" title={tx(language, "Açmak için tıklayın", "Click to open", "Ji bo vekirinê bitikîne")} onClick={() => void openDoc(d, i)}>
                     📄 {d.name}
-                    <small> · {Math.max(1, Math.round((d.data.length * 3) / 4 / 1024))} KB</small>
+                    <small> · {Math.max(1, Math.round((d.size ?? (d.data.length * 3) / 4) / 1024))} KB</small>
                   </button>
                 </li>
               ))}

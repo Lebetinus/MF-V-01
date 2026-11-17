@@ -83,6 +83,8 @@ export default function Home() {
     setDataReady(false);
   }
   const [archive, setArchive] = useState<ArchiveItem[]>([]);
+  // Arşiv bootstrap'ta gelmez (canlıda yanıtın en büyük parçasıydı): Arşiv sayfası açılınca yüklenir.
+  const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [notes, setNotes] = useState<FinanceNote[]>([]);
   const [noteColumns, setNoteColumns] = useState<NoteColumn[]>([]);
   const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
@@ -268,12 +270,6 @@ export default function Home() {
         const data = await response.json();
         setRecords((data.records ?? []).map(normalizeRecord));
         markLoaded("records");
-        setArchive(
-          (data.archive ?? []).map((x: ArchiveItem) => ({
-            ...x,
-            old: normalizeRecord(x.old),
-          })),
-        );
         setNotes((data.notes ?? []).map((note: FinanceNote | string, index: number) =>
           typeof note === "string"
             ? { id: Date.now() + index, title: "Mali Not", content: note, status: "important" as NoteStatus, relation: "none" as NoteRelation, relationDetail: "", assignedUserIds: [], isArchived: false, archivedAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
@@ -413,6 +409,7 @@ export default function Home() {
     sessionExpiredShown.current = true;
     lastSig.current = {};
     lastEtag.current = {};
+    resetArchive();
     setProfileOpen(false);
     setSignedIn(false);
     resetLoaded();
@@ -483,7 +480,28 @@ export default function Home() {
     if (data && Array.isArray(data.archive)) {
       setArchive((data.archive as ArchiveItem[]).map((x) => ({ ...x, old: normalizeRecord(x.old) })));
     }
+    setArchiveLoaded(true);
   }
+  // Oturum kapanınca arşiv unutulur: sonraki girişte (belki başka kullanıcı) Arşiv sayfası yeniden yükler.
+  function resetArchive() {
+    delete lastSig.current.archive;
+    delete lastEtag.current.archive;
+    setArchive([]);
+    setArchiveLoaded(false);
+  }
+  // Arka plan döngüsü arşivi yalnız Arşiv sayfası açıkken yeniler; döngü oturum boyunca tek kez kurulduğu için
+  // açık sayfa bir ref üzerinden okunur.
+  const pageRef = useRef(page);
+  useEffect(() => {
+    pageRef.current = page;
+  }, [page]);
+  useEffect(() => {
+    if (!signedIn || page !== "archive") return;
+    (async () => {
+      await refreshArchive();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- yalnız Arşiv sayfası açılınca çalışır; refreshArchive her render'da yeniden oluşur
+  }, [signedIn, page]);
   // Başka bir kullanıcının yaptığı değişikliklerin manuel "yenile" olmadan
   // kendiliğinden görünmesi için: oturum açıkken ana veriler düzenli
   // aralıklarla arka planda yeniden çekilir. Zaten mevcut olan
@@ -513,7 +531,7 @@ export default function Home() {
           await refreshSections();
           await refreshNoteColumns();
           await refreshExchangeRates();
-          await refreshArchive();
+          if (pageRef.current === "archive") await refreshArchive();
         }
         tick += 1;
       } finally {
@@ -728,6 +746,7 @@ export default function Home() {
       window.location.reload();
       return;
     }
+    resetArchive();
     setProfileOpen(false);
     setSignedIn(false);
     resetLoaded();
@@ -1103,7 +1122,7 @@ export default function Home() {
           {page === "comments" && <Comments language={language} records={records} onRead={refreshUnreadCommentsCount} />}
           {page === "activity" && <Activity language={language} />}
           {page === "archive" && (
-            <Archive language={language} rows={archive} cashAccounts={contextCashAccounts} notes={notes} preparedReports={preparedReports} onUnarchiveNote={(id) => archiveNote(id, false)} />
+            <Archive language={language} rows={archive} loading={!archiveLoaded} cashAccounts={contextCashAccounts} notes={notes} preparedReports={preparedReports} onUnarchiveNote={(id) => archiveNote(id, false)} />
           )}
           {page === "users" && (
             <Users

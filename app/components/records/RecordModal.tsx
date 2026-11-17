@@ -5,9 +5,9 @@ import { createPortal } from "react-dom";
 import { ConfirmModal } from "../shared";
 import { noWorkspaceLabel, workspaceKeyOf, workspaceOptions } from "../KasaManage";
 import { tx, localizeData, noteRelationLabel } from "../../lib/i18n";
-import { openAttachment } from "../../lib/attachments";
+import { loadRecordAttachment, openAttachment } from "../../lib/attachments";
 import { money, normalizeRecord } from "../../lib/finance";
-import type { CashAccountSummary, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordItem } from "../../lib/types";
+import type { CashAccountSummary, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordAttachment, RecordItem } from "../../lib/types";
 import { notify } from "../../lib/notify";
 import { DETAIL_MAX_CELL, DETAIL_MAX_COLS, DETAIL_MAX_ROWS, DetailTableEditor, parseClipboardTable } from "./detailTable";
 import { SuggestInput, TagsInput } from "./inputs";
@@ -166,7 +166,22 @@ export function RecordModal({
   // "İndir" — her dosya türü için, bu uygulamadaki "Excel'e Çıkar" ile aynı,
   // kanıtlanmış yöntem: download özellikli gizli bir <a>. target="_blank"
   // kullanılmıyor; bu yüzden hiçbir popup/engelleme sorunu yaşanmıyor.
-  function downloadAttachment(attachment: { name: string; data: string }) {
+  // Kayıttan gelen ekin içeriği listede yoktur (`data` boş): önce indirilir. Yeni eklenen dosya zaten formdadır.
+  async function resolveAttachment(attachment: RecordAttachment, index: number) {
+    try {
+      return await loadRecordAttachment(initial?.id, attachment, index);
+    } catch {
+      notify(tx(language, "Belge açılamadı. Lütfen tekrar deneyin.", "The document could not be opened. Please try again.", "Belge nehat vekirin. Ji kerema xwe dîsa biceribîne."));
+      return null;
+    }
+  }
+  async function showExcelAttachment(attachment: RecordAttachment, index: number) {
+    const loaded = await resolveAttachment(attachment, index);
+    if (loaded) setExcelView(loaded);
+  }
+  async function downloadAttachment(stored: RecordAttachment, index: number) {
+    const attachment = await resolveAttachment(stored, index);
+    if (!attachment) return;
     try {
       openAttachment(attachment, { forceDownload: true });
     } catch {
@@ -454,14 +469,14 @@ export function RecordModal({
                   <li key={`${att.name}-${index}`}>
                     <small className="attachmentFieldName">{att.name}</small>
                     {/\.(xlsx|xlsm)$/i.test(att.name) && (
-                      <button type="button" className="light compact" onClick={() => setExcelView(att)}>
+                      <button type="button" className="light compact" onClick={() => void showExcelAttachment(att, index)}>
                         ▦ {tx(language, "Excel Detayı", "Excel Detail", "Hûrguliyên Excelê")}
                       </button>
                     )}
                     <button
                       type="button"
                       className="light compact"
-                      onClick={() => downloadAttachment(att)}
+                      onClick={() => void downloadAttachment(att, index)}
                     >
                       ⇩ {tx(language, "İndir", "Download", "Daxîne")}
                     </button>

@@ -4,7 +4,7 @@ import { records } from "../../../db/schema";
 import { requireSession } from "../_lib/auth";
 import { accessibleCashAccountIds } from "../_lib/cash-access";
 import { json, withErrorHandling } from "../_lib/http";
-import { ensureCashAccountLink, fallbackKasaNameFor } from "../_lib/records";
+import { ensureCashAccountLink, fallbackKasaNameFor, toListRecord } from "../_lib/records";
 import { RECORD_KINDS, type Kind } from "../_lib/types";
 import { parseBody, recordInputSchema } from "../_lib/validate";
 import { formatAmount, logActivity } from "../_lib/activity";
@@ -38,12 +38,12 @@ export const GET = withErrorHandling(async (request: Request) => {
     if (!RECORD_KINDS.includes(kind as Kind)) return json({ error: "Geçersiz kayıt türü" }, { status: 400 });
     if (!allowed.includes(kind as Kind)) return json({ error: "Forbidden" }, { status: 403 });
     const rows = await db.select().from(records).where(eq(records.kind, kind)).orderBy(desc(records.date), desc(records.id));
-    return json({ records: scopeToAccessibleKasas(rows, accessibleIds) });
+    return json({ records: scopeToAccessibleKasas(rows, accessibleIds).map(toListRecord) });
   }
 
   if (!allowed.length) return json({ records: [] });
   const rows = await db.select().from(records).where(inArray(records.kind, allowed)).orderBy(desc(records.date), desc(records.id));
-  return json({ records: scopeToAccessibleKasas(rows, accessibleIds) });
+  return json({ records: scopeToAccessibleKasas(rows, accessibleIds).map(toListRecord) });
 });
 
 export const POST = withErrorHandling(async (request: Request) => {

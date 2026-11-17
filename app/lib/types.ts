@@ -21,7 +21,10 @@ export type Page =
   | "users"
   | "settings"
   | "guide";
-export type RecordAttachment = { name: string; data: string };
+// Liste yanıtlarında (bootstrap, /api/records, arşiv) ekin içeriği gönderilmez: `data` boş gelir, `size` bayt
+// boyutunu, `ref` kayıttaki sırasını verir; içerik açılınca GET /api/records/:id/attachments/:ref ile indirilir.
+// Düzenlemede değişmeyen ek `{ name, ref }` olarak geri gönderilir, sunucu içeriği kayıttaki ekten alır.
+export type RecordAttachment = { name: string; data: string; size?: number; ref?: number };
 export type RecordItem = {
   id: number;
   kind: Kind;

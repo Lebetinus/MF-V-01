@@ -57,3 +57,32 @@ export function openAttachment(attachment: { name: string; data: string }, optio
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+// Kayıt listeleri ekin içeriğini taşımaz (`data` boş, `ref` = kayıttaki sırası): içerik gerektiğinde tek
+// istekle indirilir. Formda yeni eklenmiş ya da zaten indirilmiş ek olduğu gibi döner.
+export async function loadRecordAttachment(
+  recordId: number | undefined,
+  attachment: { name: string; data: string; ref?: number },
+  index: number,
+): Promise<{ name: string; data: string }> {
+  if (attachment.data) return attachment;
+  if (recordId === undefined) throw new Error("Belge içeriği bulunamadı");
+  const response = await fetch(`/api/records/${recordId}/attachments/${attachment.ref ?? index}`);
+  if (!response.ok) throw new Error(`Belge indirilemedi (${response.status})`);
+  const body = (await response.json()) as { attachment?: { name: string; data: string } };
+  if (!body.attachment?.data) throw new Error("Belge içeriği bulunamadı");
+  return body.attachment;
+}
+
+// Kayıt ekini indirip açar. İndirme uzun sürerse tarayıcı tıklama iznini düşürür ve yeni sekme açılışı
+// engellenir; o durumda dosya sekme yerine indirilir.
+export async function openRecordAttachment(
+  recordId: number | undefined,
+  attachment: { name: string; data: string; ref?: number },
+  index: number,
+  options: { forceDownload?: boolean } = {},
+): Promise<void> {
+  const started = Date.now();
+  const loaded = await loadRecordAttachment(recordId, attachment, index);
+  openAttachment(loaded, { forceDownload: options.forceDownload || Date.now() - started > 4000 });
+}

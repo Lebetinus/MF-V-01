@@ -3,7 +3,9 @@
 import { useEffect } from "react";
 import { tx, localizeData } from "../../lib/i18n";
 import { date, money } from "../../lib/finance";
-import type { Language, RecordItem } from "../../lib/types";
+import { openRecordAttachment } from "../../lib/attachments";
+import { notify } from "../../lib/notify";
+import type { Language, RecordAttachment, RecordItem } from "../../lib/types";
 
 // Gelir/Gider görünüm kartı: kaydın içeriği düzenleme açılmadan sağ üstte küçük bir kartta okunur.
 export function RecordViewPanel({ language, record: x, canEdit, inline, onClose, onEdit, onMessages, onOpenTable }: { inline?: boolean; language: Language; record: RecordItem; canEdit: boolean; onClose: () => void; onEdit: () => void; onMessages: () => void; onOpenTable: () => void }) {
@@ -12,6 +14,14 @@ export function RecordViewPanel({ language, record: x, canEdit, inline, onClose,
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // Liste ekin içeriğini taşımaz: tıklanınca indirilir, sonra dosya olarak kaydedilir.
+  async function downloadDoc(doc: RecordAttachment, index: number) {
+    try {
+      await openRecordAttachment(x.id, doc, index, { forceDownload: true });
+    } catch {
+      notify(tx(language, "Belge açılamadı. Lütfen tekrar deneyin.", "The document could not be opened. Please try again.", "Belge nehat vekirin. Ji kerema xwe dîsa biceribîne."));
+    }
+  }
   const kindLabel = x.kind === "income" ? tx(language, "Gelir", "Income", "Dahat") : tx(language, "Gider", "Expense", "Mesref");
   const tableRows = (x.detailTable?.length ?? 0) > 1 ? x.detailTable!.length - 1 : 0;
   const rows: [string, string][] = [
@@ -45,7 +55,7 @@ export function RecordViewPanel({ language, record: x, canEdit, inline, onClose,
             <b>{tx(language, "Belgeler", "Documents", "Belge")}</b>
             <div className="noteAttachments">
               {(x.attachments ?? []).map((doc, i) => (
-                <a key={`${doc.name}-${i}`} className="noteAttachmentChip" href={doc.data} download={doc.name} title={doc.name}>📎 <span>{doc.name}</span></a>
+                <button type="button" key={`${doc.name}-${i}`} className="noteAttachmentChip" onClick={() => void downloadDoc(doc, i)} title={doc.name}>📎 <span>{doc.name}</span></button>
               ))}
               {tableRows > 0 && (
                 <button type="button" className="noteAttachmentChip" onClick={onOpenTable}>▦ <span>{tx(language, "Gider detayı", "Expense details", "Hûrguliyên mesrefê")} ({tableRows})</span></button>

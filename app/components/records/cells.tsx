@@ -191,6 +191,7 @@ export function renderCell(
       return (
         <DocCell
           language={language}
+          recordId={x.id}
           docs={docs}
           tableRows={tableRows}
           onOpen={() => onEdit(x)}
