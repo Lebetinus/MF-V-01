@@ -271,6 +271,16 @@ function setupCalc(container: HTMLElement, report: (s: Stats | null) => void): (
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") calcClearAll();
   };
+  // Para tutarı olan hücrenin üzerine gelince imleç "+" olur (tıklayıp sürükleyerek toplama yapılabildiğini gösterir).
+  // Hücre içeriği yeniden çizilebildiği için her girişte yeniden bakılır.
+  const onOver = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const td = cellFrom(target);
+    if (!td) return;
+    const lines = [...td.querySelectorAll<HTMLElement>(".msLine")];
+    const texts = lines.length ? lines.map((l) => l.innerText) : [cellText(td)];
+    td.toggleAttribute("data-calc-money", texts.some((t) => parseCell(t) !== null && currencyOf(t) !== ""));
+  };
   const onOutside = (e: MouseEvent) => {
     const t = e.target as HTMLElement;
     const inAny = [...shared.containers.keys()].some((c) => c.contains(t));
@@ -278,12 +288,14 @@ function setupCalc(container: HTMLElement, report: (s: Stats | null) => void): (
   };
 
   container.addEventListener("mousedown", onDown);
+  container.addEventListener("mouseover", onOver);
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
   window.addEventListener("keydown", onKey);
   window.addEventListener("mousedown", onOutside);
   return () => {
     container.removeEventListener("mousedown", onDown);
+    container.removeEventListener("mouseover", onOver);
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
     window.removeEventListener("keydown", onKey);
