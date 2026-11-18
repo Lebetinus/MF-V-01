@@ -328,7 +328,18 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
     cashTransfers,
     draggedRowId,
     dragOverRowId,
+    setViewTarget,
   } = tableCtx;
+  // Satırın herhangi bir yerine tıklamak kaydın detay panelini açar (eskiden yalnız başlık yazısı açıyordu). Satırdaki
+  // düğmeler, bağlantılar, seçim kutusu ve sürükleme tutamacı kendi işini yapar; yazı seçilirken de panel açılmaz.
+  const openRow = (e: ReactMouseEvent<HTMLTableRowElement>, x: RecordItem) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea, label, [role='button'], .selectCell, .rowDragHandle")) return;
+    if (window.getSelection()?.toString()) return;
+    // Ctrl/Shift ile ya da sürükleyerek hücre seçilirken (tablo toplama çubuğu) kayıt açılmaz.
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.currentTarget.querySelector("td[data-calc-sel]")) return;
+    setViewTarget(x);
+  };
   // Borç simgesi sütunu yalnızca tabloda borç hareketi varsa görünür; kasa sayfasında çalışma alanı sütunu gereksizdir.
   const cols = columnOrder.filter((id) => (id !== "debt" || tableRows.some((r) => r.debtRole)) && (id !== "workspace" || !kasaSplitActive));
   const colsTotal = 38 + cols.reduce((t, id) => t + columnWidths[id], 0);
@@ -408,7 +419,8 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
               <tr
                 key={x.id}
                 data-row-id={x.id}
-                className={`${selectedIds.has(x.id) ? "rowSelected " : ""}${pendingTransfer ? "pendingTransferRow" : ""}${draggedRowId === x.id ? " rowDragging" : ""}${dragOverRowId === x.id && draggedRowId !== null && draggedRowId !== x.id ? " rowDragOver" : ""}`}
+                onClick={(e) => openRow(e, x)}
+                className={`recordRow ${selectedIds.has(x.id) ? "rowSelected " : ""}${pendingTransfer ? "pendingTransferRow" : ""}${draggedRowId === x.id ? " rowDragging" : ""}${dragOverRowId === x.id && draggedRowId !== null && draggedRowId !== x.id ? " rowDragOver" : ""}`}
               >
                 <td className="selectCell">
                   <input type="checkbox" aria-label={tx(language, "Satırı seç", "Select row", "Rêzê hilbijêre")} checked={selectedIds.has(x.id)} onChange={(e) => toggleMany([x], e.target.checked)} />

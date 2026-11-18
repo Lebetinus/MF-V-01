@@ -4279,6 +4279,8 @@ td[data-calc-sel] { background: #dbeafe !important; outline: 1px solid #5b8def; 
 .selectCell { width: 38px; text-align: center; padding-left: 8px !important; padding-right: 4px !important; }
 .selectCell input { width: 16px; height: 16px; cursor: pointer; accent-color: #315fe8; }
 tr.rowSelected > td { background: #fff4d6; }
+/* Kayıt satırının tamamı tıklanabilir (detay paneli açılır). */
+tr.recordRow { cursor: pointer; }
 .selectionBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0; padding: 10px 14px; border: 1px solid #f0d9a0; background: #fff8e4; border-radius: 12px; }
 .selectionTotals { display: flex; gap: 12px; font-size: 12px; }
 .selectionTotals em { font-style: normal; font-weight: 600; }

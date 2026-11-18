@@ -248,7 +248,10 @@ function setupCalc(container: HTMLElement, report: (s: Stats | null) => void): (
     shared.anchor = { table, row, col };
     keepBase = null;
     dragging = true;
-    selectRange(table, row, col, row, col, null);
+    // Tek tıklama hücreyi seçili göstermez (kayıt satırına tıklamak kaydı açar; tek hücrenin toplamı da yoktur):
+    // önceki seçim temizlenir, yeni seçim fare başka bir hücreye sürüklenince başlar.
+    shared.selected.forEach((cell) => cell.removeAttribute("data-calc-sel"));
+    shared.selected.clear();
     document.body.classList.add("noSelectDragging");
     calcRefresh();
   };
@@ -256,6 +259,8 @@ function setupCalc(container: HTMLElement, report: (s: Stats | null) => void): (
     if (!dragging || !shared.anchor || shared.owner !== container) return;
     const td = cellFrom(document.elementFromPoint(e.clientX, e.clientY));
     if (!td || td.closest("table") !== shared.anchor.table) return;
+    const onAnchor = (td.parentElement as HTMLTableRowElement).rowIndex === shared.anchor.row && td.cellIndex === shared.anchor.col;
+    if (onAnchor && !keepBase && shared.selected.size === 0) return;
     selectRange(shared.anchor.table, shared.anchor.row, shared.anchor.col, (td.parentElement as HTMLTableRowElement).rowIndex, td.cellIndex, keepBase);
     calcRefresh();
   };
