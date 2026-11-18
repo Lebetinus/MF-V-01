@@ -164,10 +164,19 @@ export function KasaBoard({
   const receivable = kasaReceivableByCurrency(allRecords, k.name);
   const hasReceivable = Object.keys(receivable).length > 0;
   const shared = (account?.sharedWithUserIds?.length ?? 0) > 0;
-  const inUsd = Math.abs(sumBy(k.totalInByCurrency, exchangeRates));
-  const outUsd = Math.abs(sumBy(k.totalOutByCurrency, exchangeRates));
-  const sumIo = inUsd + outUsd;
-  const inPct = sumIo > 0 ? (inUsd / sumIo) * 100 : 0;
+  // Çubuk: kasaya giren paranın tamamı = %100; yeşil = kasada kalan (bakiye), kırmızı = harcanan. Eskiden gelir ile
+  // gider birbirine oranlanıyordu; bakiye sıfır olsa da çubuk yarı yeşil yarı kırmızı görünüyordu.
+  // Tek para birimli kasada (ör. yalnız SYP) kur gerekmez; doğrudan o birimle oranlanır. Karışıkta USD karşılığıyla.
+  const curs = new Set([...Object.keys(k.totalInByCurrency), ...Object.keys(k.totalOutByCurrency), ...Object.keys(k.totalByCurrency)]);
+  const amountOf = (by: Record<string, number>) => (curs.size === 1 ? Object.values(by).reduce((t, v) => t + v, 0) : sumBy(by, exchangeRates));
+  const inUsd = Math.abs(amountOf(k.totalInByCurrency));
+  const outUsd = Math.abs(amountOf(k.totalOutByCurrency));
+  const balUsd = amountOf(k.totalByCurrency);
+  const keptPct = inUsd > 0 ? Math.min(100, Math.max(0, (balUsd / inUsd) * 100)) : balUsd > 0.005 ? 100 : 0;
+  const spentPct = inUsd > 0 || outUsd > 0 || balUsd < -0.005 ? 100 - keptPct : 0;
+  const barTitle = spentPct + keptPct > 0
+    ? tx(language, `Kasada kalan %${Math.round(keptPct)} · Harcanan %${Math.round(spentPct)}`, `Remaining ${Math.round(keptPct)}% · Spent ${Math.round(spentPct)}%`, `Ma ${Math.round(keptPct)}% · Xerckirî ${Math.round(spentPct)}%`)
+    : undefined;
   const last = lastDate(k);
   const actions = actionsFor(k.name);
   // Kartın üzerine gelince açılan özet: oluşturucu, toplam/gider/sonuç ve son 3 ayın aylık dökümü.
@@ -202,9 +211,9 @@ export function KasaBoard({
         <span className="kbName">{localizeData(k.name, language)}</span>
         <span className="kbWs" style={{ color: w.color }}>◆ {w.name}</span>
         <strong className={`kbBal${negative ? " neg" : ""}`}><MoneyStack by={k.totalByCurrency} /></strong>
-        <span className="kbBar" aria-hidden="true">
-          <i className="in" style={{ width: `${inPct}%` }} />
-          <i className="out" style={{ width: `${sumIo > 0 ? 100 - inPct : 0}%` }} />
+        <span className="kbBar" aria-hidden="true" title={barTitle}>
+          <i className="in" style={{ width: `${keptPct}%` }} />
+          <i className="out" style={{ width: `${spentPct}%` }} />
         </span>
         <span className="kbIo">
           <span className="pos">↗ <MoneyStack by={k.totalInByCurrency} /></span>
