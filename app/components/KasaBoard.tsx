@@ -3,8 +3,8 @@
 import { MoneyStack } from "./MoneyStack";
 import { useMemo, useState } from "react";
 import { localizeData, tx } from "../lib/i18n";
-import { combineByCurrency, date, moneyBreakdown, toUsd } from "../lib/finance";
-import { isDebtLeg, kasaDebtByCurrency, kasaReceivableByCurrency } from "../lib/debts";
+import { date, moneyBreakdown, toUsd } from "../lib/finance";
+import { kasaDebtByCurrency, kasaReceivableByCurrency } from "../lib/debts";
 import type { CashAccountSummary, Language, RecordItem } from "../lib/types";
 import { NO_WORKSPACE } from "./KasaManage";
 
@@ -179,34 +179,8 @@ export function KasaBoard({
     : undefined;
   const last = lastDate(k);
   const actions = actionsFor(k.name);
-  // Kartın üzerine gelince açılan özet: oluşturucu, toplam/gider/sonuç ve son 3 ayın aylık dökümü.
-  const byMonth = new Map<string, { inc: RecordItem[]; exp: RecordItem[] }>();
-  for (const x of k.inc) { const m = x.date.slice(0, 7); byMonth.set(m, { inc: [...(byMonth.get(m)?.inc ?? []), x], exp: byMonth.get(m)?.exp ?? [] }); }
-  for (const x of k.exp) { const m = x.date.slice(0, 7); byMonth.set(m, { inc: byMonth.get(m)?.inc ?? [], exp: [...(byMonth.get(m)?.exp ?? []), x] }); }
-  const months = [...byMonth.entries()].sort((p, q2) => q2[0].localeCompare(p[0])).slice(0, 3).map(([month, r]) => ({
-    month,
-    // Gelir/gider: borç veren tarafın borç kayıtları (lent/collected) hariç; sonuç: bakiyedeki değişim (hepsi dahil).
-    inc: combineByCurrency([{ rows: r.inc.filter((x) => !isDebtLeg(x)) }]),
-    exp: combineByCurrency([{ rows: r.exp.filter((x) => !isDebtLeg(x)) }]),
-    res: combineByCurrency([{ rows: r.inc }, { rows: r.exp, sign: -1 }]),
-  }));
-  // Balon kartı örtüp tıklamayı engellemesin: sabit konumla kartın altına (yer yoksa üstüne) yerleşir.
-  const placeTip = (e: React.MouseEvent<HTMLElement>) => {
-    const card = e.currentTarget;
-    const tip = card.querySelector<HTMLElement>(":scope > .kbTip");
-    if (!tip) return;
-    requestAnimationFrame(() => {
-      const r = card.getBoundingClientRect();
-      // Balon genişliği kartın genişliğini referans alır.
-      tip.style.width = `${r.width}px`;
-      const h = tip.offsetHeight, wd = r.width;
-      const below = r.bottom + 8 + h <= window.innerHeight || r.top - 8 - h < 0;
-      tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - wd - 8))}px`;
-      tip.style.top = `${below ? r.bottom + 8 : r.top - 8 - h}px`;
-    });
-  };
   return (
-    <article key={k.name} className={`kbCard${negative ? " neg" : ""}`} style={{ borderTopColor: w.color }} onMouseEnter={placeTip}>
+    <article key={k.name} className={`kbCard${negative ? " neg" : ""}`} style={{ borderTopColor: w.color }}>
       <button type="button" className="kbOpen" onClick={() => onOpen(k.name)} aria-label={`${k.name} — ${tx(language, "kasayı aç", "open cash account", "qaseyê veke")}`}>
         <span className="kbName">{localizeData(k.name, language)}</span>
         <span className="kbWs" style={{ color: w.color }}>◆ {w.name}</span>
@@ -233,24 +207,6 @@ export function KasaBoard({
           </span>
         )}
       </button>
-      {menuFor !== k.name && (
-        <div className="kbTip" role="tooltip">
-          <div><small>{tx(language, "Kasa Oluşturucu", "Kasa Owner", "Vekera Qaseyê")}</small><strong>{account?.ownerName || tx(language, "Belirtilmedi", "Unassigned", "Nehatiye diyarkirin")}</strong></div>
-          <div><small>{tx(language, "Toplam Giriş", "Total In", "Têketina Giştî")}</small><strong className="pos"><MoneyStack by={k.totalInByCurrency} /></strong></div>
-          <div><small>{tx(language, "Gider", "Expense", "Mesref")}</small><strong className="neg"><MoneyStack by={k.totalOutByCurrency} /></strong></div>
-          <div><small>{tx(language, "Sonuç", "Result", "Encam")}</small><strong className={negative ? "neg" : ""}><MoneyStack by={k.totalByCurrency} /></strong></div>
-          {months.length > 0 && (
-            <table className="kbTipMonths">
-              <thead><tr><th>{tx(language, "Ay", "Month", "Meh")}</th><th>{tx(language, "Gelir", "Income", "Dahat")}</th><th>{tx(language, "Gider", "Expense", "Mesref")}</th><th>{tx(language, "Sonuç", "Result", "Encam")}</th></tr></thead>
-              <tbody>
-                {months.map((m) => (
-                  <tr key={m.month}><td>{m.month}</td><td className="pos">{moneyBreakdown(m.inc)}</td><td className="neg">{moneyBreakdown(m.exp)}</td><td>{moneyBreakdown(m.res)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
       {(actions.length > 0 || account) && (
         <div className="kbMenuWrap">
           <button type="button" className="kbMore" aria-haspopup="menu" aria-expanded={menuFor === k.name} aria-label={tx(language, "Kasa işlemleri", "Cash account actions", "Karên qaseyê")} onClick={() => setMenuFor(menuFor === k.name ? null : k.name)}>⋯</button>
