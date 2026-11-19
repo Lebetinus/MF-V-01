@@ -5,6 +5,10 @@ export const kbGroupLogo = "/kb-logo.png";
 
 export const monthNames = ["ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül", "ekim", "kasım", "aralık"];
 
+// Geçici olarak kapalı sayfalar: veriler yeni girildiği için istatistikler henüz anlamlı değil.
+// Tekrar açmak için listeden çıkarmak yeterli (menü, erişim ve açılış sayfası buna bakar).
+export const disabledPages: Page[] = ["dashboard", "analysis"];
+
 export const nav: { id: Page; label: Record<Language, string>; icon: string }[] = [
   {
     id: "dashboard",

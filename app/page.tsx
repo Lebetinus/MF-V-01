@@ -18,7 +18,7 @@ import { Comments } from "./components/Comments";
 import { Users } from "./components/Users";
 import { Settings } from "./components/Settings";
 import { Guide } from "./components/Guide";
-import { tx, localizedProfileName, localizedRole, kbGroupLogo, nav } from "./lib/i18n";
+import { tx, localizedProfileName, localizedRole, kbGroupLogo, nav, disabledPages } from "./lib/i18n";
 import { normalizeRecord } from "./lib/finance";
 import { defaultTypography, typographyVariables } from "./lib/typography";
 import { adminOnlyPages } from "./lib/types";
@@ -47,7 +47,7 @@ import type {
 export default function Home() {
   useDraggableModals();
   const [signedIn, setSignedIn] = useState(false);
-  const [page, setPage] = useState<Page>("dashboard");
+  const [page, setPage] = useState<Page>("cash");
   const [pageHistory, setPageHistory] = useState<Page[]>([]);
   const [reportTab, setReportTab] = useState<"prepare" | "upload">("prepare");
   // Ana Sayfa kartlarından Analiz sayfasına geçerken hangi sekme ve dönemin açılacağı.
@@ -345,6 +345,7 @@ export default function Home() {
   }, []);
 
   function canAccess(pageId: Page) {
+    if (disabledPages.includes(pageId)) return false;
     if (profile.isAdmin) return true;
     if (pageId === "dashboard") return true;
     // Every signed-in user may open Kullanıcılar to view/edit their own
@@ -364,7 +365,9 @@ export default function Home() {
 
   // Erişimi olmayan bir sayfada kalınmaz (ör. yetkisi değişen kullanıcı). Render sırasında yapılır:
   // yetkisiz sayfa bir kare bile çizilmez, verisini de istemez.
-  if (signedIn && page !== "dashboard" && !canAccess(page)) setPage("dashboard");
+  // Açılış sayfası: Kasa Kontrol Merkezi; izni yoksa menüdeki ilk erişilebilir sayfa (Kullanım Kılavuzu herkese açık).
+  const homePage: Page = canAccess("cash") ? "cash" : (nav.find((n) => !["income", "expense", "users"].includes(n.id) && canAccess(n.id))?.id ?? "guide");
+  if (signedIn && page !== homePage && !canAccess(page)) setPage(homePage);
 
   async function saveRecord(next: Omit<RecordItem, "id">, id?: number) {
     markWrite();
