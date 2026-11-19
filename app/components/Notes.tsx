@@ -5,7 +5,9 @@ import { createPortal } from "react-dom";
 import { Title } from "./shared";
 import { tx, noteRelationLabel } from "../lib/i18n";
 import { openAttachment } from "../lib/attachments";
-import type { FinanceNote, Language, NoteColumn, NoteComment, NoteRelation, NoteStatus, RecordAttachment, UserAccount } from "../lib/types";
+import { emptySheet, isSheetNote, sheetText, trimSheet } from "../lib/sheet";
+import { NoteSheetEditor, NoteSheetPreview } from "./NoteSheet";
+import type { FinanceNote, Language, NoteColumn, NoteComment, NoteRelation, NoteSheet, NoteStatus, RecordAttachment, UserAccount } from "../lib/types";
 
 // Düzenleme penceresinden çıkan not: belgeler yeni eklenenler + kaldırılacak sıra numaraları olarak gider.
 export type NoteSave = FinanceNote & { addAttachments?: RecordAttachment[]; removeAttachmentIndexes?: number[] };
@@ -148,7 +150,7 @@ export function Notes({
     if (userFilter && !note.assignedUserIds.includes(Number(userFilter))) return false;
     if (relationFilter && note.relation !== relationFilter) return false;
     if (q) {
-      const hay = [note.title, note.content, note.relationDetail, ...(note.people ?? []), ...(note.assignedUserNames ?? [])].join(" ").toLocaleLowerCase("tr");
+      const hay = [note.title, note.content, sheetText(note.sheet), note.relationDetail, ...(note.people ?? []), ...(note.assignedUserNames ?? [])].join(" ").toLocaleLowerCase("tr");
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -243,7 +245,15 @@ export function Notes({
                   >
                     {isNew && <span className="noteNewBadge">{tx(language, "YENİ", "NEW", "NÛ")}</span>}
                     <div className="noteMeta"><small>{new Date(note.updatedAt).toLocaleDateString(language === "en" ? "en-GB" : "tr-TR")}</small>{note.relation !== "none" && <span className="noteRelation">↗ {noteRelationLabel(note.relation, language)}{note.relationDetail ? ` · ${note.relationDetail}` : ""}</span>}</div>
-                    <h3>{note.title}</h3><p>{note.content}</p>
+                    <h3>{isSheetNote(note) && <span className="noteSheetBadge" title={tx(language, "Tablo notu", "Sheet note", "Nîşeya tabloyê")}>▦</span>}{note.title}</h3>
+                    {isSheetNote(note) ? (
+                      <>
+                        <NoteSheetPreview language={language} sheet={note.sheet!} />
+                        {note.content && <p className="noteSheetCaption">{note.content}</p>}
+                      </>
+                    ) : (
+                      <p>{note.content}</p>
+                    )}
                     {note.attachmentNames && note.attachmentNames.length > 0 && (
                       <div className="noteAttachments">
                         {note.attachmentNames.map((name, index) => (
@@ -307,7 +317,7 @@ function NoteDetailPanel({ language, note, columns, onClose, onEdit, onMessages 
   const column = columns.find((c) => c.key === note.status);
   const locale = language === "en" ? "en-GB" : "tr-TR";
   return (
-    <aside className="noteDrawer" role="dialog" aria-label={note.title}>
+    <aside className={`noteDrawer${isSheetNote(note) ? " noteDrawerSheet" : ""}`} role="dialog" aria-label={note.title}>
       <header>
         <div>
           {column && <span className="noteDrawerStatus"><i style={{ background: column.color }} />{column.label}</span>}
@@ -320,7 +330,8 @@ function NoteDetailPanel({ language, note, columns, onClose, onEdit, onMessages 
         {note.relation !== "none" && (
           <p className="noteDrawerRow"><b>{tx(language, "İlişkili bölüm", "Linked section", "Beşa girêdayî")}</b><span>↗ {noteRelationLabel(note.relation, language)}{note.relationDetail ? ` · ${note.relationDetail}` : ""}</span></p>
         )}
-        <div className="noteDrawerContent">{note.content}</div>
+        {isSheetNote(note) && <NoteSheetEditor language={language} sheet={note.sheet!} readOnly />}
+        {note.content && <div className="noteDrawerContent">{note.content}</div>}
         {note.attachmentNames && note.attachmentNames.length > 0 && (
           <div className="noteDrawerSection">
             <b>{tx(language, "Belgeler", "Documents", "Belge")}</b>
@@ -444,6 +455,11 @@ function NoteMessagesModal({ language, note, onClose }: { language: Language; no
 function NoteModal({ language, initialStatus, initialNote, initialRelation, initialRelationDetail, users, knownPeople, columns, onClose, onSave }: { language: Language; initialStatus: NoteStatus; initialNote?: FinanceNote; initialRelation?: NoteRelation; initialRelationDetail?: string; users: UserAccount[]; knownPeople: string[]; columns: NoteColumn[]; onClose: () => void; onSave: (note: NoteSave) => void }) {
   const [title, setTitle] = useState(initialNote?.title ?? "");
   const [content, setContent] = useState(initialNote?.content ?? "");
+  // Not biçimi yalnız yeni notta seçilir: düz not ya da Excel tarzı tablo.
+  const [format, setFormat] = useState<"text" | "sheet">(initialNote && isSheetNote(initialNote) ? "sheet" : "text");
+  const [sheet, setSheet] = useState<NoteSheet>(initialNote?.sheet ?? emptySheet());
+  const isSheet = format === "sheet";
+  const canSave = Boolean(title.trim()) && (isSheet || Boolean(content.trim()));
   const [status, setStatus] = useState<NoteStatus>(initialStatus);
   const [relation, setRelation] = useState<NoteRelation>(initialNote?.relation ?? initialRelation ?? "none");
   const [relationDetail, setRelationDetail] = useState(initialNote?.relationDetail ?? initialRelationDetail ?? "");
@@ -503,9 +519,27 @@ function NoteModal({ language, initialStatus, initialNote, initialRelation, init
       reader.readAsDataURL(file);
     }
   }
-  return <div className="overlay"><form className="modal noteModal" onSubmit={(event) => { event.preventDefault(); const now = new Date().toISOString(); if (title.trim() && content.trim()) onSave({ id: initialNote?.id ?? Date.now(), title: title.trim(), content: content.trim(), status, relation, relationDetail: relation === "none" ? "" : relationDetail.trim(), assignedUserIds, people: mergePeople(people, splitNames(personDraft)), link: link.trim(), assignedUserNames: users.filter((u) => assignedUserIds.includes(u.id)).map((u) => u.name), isArchived: initialNote?.isArchived ?? false, archivedAt: initialNote?.archivedAt ?? null, createdAt: initialNote?.createdAt ?? now, updatedAt: now, addAttachments: newFiles, removeAttachmentIndexes: removedIdx }); }}>
+  return <div className="overlay"><form className={`modal noteModal${isSheet ? " noteModalSheet" : ""}`} onSubmit={(event) => { event.preventDefault(); const now = new Date().toISOString(); if (canSave) onSave({ id: initialNote?.id ?? Date.now(), title: title.trim(), content: content.trim(), format, sheet: isSheet ? trimSheet(sheet) : null, status, relation, relationDetail: relation === "none" ? "" : relationDetail.trim(), assignedUserIds, people: mergePeople(people, splitNames(personDraft)), link: link.trim(), assignedUserNames: users.filter((u) => assignedUserIds.includes(u.id)).map((u) => u.name), isArchived: initialNote?.isArchived ?? false, archivedAt: initialNote?.archivedAt ?? null, createdAt: initialNote?.createdAt ?? now, updatedAt: now, addAttachments: newFiles, removeAttachmentIndexes: removedIdx }); }}>
     <div className="modalHead"><div><h2>{initialNote ? tx(language, "Mali Notu Düzenle", "Edit Finance Note", "Nîşeya Darayî Biguherîne") : tx(language, "Yeni Mali Not", "New Finance Note", "Nîşeya Darayî ya Nû")}</h2><p>{tx(language, "Not bilgilerini ve bağlantılı olduğu bölümü belirleyin.", "Set the note details and its linked section.", "Agahiyên nîşeyê û beşa girêdayî diyar bikin.")}</p></div><button type="button" onClick={onClose}>×</button></div>
+    {!initialNote && (
+      <div className="noteFormatPick" role="radiogroup" aria-label={tx(language, "Not türü", "Note type", "Cureyê nîşeyê")}>
+        <button type="button" role="radio" aria-checked={!isSheet} className={!isSheet ? "on" : ""} onClick={() => setFormat("text")}>
+          <b>✎ {tx(language, "Düz Not", "Plain Note", "Nîşeya Sade")}</b>
+          <small>{tx(language, "Serbest metin", "Free text", "Nivîsa azad")}</small>
+        </button>
+        <button type="button" role="radio" aria-checked={isSheet} className={isSheet ? "on" : ""} onClick={() => setFormat("sheet")}>
+          <b>▦ {tx(language, "Tablo (Excel tarzı)", "Sheet (Excel-like)", "Tablo (wek Excel)")}</b>
+          <small>{tx(language, "Hücreler, formüller ve toplamlar", "Cells, formulas and totals", "Şane, formul û kom")}</small>
+        </button>
+      </div>
+    )}
     <div className="formGrid"><label>{tx(language, "Not Başlığı", "Note Title", "Sernavê Nîşeyê")}<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} /></label><label>{tx(language, "Not Durumu", "Note Status", "Rewşa Nîşeyê")}<select value={status} onChange={(event) => setStatus(event.target.value as NoteStatus)}>{columns.map((column) => <option key={column.key} value={column.key}>{column.label}</option>)}</select></label><label>{tx(language, "İlişkili Bölüm", "Linked Section", "Beşa Girêdayî")}<select value={relation} onChange={(event) => setRelation(event.target.value as NoteRelation)}>{relationOptions.map((option) => <option key={option} value={option}>{noteRelationLabel(option, language)}</option>)}</select></label><label>{tx(language, "İlişki Detayı", "Link Detail", "Hûrguliya Girêdanê")}<input value={relationDetail} disabled={relation === "none"} onChange={(event) => setRelationDetail(event.target.value)} placeholder={tx(language, "Örn. Ağustos 2026 veya kasa adı", "E.g. August 2026 or cash account", "Mînak: Tebax 2026 an navê qaseyê")} /></label>
+      {isSheet && (
+        <div className="wide noteSheetField">
+          <span>{tx(language, "Tablo", "Sheet", "Tablo")}</span>
+          <NoteSheetEditor language={language} sheet={sheet} onChange={setSheet} />
+        </div>
+      )}
       <label className="wide">
         {tx(language, "Kime Atanmış (Birden Fazla Seçilebilir)", "Assigned To (Multiple Allowed)", "Ji Kê Re Hatiye Vekirin (Bi Firehî)")}
         {users.length === 0 ? (
@@ -551,7 +585,11 @@ function NoteModal({ language, initialStatus, initialNote, initialRelation, init
           {linkHref && <a className="rfLinkOpen" href={linkHref} target="_blank" rel="noopener noreferrer" title={tx(language, "Bağlantıyı yeni sekmede aç", "Open the link in a new tab", "Lînkê di tabeke nû de veke")}>↗</a>}
         </span>
       </label>
-      <label className="wide">{tx(language, "İçerik", "Description", "Naverok")}<textarea rows={6} value={content} onChange={(event) => setContent(event.target.value)} placeholder={tx(language, "Notun ayrıntılarını yazın…", "Write the note details…", "Hûrguliyên nîşeyê binivîse…")} /></label>
+      {isSheet ? (
+        <label className="wide">{tx(language, "Açıklama (isteğe bağlı)", "Description (optional)", "Danasîn (bijarte)")}<textarea rows={2} value={content} onChange={(event) => setContent(event.target.value)} placeholder={tx(language, "Tablo hakkında kısa bir not…", "A short note about the sheet…", "Nîşeyek kurt derbarê tabloyê de…")} /></label>
+      ) : (
+        <label className="wide">{tx(language, "İçerik", "Description", "Naverok")}<textarea rows={6} value={content} onChange={(event) => setContent(event.target.value)} placeholder={tx(language, "Notun ayrıntılarını yazın…", "Write the note details…", "Hûrguliyên nîşeyê binivîse…")} /></label>
+      )}
       <label className="wide">
         {tx(language, "Belgeler (Excel/Office/PDF/Resim)", "Documents (Excel/Office/PDF/Image)", "Belge (Excel/Office/PDF/Wêne)")}
         <div className="attachmentField">
@@ -576,6 +614,6 @@ function NoteModal({ language, initialStatus, initialNote, initialRelation, init
         )}
         {fileError && <small className="redText">{fileError}</small>}
       </label></div>
-    <div className="modalActions"><button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal Bike")}</button><button className="primary" disabled={!title.trim() || !content.trim() || readingFiles > 0}>{readingFiles > 0 ? tx(language, "⏳ Dosya yükleniyor…", "⏳ Loading file…", "⏳ Pel tê barkirin…") : initialNote ? tx(language, "Değişiklikleri Kaydet", "Save Changes", "Guherînan Tomar Bike") : tx(language, "Notu Kaydet", "Save Note", "Nîşeyê Tomar Bike")}</button></div>
+    <div className="modalActions"><button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal Bike")}</button><button className="primary" disabled={!canSave || readingFiles > 0}>{readingFiles > 0 ? tx(language, "⏳ Dosya yükleniyor…", "⏳ Loading file…", "⏳ Pel tê barkirin…") : initialNote ? tx(language, "Değişiklikleri Kaydet", "Save Changes", "Guherînan Tomar Bike") : tx(language, "Notu Kaydet", "Save Note", "Nîşeyê Tomar Bike")}</button></div>
   </form></div>;
 }

@@ -74,6 +74,8 @@ export const POST = withErrorHandling(async (request: Request) => {
         payload.notes.map((n) => ({
           title: n.title,
           content: n.content,
+          format: n.format ?? "text",
+          sheet: n.format === "sheet" ? (n.sheet ?? null) : null,
           status: n.status,
           relation: n.relation,
           relationDetail: n.relationDetail,

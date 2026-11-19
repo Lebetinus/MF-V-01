@@ -291,9 +291,26 @@ export const cashTransferInputSchema = z.object({
 const noteStatusSchema = z.string().trim().min(1).max(60);
 const noteRelationSchema = z.enum(["none", "cash", "income", "expense", "reports", "archive", "other"]);
 
+// Excel tarzı tablo notu: ham hücre girişleri (formüller "=" ile başlar). Satırlar sondaki boş hücreler
+// kırpılmış olarak gelebilir; istemci rows × cols boyutuna tamamlar.
+export const NOTE_SHEET_MAX_ROWS = 500;
+export const NOTE_SHEET_MAX_COLS = 52;
+export const noteSheetSchema = z
+  .object({
+    rows: z.number().int().min(1).max(NOTE_SHEET_MAX_ROWS),
+    cols: z.number().int().min(1).max(NOTE_SHEET_MAX_COLS),
+    data: z.array(z.array(z.string().max(2000)).max(NOTE_SHEET_MAX_COLS)).max(NOTE_SHEET_MAX_ROWS),
+    colWidths: z.array(z.number().int().min(40).max(800)).max(NOTE_SHEET_MAX_COLS).optional(),
+  })
+  .refine((s) => s.data.length <= s.rows && s.data.every((r) => r.length <= s.cols), "Tablo boyutu hücrelerle uyuşmuyor")
+  .refine((s) => s.data.reduce((n, r) => n + r.reduce((m, c) => m + c.length, 0), 0) <= 400_000, "Tablo çok büyük");
+
 export const noteInputSchema = z.object({
   title: shortText(300),
   content: shortText(5000),
+  // Gövdede yoksa (eski istemci) PUT eski değeri korur; POST düz not açar.
+  format: z.enum(["text", "sheet"]).optional(),
+  sheet: noteSheetSchema.nullable().optional(),
   status: noteStatusSchema.optional().default("important"),
   relation: noteRelationSchema.optional().default("none"),
   relationDetail: shortText(300),

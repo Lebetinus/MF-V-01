@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Title } from "./shared";
 import { TableTools } from "./TableTools";
+import { NoteSheetPreview } from "./NoteSheet";
+import { isSheetNote } from "../lib/sheet";
 import { tx, localizeData, kindName } from "../lib/i18n";
 import { date, money } from "../lib/finance";
 import type { ArchivedCommentThread, ArchiveItem, CashAccountSummary, FinanceNote, Language, PreparedReport } from "../lib/types";
@@ -288,7 +290,8 @@ export function Archive({
             <article key={note.id}>
               <small>{new Date(note.archivedAt ?? note.updatedAt).toLocaleDateString(language === "en" ? "en-GB" : "tr-TR")}</small>
               <h3>{note.title}</h3>
-              <p>{note.content}</p>
+              {isSheetNote(note) && <NoteSheetPreview language={language} sheet={note.sheet!} maxRows={8} maxCols={6} />}
+              {note.content && <p>{note.content}</p>}
               {onUnarchiveNote && (
                 <button type="button" className="light compact" onClick={() => onUnarchiveNote(note.id)}>
                   {tx(language, "Geri Al", "Restore", "Vegerîne")}

@@ -26,6 +26,9 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
 
   // isArchived kendi "Arşivle"/"Geri Al" eylemleriyle set edilir; gövdede yoksa eski değer korunur.
   const isArchived = payload.isArchived ?? old.isArchived;
+  // Biçim ve tablo: gövdede yoksa eski değer korunur.
+  const format = payload.format ?? old.format;
+  const sheet = format === "sheet" ? (payload.sheet !== undefined ? payload.sheet : old.sheet) : null;
 
   // Belgeler: işaretlenen mevcutlar çıkar, yeniler eklenir (en fazla 5).
   const current = (old.attachments as { name: string; data: string }[]) ?? [];
@@ -38,6 +41,8 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
     .set({
       title: payload.title,
       content: payload.content,
+      format,
+      sheet,
       status: await resolveNoteStatus(payload.status, db),
       relation: payload.relation,
       relationDetail: payload.relationDetail,

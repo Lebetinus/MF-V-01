@@ -28,6 +28,8 @@ export const POST = withErrorHandling(async (request: Request) => {
     .values({
       title: payload.title,
       content: payload.content,
+      format: payload.format ?? "text",
+      sheet: payload.format === "sheet" ? (payload.sheet ?? null) : null,
       status: await resolveNoteStatus(payload.status, db),
       relation: payload.relation,
       relationDetail: payload.relationDetail,

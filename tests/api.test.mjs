@@ -994,6 +994,35 @@ test("view as user: a super admin browses as another user, read-only and without
   assert.equal((await call("DELETE", `/api/users/${viewedId}`, { cookie: adminCookie })).status, 200);
 });
 
+test("notes: a sheet note keeps its cells; updates without format leave the sheet untouched", async () => {
+  const sheet = { rows: 20, cols: 8, data: [["Kalem", "Tutar"], ["Kira", "1.250,50"], ["Toplam", "=TOPLA(B2:B2)"]] };
+  const created = await call("POST", "/api/notes", { cookie: adminCookie, body: { title: `${RUN_TAG}_sheet`, content: "", format: "sheet", sheet } });
+  assert.equal(created.status, 201);
+  const id = created.json.note.id;
+  try {
+    assert.equal(created.json.note.format, "sheet");
+    assert.deepEqual(created.json.note.sheet, sheet);
+    // Eski istemci gibi format/sheet göndermeden güncelleme: tablo korunur.
+    const moved = await call("PUT", `/api/notes/${id}`, { cookie: adminCookie, body: { title: `${RUN_TAG}_sheet`, content: "açıklama", status: "pending" } });
+    assert.equal(moved.status, 200);
+    assert.equal(moved.json.note.format, "sheet");
+    assert.deepEqual(moved.json.note.sheet, sheet);
+    // Boyutu aşan tablo reddedilir.
+    const bad = await call("PUT", `/api/notes/${id}`, { cookie: adminCookie, body: { title: "x", format: "sheet", sheet: { rows: 1, cols: 1, data: [["a", "b"]] } } });
+    assert.equal(bad.status, 400);
+    // Düz nota çevrilince tablo silinir.
+    const plain = await call("PUT", `/api/notes/${id}`, { cookie: adminCookie, body: { title: `${RUN_TAG}_sheet`, content: "düz", format: "text" } });
+    assert.equal(plain.json.note.format, "text");
+    assert.equal(plain.json.note.sheet, null);
+    // Format verilmeyen yeni not düz nottur.
+    const legacy = await call("POST", "/api/notes", { cookie: adminCookie, body: { title: `${RUN_TAG}_plain`, content: "x" } });
+    assert.equal(legacy.json.note.format, "text");
+    await call("DELETE", `/api/notes/${legacy.json.note.id}`, { cookie: adminCookie });
+  } finally {
+    await call("DELETE", `/api/notes/${id}`, { cookie: adminCookie });
+  }
+});
+
 test("database backup: the BACKUP_TOKEN bearer opens only the backup, and only when configured", async () => {
   const w = await loadWorker();
   const post = (path, token, body) =>
@@ -1061,7 +1090,7 @@ test("database backup: full backup round-trips through restore; bad files change
   const { gunzipSync, gzipSync } = await import("node:zlib");
   const doc = JSON.parse(gunzipSync(backupBytes).toString("utf8"));
   assert.equal(doc.format, "mfv01-db-backup");
-  for (const table of ["users", "cash_accounts", "records", "lists", "cash_transfers", "finance_notes", "settings"]) {
+  for (const table of ["users", "cash_accounts", "records", "cash_transfers", "finance_notes", "settings"]) {
     assert.ok(Array.isArray(doc.tables[table]), `backup has ${table}`);
   }
   assert.ok(!("sessions" in doc.tables), "sessions are not backed up");

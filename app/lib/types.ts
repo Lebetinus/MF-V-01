@@ -82,10 +82,16 @@ export type NoteStatus = string;
 export type NoteColumn = { id: number; key: string; label: string; color: string };
 export type NoteComment = { id: number; noteId: number; userId: number | null; userName: string; text: string; createdAt: string };
 export type NoteRelation = "none" | "cash" | "income" | "expense" | "reports" | "archive" | "other";
+// Excel tarzı tablo notunun hücreleri (bkz. components/NoteSheet). data: ham girişler, "=" ile başlayanlar formül.
+export type NoteSheet = { rows: number; cols: number; data: string[][]; colWidths?: number[] };
+
 export type FinanceNote = {
   id: number;
   title: string;
   content: string;
+  // "text" düz not, "sheet" tablo notu (eski notlarda alan yoksa düz not sayılır).
+  format?: "text" | "sheet";
+  sheet?: NoteSheet | null;
   status: NoteStatus;
   relation: NoteRelation;
   relationDetail: string;

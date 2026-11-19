@@ -301,6 +301,11 @@ export const financeNotes = pgTable("finance_notes", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   content: text("content").notNull().default(""),
+  // Not biçimi: "text" düz not, "sheet" Excel tarzı tablo. Tablo notunda hücreler `sheet` alanındadır;
+  // `content` isteğe bağlı açıklama olarak kalır.
+  format: text("format").notNull().default("text"),
+  // Tablo notu: { rows, cols, data: string[][] (ham hücre girişleri, "=" ile başlayan formüller), colWidths? }.
+  sheet: jsonb("sheet"),
   status: text("status").notNull(),
   relation: text("relation").notNull().default("none"),
   relationDetail: text("relation_detail").notNull().default(""),
