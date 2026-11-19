@@ -24,11 +24,18 @@ export function fxConvert(amount: number, from: string, to: string, rate: number
   return round2(amount * rate);
 }
 
+// Okunur kur (istemcideki app/lib/fx.ts fxRateLabel ile aynı): 1'den küçük USD kuru ters çevrilerek yazılır
+// ("1 USD = 0,91 EUR" yerine "1 EUR = 1,0974 USD").
+function formatRate(n: number): string {
+  const digits = n >= 100 ? 2 : n >= 1 ? 4 : 6;
+  return n.toLocaleString("tr-TR", { maximumFractionDigits: digits });
+}
 export function fxRateLabel(from: string, to: string, rate: number): string {
-  const r = rate.toLocaleString("tr-TR", { maximumFractionDigits: 8 });
-  if (from === "USD") return `1 USD = ${r} ${to}`;
-  if (to === "USD") return `1 USD = ${r} ${from}`;
-  return `1 ${from} = ${r} ${to}`;
+  const usdSide = from === "USD" || to === "USD";
+  const other = from === "USD" ? to : from;
+  if (usdSide && rate > 0 && rate < 1) return `1 ${other} = ${formatRate(1 / rate)} USD`;
+  if (usdSide) return `1 USD = ${formatRate(rate)} ${other}`;
+  return `1 ${from} = ${formatRate(rate)} ${to}`;
 }
 
 class FxError extends Error {

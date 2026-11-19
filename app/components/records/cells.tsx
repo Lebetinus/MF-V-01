@@ -243,7 +243,8 @@ export function renderCell(
           return (
             <>
               {amountEl}
-              <small className="amountOrig" title={rateText}>⇆ {money(x.originalAmount, x.originalCurrency)}{rateText ? ` · ${rateText}` : ""}</small>
+              <small className="amountOrig" title={rateText}>⇆ {money(x.originalAmount, x.originalCurrency)}</small>
+              {rateText && <small className="amountOrig">{rateText}</small>}
             </>
           );
         }

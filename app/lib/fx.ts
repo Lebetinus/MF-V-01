@@ -19,9 +19,16 @@ export function fxRateUnits(from: string, to: string): [string, string] {
   return [from, to];
 }
 
+// Kuru okunur gösterir: büyük kurlar 2, küçükler daha çok ondalıkla. "1 USD = 0,91 EUR" gibi 1'den küçük bir kur ters
+// çevrilerek "1 EUR = 1,0974 USD" yazılır (saklanan kur değişmez; yalnız gösterim).
+export function formatRate(n: number): string {
+  const digits = n >= 100 ? 2 : n >= 1 ? 4 : 6;
+  return n.toLocaleString("tr-TR", { maximumFractionDigits: digits });
+}
 export function fxRateLabel(from: string, to: string, rate: number): string {
   const [one, other] = fxRateUnits(from, to);
-  return `1 ${one} = ${rate.toLocaleString("tr-TR", { maximumFractionDigits: 8 })} ${other}`;
+  if (one === "USD" && rate > 0 && rate < 1) return `1 ${other} = ${formatRate(1 / rate)} USD`;
+  return `1 ${one} = ${formatRate(rate)} ${other}`;
 }
 
 // Ayarlar > Döviz Kurları'ndan önerilen kur (yoksa null).
