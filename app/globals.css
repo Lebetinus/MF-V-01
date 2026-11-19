@@ -4675,7 +4675,7 @@ header h1, .appShell header h1 { font-size: var(--page-title-size, 22px); letter
 .kbBar i { display: block; height: 100%; }
 .kbBar i.in { background: #2e9e6b; } .kbBar i.out { background: #d9534f; }
 .kbIo { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.kbIo .pos { color: var(--green); } .kbIo .neg { color: var(--red); }
+.kbIo .pos { color: var(--green); } .kbIo .neg { color: var(--red); } .kbIo .lent { color: var(--amber); font-weight: 600; }
 .kbMeta { font-size: 11px; color: var(--muted); }
 .kbBadges { display: flex; gap: 6px; flex-wrap: wrap; min-height: 4px; }
 .kbMenuWrap { position: absolute; top: 10px; right: 10px; }
@@ -5210,3 +5210,4 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .icon.debtMark.on { background: var(--amber-bg); border-color: var(--amber); }
 .rfDebt { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #f1dfb7; border-radius: 10px; background: var(--amber-bg); font-size: 13px; font-weight: 600; }
 .rfDebt small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.kbWithRecv { align-self: center; font-size: 11px; font-weight: 600; color: var(--green); font-variant-numeric: tabular-nums; }
