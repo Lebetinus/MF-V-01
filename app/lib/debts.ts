@@ -18,7 +18,8 @@ export const isPartyDebt = (x: Pick<RecordItem, "debtRole" | "debtCashAccountId"
   (x.debtRole === "lent" || x.debtRole === "collected") && x.debtCashAccountId == null && Boolean(x.debtParty?.trim());
 
 // true = gelir/gider istatistiklerinin DIŞINDA tutulan borç kaydı (borç veren tarafın kayıtları).
-export const isDebtLeg = (x: Pick<RecordItem, "debtRole">) => x.debtRole === "lent" || x.debtRole === "collected";
+// Döviz bozdurma kayıtları (fxRole) da aynı şekilde bakiyeye girer, gelir/gider istatistiğine girmez.
+export const isDebtLeg = (x: Pick<RecordItem, "debtRole" | "fxRole">) => x.debtRole === "lent" || x.debtRole === "collected" || Boolean(x.fxRole);
 // Herhangi bir borç kaydı mı (dört rolden biri).
 export const isDebtRecord = (x: Pick<RecordItem, "debtRole">) => Boolean(x.debtRole);
 // Borç veren (alacaklı) tarafın kaydı mı.

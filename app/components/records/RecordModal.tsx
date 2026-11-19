@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ConfirmModal } from "../shared";
 import { noWorkspaceLabel, workspaceKeyOf, workspaceOptions } from "../KasaManage";
 import { tx, localizeData, noteRelationLabel } from "../../lib/i18n";
+import { fxRateLabel } from "../../lib/fx";
 import { loadRecordAttachment, openAttachment } from "../../lib/attachments";
 import { money, normalizeRecord } from "../../lib/finance";
 import type { CashAccountSummary, FinanceNote, KasaSection, Kind, Language, NoteRelation, NoteStatus, RecordAttachment, RecordItem } from "../../lib/types";
@@ -25,7 +26,10 @@ export function RecordModal({
   cashAccounts,
   sections = [],
   onOpenDebt,
+  onOpenConvert,
 }: {
+  // Kayıtlı bir gelir/gideri başka para birimine çevirme penceresini açar ("Dolara çevir"; FxConvertModal).
+  onOpenConvert?: () => void;
   // Kayıtlı bir gelir/giderin borç bilgisini açar (Borca çevir / karşı kasayı değiştir / Borçtan çıkar; DebtMarkModal).
   // Verilmezse (yeni kayıt, kasa aktarımı) borç bölümü gösterilmez.
   onOpenDebt?: () => void;
@@ -465,6 +469,22 @@ export function RecordModal({
                     : kind === "expense"
                       ? tx(language, "Borca çevir", "Mark as debt", "Bike deyn")
                       : tx(language, "Borç tahsilatı olarak işaretle", "Mark as debt collection", "Wek standina deynê nîşan bike")}
+                </button>
+              </div>
+            </>
+          )}
+          {initial && onOpenConvert && (initial.currency !== "USD" || initial.originalCurrency) && (
+            <>
+              {sec(tx(language, "KUR", "CURRENCY", "KUR"))}
+              <div className="wide rfDebt rfFx">
+                <span>
+                  {initial.originalCurrency && initial.originalAmount != null
+                    ? `⇆ ${money(initial.originalAmount, initial.originalCurrency)} → ${money(initial.amount, initial.currency)}${initial.fxRate != null ? ` · ${fxRateLabel(initial.originalCurrency, initial.currency, initial.fxRate)}` : ""}`
+                    : tx(language, `Bu kayıt ${initial.currency} cinsinden.`, `This record is in ${initial.currency}.`, `Ev qeyd bi ${initial.currency} e.`)}
+                  <small>{tx(language, "Çevirince ilk tutar ve kur kayıtta bilgi olarak kalır.", "The original amount and the rate stay on the record.", "Meblağa destpêkê û kur wek agahî dimînin.")}</small>
+                </span>
+                <button type="button" className="light compact" onClick={onOpenConvert}>
+                  ⇆ {initial.originalCurrency ? tx(language, "Çevirmeyi gör / geri al", "View / undo conversion", "Guhertinê bibîne") : tx(language, "Dolara çevir", "Convert to dollars", "Bike dolar")}
                 </button>
               </div>
             </>

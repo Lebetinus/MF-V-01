@@ -1122,6 +1122,107 @@ test("debt mark: the counterpart can be changed later, and unmarking restores th
   assert.equal(await kasaBalance(second), 0);
 });
 
+// ---- Döviz (app/api/fx, app/api/records/:id/convert, app/api/_lib/fx.ts) ----
+async function kasaBalanceIn(kasaId, currency) {
+  const res = await call("GET", "/api/records", { cookie: adminCookie });
+  return res.json.records
+    .filter((r) => r.cashAccountId === kasaId && r.currency === currency)
+    .reduce((t, r) => t + (r.kind === "income" ? r.amount : -r.amount), 0);
+}
+
+test("fx: exchanging inside a kasa writes two linked records, moves both balances and deletes as one", async () => {
+  const kasaName = `${RUN_TAG}_fxKasa`;
+  const kasa = await makeKasa(kasaName, 100);
+  const syp = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "income", date: "2026-03-01", source: `${RUN_TAG}_sypIn`, amount: 2600000, currency: "SYP", cashAccount: kasaName },
+  });
+  assert.equal(syp.status, 201);
+
+  const same = await call("POST", "/api/fx", { cookie: adminCookie, body: { cashAccountId: kasa, fromCurrency: "SYP", toCurrency: "SYP", amount: 1, rate: 1, date: "2026-03-02" } });
+  assert.equal(same.status, 400);
+  const noRate = await call("POST", "/api/fx", { cookie: adminCookie, body: { cashAccountId: kasa, fromCurrency: "SYP", toCurrency: "USD", amount: 1, rate: 0, date: "2026-03-02" } });
+  assert.equal(noRate.status, 400);
+
+  // 1 USD = 13.000 SYP (typed by hand): 1.300.000 SYP → 100 USD.
+  const res = await call("POST", "/api/fx", { cookie: adminCookie, body: { cashAccountId: kasa, fromCurrency: "SYP", toCurrency: "USD", amount: 1300000, rate: 13000, date: "2026-03-02", note: "elden" } });
+  assert.equal(res.status, 201);
+  const [out, inn] = res.json.records;
+  assert.equal(out.kind, "expense");
+  assert.equal(out.fxRole, "out");
+  assert.equal(out.currency, "SYP");
+  assert.equal(out.amount, 1300000);
+  assert.equal(inn.kind, "income");
+  assert.equal(inn.fxRole, "in");
+  assert.equal(inn.currency, "USD");
+  assert.equal(inn.amount, 100);
+  assert.equal(inn.originalAmount, 1300000, "the converted money stays on the record");
+  assert.equal(inn.originalCurrency, "SYP");
+  assert.equal(inn.fxRate, 13000);
+  assert.equal(out.fxLinkId, inn.id);
+  assert.equal(inn.fxLinkId, out.id);
+  assert.equal(await kasaBalanceIn(kasa, "SYP"), 1300000);
+  assert.equal(await kasaBalanceIn(kasa, "USD"), 200);
+
+  // USD → SYP uses the same "1 USD = x" rate.
+  const back = await call("POST", "/api/fx", { cookie: adminCookie, body: { cashAccountId: kasa, fromCurrency: "USD", toCurrency: "SYP", amount: 10, rate: 13500, date: "2026-03-03" } });
+  assert.equal(back.status, 201);
+  assert.equal(back.json.records[1].amount, 135000);
+
+  // Money fields are locked; deleting one side removes both; the pair cannot become a debt or be converted.
+  const edit = await call("PUT", `/api/records/${inn.id}`, { cookie: adminCookie, body: { amount: 1 } });
+  assert.equal(edit.status, 400);
+  const asDebt = await call("POST", `/api/records/${out.id}/debt`, { cookie: adminCookie, body: { party: "X" } });
+  assert.equal(asDebt.status, 400);
+  const asConvert = await call("POST", `/api/records/${out.id}/convert`, { cookie: adminCookie, body: { rate: 1 } });
+  assert.equal(asConvert.status, 400);
+  const del = await deleteRecord(out.id);
+  assert.equal(del.status, 200);
+  assert.deepEqual([...del.json.removedRecordIds].sort(), [out.id, inn.id].sort());
+  assert.equal(await kasaBalanceIn(kasa, "SYP"), 2600000 + 135000);
+  assert.equal(await kasaBalanceIn(kasa, "USD"), 90);
+});
+
+test("fx: a record entered in another currency is converted to dollars, keeps the original, and can be undone", async () => {
+  const kasaName = `${RUN_TAG}_fxConvert`;
+  const kasa = await makeKasa(kasaName);
+  const created = await call("POST", "/api/records", {
+    cookie: adminCookie,
+    body: { kind: "expense", date: "2026-03-01", source: `${RUN_TAG}_oldSyp`, amount: 650000, currency: "SYP", cashAccount: kasaName },
+  });
+  assert.equal(created.status, 201);
+  const rec = created.json.record;
+
+  const stale = await call("POST", `/api/records/${rec.id}/convert`, { cookie: adminCookie, body: { rate: 13000, updatedAt: "2020-01-01T00:00:00.000Z" } });
+  assert.equal(stale.status, 409);
+  const conv = await call("POST", `/api/records/${rec.id}/convert`, { cookie: adminCookie, body: { rate: 13000, updatedAt: rec.updatedAt } });
+  assert.equal(conv.status, 200);
+  assert.equal(conv.json.record.currency, "USD");
+  assert.equal(conv.json.record.amount, 50);
+  assert.equal(conv.json.record.originalAmount, 650000);
+  assert.equal(conv.json.record.originalCurrency, "SYP");
+  assert.equal(conv.json.record.fxRate, 13000);
+  assert.ok(conv.json.archiveEntry, "the previous version is archived");
+  assert.equal(await kasaBalanceIn(kasa, "SYP"), 0);
+  assert.equal(await kasaBalanceIn(kasa, "USD"), -50);
+
+  const already = await call("POST", `/api/records/${rec.id}/convert`, { cookie: adminCookie, body: { toCurrency: "USD", rate: 1 } });
+  assert.equal(already.status, 400, "already in dollars");
+  const lockedAmount = await call("PUT", `/api/records/${rec.id}`, { cookie: adminCookie, body: { amount: 60 } });
+  assert.equal(lockedAmount.status, 400, "undo the conversion before changing the amount");
+  const note = await call("PUT", `/api/records/${rec.id}`, { cookie: adminCookie, body: { note: "ok" } });
+  assert.equal(note.status, 200, "other fields stay editable");
+
+  const undo = await call("DELETE", `/api/records/${rec.id}/convert`, { cookie: adminCookie });
+  assert.equal(undo.status, 200);
+  assert.equal(undo.json.record.currency, "SYP");
+  assert.equal(undo.json.record.amount, 650000);
+  assert.equal(undo.json.record.originalCurrency, "");
+  assert.equal(undo.json.record.originalAmount, null);
+  const undoAgain = await call("DELETE", `/api/records/${rec.id}/convert`, { cookie: adminCookie });
+  assert.equal(undoAgain.status, 400);
+});
+
 test("records: two saves from the same version — exactly one wins", async () => {
   await makeKasa(`${RUN_TAG}_race`);
   const create = await call("POST", "/api/records", {

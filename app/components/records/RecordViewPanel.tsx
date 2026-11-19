@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { tx, localizeData } from "../../lib/i18n";
 import { date, money } from "../../lib/finance";
+import { fxRateLabel } from "../../lib/fx";
 import { openRecordAttachment } from "../../lib/attachments";
 import { notify } from "../../lib/notify";
 import type { Language, RecordAttachment, RecordItem } from "../../lib/types";
@@ -29,6 +30,7 @@ export function RecordViewPanel({ language, record: x, canEdit, inline, onClose,
     [tx(language, "Kişi", "Person", "Kes"), x.person],
     [tx(language, "Birim", "Unit", "Yekîne"), x.project],
     [tx(language, "Etiketler", "Tags", "Etîket"), (x.tags ?? []).join(", ")],
+    [tx(language, "Çevrilen tutar", "Converted from", "Ji meblağê hat guhertin"), x.originalCurrency && x.originalAmount != null ? `${money(x.originalAmount, x.originalCurrency)}${x.fxRate != null ? ` · ${fxRateLabel(x.originalCurrency, x.currency, x.fxRate)}` : ""}` : ""],
   ].filter(([, v]) => v && v.trim()) as [string, string][];
   return (
     <aside className={inline ? "noteDrawer recordView recordViewInline" : "noteDrawer recordView"} role="dialog" aria-label={x.source}>

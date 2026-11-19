@@ -11,6 +11,7 @@ import { parseBody, recordUpdateSchema } from "../../_lib/validate";
 import { deleteReason, formatAmount, logActivity, withReason } from "../../_lib/activity";
 import { debtPairOf, debtTwinOf, isPartyDebtLeg, lockDebtPair, lockPartyDebt, outstandingDebt, outstandingPartyDebt } from "../../_lib/debts";
 import { reverseTransfer, TRANSFER_LOCKED_FIELDS, transferForRecord } from "../../_lib/transfers";
+import { fxTwinOf } from "../../_lib/fx";
 
 class RecordConflictError extends Error {}
 class DebtConflictError extends Error {}
@@ -68,6 +69,15 @@ export const PUT = withErrorHandling<{ params: Promise<{ id: string }> }>(async 
   // Borç kayıtlarının tutarı, kasası ve para birimi sabittir (borç bakiyesi buna bağlı): silip yeniden ekleyin.
   if (old.debtRole && ((payload.amount !== undefined && payload.amount !== old.amount) || (payload.currency !== undefined && payload.currency !== old.currency) || (payload.cashAccount !== undefined && payload.cashAccount !== old.cashAccount) || (payload.kind !== undefined && payload.kind !== old.kind))) {
     return json({ error: "Borç kaydının tutarı, kasası ve para birimi değiştirilemez; kaydı silip yeniden ekleyin" }, { status: 400 });
+  }
+
+  // Döviz bozdurma kayıtları çift yaşar; çevrilmiş kaydın tutarı ilk tutara ve kura bağlıdır (bkz. _lib/fx.ts).
+  const moneyChanged = (payload.amount !== undefined && payload.amount !== old.amount) || (payload.currency !== undefined && payload.currency !== old.currency) || (payload.cashAccount !== undefined && payload.cashAccount !== old.cashAccount) || (payload.kind !== undefined && payload.kind !== old.kind);
+  if (old.fxRole && moneyChanged) {
+    return json({ error: "Döviz bozdurma kaydının tutarı, kasası ve para birimi değiştirilemez; bozdurmayı silip yeniden yapın" }, { status: 400 });
+  }
+  if (old.originalCurrency && moneyChanged) {
+    return json({ error: "Çevrilmiş kaydın tutarı, kasası ve para birimi değiştirilemez; önce çevirmeyi geri alın" }, { status: 400 });
   }
 
   const source = payload.source ?? old.source;
@@ -184,6 +194,41 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
       archiveEntry: own ? toClientArchiveItem(own) : null,
       archiveEntries: reversed.archiveEntries.map(toClientArchiveItem),
       removedRecordIds: reversed.removedRecordIds,
+    });
+  }
+
+  // Döviz bozdurma iki kayıttır (bkz. _lib/fx.ts): bir tarafı silmek bozdurmanın tamamını geri alır (ikisi de Arşiv'e).
+  if (old.fxRole) {
+    const removed = await db.transaction(async (tx) => {
+      const current = (await tx.select().from(records).where(eq(records.id, id)).limit(1))[0];
+      if (!current) return null;
+      const twin = await fxTwinOf(current, tx);
+      const legs = twin ? [current, twin] : [current];
+      const archiveEntries = await tx
+        .insert(archive)
+        .values(legs.map((leg) => ({
+          action: "Silindi",
+          userName: session.user.name,
+          oldRecord: leg,
+          reason: leg.id === current.id ? reason : `Döviz bozdurmanın karşı kaydı silindi: ${reason}`,
+        })))
+        .returning();
+      await tx.delete(records).where(inArray(records.id, legs.map((leg) => leg.id)));
+      return { legs, archiveEntries };
+    });
+    if (!removed) return json({ error: "Record not found" }, { status: 404 });
+    await logActivity(session.user, {
+      category: "cash",
+      action: "delete",
+      summary: withReason(`Döviz bozdurma silindi (${old.cashAccount}): ${removed.legs.map((leg) => formatAmount(leg.amount, leg.currency)).join(" ⇆ ")}`, reason),
+      kasa: old.cashAccount,
+      meta: { id: old.id, removedRecordIds: removed.legs.map((leg) => leg.id) },
+    });
+    const own = removed.archiveEntries.find((entry) => (entry.oldRecord as { id?: number })?.id === id) ?? removed.archiveEntries[0];
+    return json({
+      archiveEntry: own ? toClientArchiveItem(own) : null,
+      archiveEntries: removed.archiveEntries.map(toClientArchiveItem),
+      removedRecordIds: removed.legs.map((leg) => leg.id),
     });
   }
 
