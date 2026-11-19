@@ -5208,3 +5208,5 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .debtMarkFacts dd.positive { color: var(--green); }
 .icon.debtMark { color: var(--amber); margin-left: 3px; }
 .icon.debtMark.on { background: var(--amber-bg); border-color: var(--amber); }
+.kbWithRecv { display: flex; align-items: flex-start; gap: 4px; margin-top: -2px; font-size: 11.5px; font-weight: 600; color: var(--green); font-variant-numeric: tabular-nums; }
+.kbWithRecv .moneyStack { align-items: flex-start; }
