@@ -72,7 +72,14 @@ export function KasaBoard({
 }) {
   const [ws, setWs] = useState<string>("all");
   const [query, setQuery] = useState("");
-  const [showEmpty, setShowEmpty] = useState(false);
+  // "Boş kasaları göster" seçimi tarayıcıda hatırlanır (kapalı çalışma alanları gibi).
+  const [showEmpty, setShowEmptyState] = useState<boolean>(() => {
+    try { return localStorage.getItem("mf-kasa-show-empty") === "1"; } catch { return false; }
+  });
+  const setShowEmpty = (on: boolean) => {
+    setShowEmptyState(on);
+    try { localStorage.setItem("mf-kasa-show-empty", on ? "1" : "0"); } catch {}
+  };
   const [menuFor, setMenuFor] = useState<string | null>(null);
   // Kapalı çalışma alanları (tarayıcıda hatırlanır).
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
