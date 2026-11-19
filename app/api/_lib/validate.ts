@@ -280,12 +280,13 @@ export const debtRepaySchema = z.object({
   note: shortText(2000),
   detail: shortText(2000),
 }).refine((d) => oneCounterparty(d.debtorCashAccountId, d.debtorParty), "Borçlu kasa ya da sistem dışı kasa / proje adı seçilmelidir");
-// Var olan bir kaydı sistem dışı kasaya / projeye borç olarak işaretleme ("Borca çevir"): gider → verilen borç,
-// gelir → borç tahsilatı.
+// Var olan bir kaydı borç olarak işaretleme ("Borca çevir"): gider → verilen borç, gelir → borç tahsilatı. Karşı taraf
+// ya sistemdeki bir kasa / proje (cashAccountId; listeden seçilir) ya da sistem dışı bir kasa / proje (party; adıyla).
 export const recordDebtMarkSchema = z.object({
-  party: z.string().trim().min(1, "Borç alan kasa / proje adı gerekli").max(200),
+  cashAccountId: z.number().int().positive().optional(),
+  party: z.string().trim().max(200).optional().default(""),
   updatedAt: z.string().optional(),
-});
+}).refine((d) => oneCounterparty(d.cashAccountId, d.party), "Borç alan kasa / proje seçilmelidir");
 
 export const cashTransferInputSchema = z.object({
   fromCashAccountId: z.number().int().positive(),

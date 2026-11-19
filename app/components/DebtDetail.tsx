@@ -27,8 +27,8 @@ function operationsOf(p: DebtPair) {
       currency: x.currency,
       text: x.detail || x.source,
       note: x.note,
-      // Kasalar arası borçta "Kişi" karşı kasanın adıdır; yalnız sistem dışı borçta parayı alan / ödeyen kişidir.
-      person: p.external ? x.person : "",
+      // "Kişi" yalnız gerçek bir kişiyse gösterilir (kasalar arası borçta çoğu zaman karşı kasanın adıdır).
+      person: p.people.includes(x.person?.trim() ?? "") ? x.person : "",
     });
   }
   return ops;

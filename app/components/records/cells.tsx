@@ -2,7 +2,7 @@
 
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { PersonChip } from "../shared";
-import { debtPairOfRecord, isPartyDebt } from "../../lib/debts";
+import { debtPairOfRecord } from "../../lib/debts";
 import { workspaceKeyOf, type workspaceOptions } from "../KasaManage";
 import { TableTools } from "../TableTools";
 import { tx, localizeData } from "../../lib/i18n";
@@ -283,7 +283,7 @@ export function renderCell(
               <button className="icon edit" title={tx(language, "Düzenle", "Edit", "Biguherîne")} onClick={() => onEdit(x)}>
                 ✎
               </button>
-              {onDebtMark && x.cashAccountId != null && !ctx.isTransfer && (!x.debtRole || isPartyDebt(x)) && (
+              {onDebtMark && x.cashAccountId != null && !ctx.isTransfer && (
                 <button
                   type="button"
                   className={`icon debtMark${x.debtRole ? " on" : ""}`}

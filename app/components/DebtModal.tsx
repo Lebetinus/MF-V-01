@@ -175,7 +175,7 @@ export function DebtModal({
               <div className="debtBorrowerKind wide" role="radiogroup" aria-label={tx(language, "Borç alan", "Borrower", "Deyndar")}>
                 <span>{tx(language, "Borç alan", "Borrower", "Deyndar")}</span>
                 <button type="button" role="radio" aria-checked={!outside} className={!outside ? "on" : ""} onClick={() => setOutside(false)}>
-                  ▣ {tx(language, "Sistemdeki kasa", "Kasa in the system", "Qaseya di sîstemê de")}
+                  ▣ {tx(language, "Sistemdeki kasa / proje", "Kasa / project in the system", "Qase / projeya di sîstemê de")}
                 </button>
                 <button type="button" role="radio" aria-checked={outside} className={outside ? "on" : ""} onClick={() => setOutside(true)}>
                   ◇ {tx(language, "Sistem dışı kasa / proje", "Kasa / project outside the system", "Qase / projeya derveyî sîstemê")}
@@ -197,9 +197,9 @@ export function DebtModal({
                 </>
               ) : (
                 <label>
-                  {tx(language, "Borç alan kasa", "Borrowing kasa", "Qaseya deyndar")}
+                  {tx(language, "Borç alan kasa / proje", "Borrowing kasa / project", "Qase / projeya deyndar")}
                   <select value={borrowerId ?? ""} onChange={(e) => setBorrowerId(e.target.value ? Number(e.target.value) : null)}>
-                    <option value="">{tx(language, "— Seçin —", "— Select —", "— Hilbijêre —")}</option>
+                    <option value="">{tx(language, "— Listeden seçin —", "— Pick from the list —", "— Ji lîsteyê hilbijêre —")}</option>
                     {cashAccounts.filter((a) => a.id !== lenderId).map((a) => <option key={a.id} value={a.id}>{localizeData(a.name, language)}</option>)}
                   </select>
                 </label>

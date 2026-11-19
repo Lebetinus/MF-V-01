@@ -995,9 +995,14 @@ test("party debts: an expense becomes a debt and an income becomes its collectio
   const t = await transfer(kasa, other, 10);
   const transferMark = await call("POST", `/api/records/${t.fromRecordId}/debt`, { cookie: adminCookie, body: { party: project } });
   assert.equal(transferMark.status, 400);
+  // A kasa-to-kasa debt leg can be unmarked too: it stays as a plain record and its twin goes.
   const kasaDebt = await lend(kasa, other, 5);
-  const twinMark = await call("DELETE", `/api/records/${kasaDebt.json.records[0].id}/debt`, { cookie: adminCookie });
-  assert.equal(twinMark.status, 400, "a kasa-to-kasa debt is not unmarked here");
+  const [kasaLent, kasaBorrowed] = kasaDebt.json.records;
+  const twinMark = await call("DELETE", `/api/records/${kasaLent.id}/debt`, { cookie: adminCookie });
+  assert.equal(twinMark.status, 200);
+  assert.deepEqual(twinMark.json.removedRecordIds, [kasaBorrowed.id]);
+  assert.equal(await recordExists(kasaBorrowed.id), false);
+  assert.equal(twinMark.json.record.debtRole, "");
 });
 
 test("party debts: a user without write access to the kasa cannot lend from it or mark its records", async () => {
@@ -1009,6 +1014,63 @@ test("party debts: a user without write access to the kasa cannot lend from it o
   const mark = await call("POST", `/api/records/${expense.id}/debt`, { cookie: testUserCookie, body: { party: "X" } });
   assert.equal(mark.status, 403);
   assert.equal(await partyOutstanding(kasa, "X"), 0);
+});
+
+test("debt mark: an expense becomes a kasa-to-kasa debt picked from the list, with a twin in the borrowing kasa", async () => {
+  const lenderName = `${RUN_TAG}_kmLender`;
+  const lender = await makeKasa(lenderName, 1000);
+  const borrower = await makeKasa(`${RUN_TAG}_kmBorrower`);
+  const expense = await plainRecord(lenderName, "expense", 300, `${RUN_TAG}_kmProject`, "SİNAN");
+  assert.equal(await kasaBalance(lender), 700);
+
+  const same = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: lender } });
+  assert.equal(same.status, 400, "the record's own kasa cannot borrow");
+  const both = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: borrower, party: "X" } });
+  assert.equal(both.status, 400, "a kasa from the list or an outside name, not both");
+
+  const mark = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: borrower, updatedAt: expense.updatedAt } });
+  assert.equal(mark.status, 200);
+  const lent = mark.json.record;
+  const twin = mark.json.twin;
+  assert.equal(lent.debtRole, "lent");
+  assert.equal(lent.debtCashAccountId, borrower);
+  assert.equal(lent.debtParty, `${RUN_TAG}_kmBorrower`);
+  assert.equal(lent.amount, 300);
+  assert.equal(lent.person, "SİNAN", "the person stays");
+  assert.equal(lent.source, `${RUN_TAG}_kmProject`, "the title stays");
+  assert.equal(twin.kind, "income");
+  assert.equal(twin.debtRole, "borrowed");
+  assert.equal(twin.cashAccountId, borrower);
+  assert.equal(twin.debtCashAccountId, lender);
+  assert.equal(twin.debtLinkId, lent.id);
+  assert.equal(lent.debtLinkId, twin.id);
+  assert.equal(await kasaBalance(lender), 700, "the lender's balance does not move");
+  assert.equal(await kasaBalance(borrower), 300, "the borrower received the money");
+  assert.equal(await outstanding(borrower, lender), 300);
+
+  // The borrower repays with the usual flow; then an income in the lender can be marked as a further repayment.
+  assert.equal((await repay(borrower, lender, 100)).status, 201);
+  assert.equal(await outstanding(borrower, lender), 200);
+  const income = await plainRecord(lenderName, "income", 50, `${RUN_TAG}_kmPayback`);
+  const collect = await call("POST", `/api/records/${income.id}/debt`, { cookie: adminCookie, body: { cashAccountId: borrower } });
+  assert.equal(collect.status, 200);
+  assert.equal(collect.json.record.debtRole, "collected");
+  assert.equal(collect.json.twin.debtRole, "repay");
+  assert.equal(collect.json.twin.cashAccountId, borrower);
+  assert.equal(await outstanding(borrower, lender), 150);
+  const tooMuch = await plainRecord(lenderName, "income", 500, `${RUN_TAG}_kmTooMuch`);
+  const over = await call("POST", `/api/records/${tooMuch.id}/debt`, { cookie: adminCookie, body: { cashAccountId: borrower } });
+  assert.equal(over.status, 400, "a collection cannot exceed what is owed");
+
+  // Unmarking the lending is refused while repayments exceed what would remain; unmarking a collection removes its twin.
+  const blocked = await call("DELETE", `/api/records/${lent.id}/debt`, { cookie: adminCookie });
+  assert.equal(blocked.status, 409);
+  const unCollect = await call("DELETE", `/api/records/${income.id}/debt`, { cookie: adminCookie });
+  assert.equal(unCollect.status, 200);
+  assert.deepEqual(unCollect.json.removedRecordIds, [collect.json.twin.id]);
+  assert.equal(await recordExists(collect.json.twin.id), false);
+  assert.equal(unCollect.json.record.debtRole, "");
+  assert.equal(await outstanding(borrower, lender), 200);
 });
 
 test("records: two saves from the same version — exactly one wins", async () => {

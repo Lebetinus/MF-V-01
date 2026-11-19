@@ -97,21 +97,26 @@ function computeDebtPairs(records: RecordItem[]): DebtPair[] {
     if (lender) {
       pair.hasLender = true;
       pair.creditorName = x.cashAccount;
-      pair.debtorName = pair.debtorName || x.person;
+      // Karşı kasa görünmüyorsa adı kaydın debtParty'sinden (eski kayıtlarda Kişi alanından) gelir.
+      pair.debtorName = pair.debtorName || x.debtParty || x.person;
       if (x.debtRole === "lent") pair.lent += x.amount;
       else pair.collected += x.amount;
     } else {
       pair.hasBorrower = true;
       pair.debtorName = x.cashAccount;
-      pair.creditorName = pair.creditorName || x.person;
+      pair.creditorName = pair.creditorName || x.debtParty || x.person;
       if (x.debtRole === "borrowed") pair.borrowed += x.amount;
       else if (x.debtRole === "repay") pair.repaid += x.amount;
     }
+    const person = x.person?.trim();
+    if (person && !pair.people.includes(person)) pair.people.push(person);
     pair.movements.push(x);
   }
   return [...map.values()]
     .map(({ hasLender, hasBorrower, ...p }) => ({
       ...p,
+      // Kasalar arası borçta "Kişi" alanı çoğu zaman karşı kasanın adıdır; kişi listesine yalnız gerçek kişiler girer.
+      people: p.people.filter((name) => name !== p.debtorName && name !== p.creditorName),
       borrowed: round2(p.borrowed),
       repaid: round2(p.repaid),
       lent: round2(p.lent),

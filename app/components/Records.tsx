@@ -1111,6 +1111,7 @@ export function Records({
           language={language}
           record={debtMarkTarget}
           records={allRecords}
+          cashAccounts={cashAccounts}
           onDone={onTransfersChanged}
           onClose={() => setDebtMarkTarget(null)}
         />

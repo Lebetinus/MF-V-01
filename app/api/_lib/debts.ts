@@ -358,3 +358,85 @@ export async function unmarkPartyDebt(tx: DbClient, old: Leg): Promise<DebtChang
   if (!record) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
   return { record };
 }
+
+// "Borca çevir" — sistemdeki bir kasaya / projeye: var olan kayıt kasalar arası borcun bir tarafı olur ve karşı
+// kasaya ikizi yazılır (Borç ver / Borç öde ile yazılan çiftle aynı yapı). Gider → "lent" (karşı kasada "borrowed"
+// gelir); gelir → "collected" (karşı kasada "repay" gider; karşı kasanın bu kasaya kalan borcunu aşamaz). Tutar,
+// tarih, ana başlık ve kişi aynen kalır. debtParty her iki tarafta karşı kasanın adını tutar (kullanıcı karşı kasayı
+// göremese de borç ona göre adlandırılır).
+export async function markRecordAsKasaDebt(
+  tx: DbClient,
+  user: SessionUser,
+  old: Leg,
+  counterpartId: number,
+): Promise<DebtChange & { twin?: Leg }> {
+  if (old.debtRole) return { error: { status: 400, message: "Bu kayıt zaten bir borç kaydı" } };
+  if (old.cashAccountId == null) return { error: { status: 400, message: "Kasaya bağlı olmayan kayıt borca çevrilemez" } };
+  if (counterpartId === old.cashAccountId) return { error: { status: 400, message: "Borç alan kasa, kaydın kasasından farklı olmalıdır" } };
+  const counterpartName = await kasaName(counterpartId, tx);
+  if (!counterpartName) return { error: { status: 404, message: "Kasa bulunamadı" } };
+  if (!(await canAccessCashAccount(user, counterpartId, tx))) return { error: { status: 403, message: "Seçilen kasaya erişiminiz yok" } };
+  await lockDebtPair(old.cashAccountId, counterpartId, tx);
+  const lend = old.kind === "expense";
+  if (!lend) {
+    // Gelir, karşı kasanın (borçlu) bu kasaya (alacaklı) geri ödemesi sayılır.
+    const remaining = await outstandingDebt(counterpartId, old.cashAccountId, old.currency, tx);
+    if (old.amount > remaining + 0.001) {
+      return { error: { status: 400, message: `Tahsilat kalan borçtan büyük olamaz (${counterpartName} kalan: ${remaining} ${old.currency})` } };
+    }
+  }
+  const [twin] = await tx
+    .insert(records)
+    .values({
+      kind: lend ? "income" : "expense",
+      date: old.date,
+      source: lend ? "Borç alındı" : "Borç ödemesi",
+      detail: lend ? `Borç alındı ← ${old.cashAccount}` : `Borç ödemesi → ${old.cashAccount}`,
+      note: old.note,
+      person: old.person,
+      amount: old.amount,
+      currency: old.currency,
+      cashAccount: counterpartName,
+      cashAccountId: counterpartId,
+      debtRole: lend ? "borrowed" : "repay",
+      debtCashAccountId: old.cashAccountId,
+      debtParty: old.cashAccount,
+      debtLinkId: old.id,
+    })
+    .returning();
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: lend ? "lent" : "collected", debtCashAccountId: counterpartId, debtParty: counterpartName, debtLinkId: twin.id, updatedAt: new Date() })
+    .where(and(eq(records.id, old.id), eq(records.debtRole, "")))
+    .returning();
+  // Yarış: kayıt bu arada değiştiyse transaction geri alınır (ikiz de yazılmamış olur).
+  if (!record) throw new DebtRaceError();
+  return { record, twin };
+}
+
+export class DebtRaceError extends Error {}
+
+// "Borçtan çıkar" — kasalar arası borç kaydı: tıklanan kayıt normal gelir / gidere döner, karşı kasadaki ikizi silinir
+// (Arşiv'e yazılması çağıranın işidir). Verilen / alınan borcu geri almak, o borca yapılmış geri ödemeler kalan borçtan
+// fazla kalacaksa reddedilir.
+export async function unmarkKasaDebt(tx: DbClient, old: Leg): Promise<DebtChange & { twin?: Leg | null }> {
+  const pair = debtPairOf(old);
+  if (!pair) return { error: { status: 400, message: "Bu kayıt kasalar arası bir borç kaydı değil" } };
+  await lockDebtPair(pair.debtorId, pair.creditorId, tx);
+  const current = (await tx.select().from(records).where(eq(records.id, old.id)).limit(1))[0];
+  if (!current || current.debtRole !== old.debtRole) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
+  if (current.debtRole === "lent" || current.debtRole === "borrowed") {
+    const remaining = await outstandingDebt(pair.debtorId, pair.creditorId, current.currency, tx);
+    if (remaining - current.amount < -0.004) {
+      return { error: { status: 409, message: "Bu borca yapılan geri ödemeler kalan borçtan fazla olur; önce geri ödemeleri geri alın" } };
+    }
+  }
+  const twin = await debtTwinOf(current, tx);
+  if (twin) await tx.delete(records).where(eq(records.id, twin.id));
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: "", debtCashAccountId: null, debtLinkId: null, debtParty: "", updatedAt: new Date() })
+    .where(eq(records.id, current.id))
+    .returning();
+  return { record, twin };
+}
