@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { debtPairs } from "../lib/debts";
+import { debtPairs, knownParties, type DebtPair } from "../lib/debts";
 import { localizeData, tx } from "../lib/i18n";
 import { money } from "../lib/finance";
 import type { CashAccountSummary, Language, RecordItem } from "../lib/types";
@@ -12,10 +12,12 @@ export type DebtModalMode = "lend" | "repay";
 const CURRENCIES = ["USD", "IQD", "SYP", "TRY", "EUR"];
 const today = () => new Date().toISOString().slice(0, 10);
 
-// "Borç ver" / "Borç öde" penceresi (Borç Detay sayfası ve kasa sayfası). Her işlem sunucuda iki kaydı birlikte
-// yazar (bkz. app/api/_lib/debts.ts): borç verirken veren kasada gider + alan kasada gelir; öderken borçlu kasada
-// gider + alacaklı kasada gelir. Parası çıkan kasa yalnız kullanıcının yazabildiği kasalardan seçilir (sahibi ya
-// da süper admin); karşı kasa erişebildiği kasalardan.
+// "Borç ver" / "Geri ödeme" penceresi (Borç Detay sayfası ve kasa sayfası). Borç alan iki türlü olabilir:
+//  - Sistemdeki bir kasa: sunucu iki kaydı birlikte yazar (veren kasada gider + alan kasada gelir; bkz.
+//    app/api/_lib/debts.ts). Geri ödemeyi borçlu kasa yapar.
+//  - Sistem dışı bir kasa / proje (ör. C.GROUP): yalnız borç veren kasaya tek kayıt yazılır; parayı alan kişinin adı
+//    kayıt bilgisidir. Geri ödeme alacaklı kasaya "tahsilat" olarak girer: bakiye artar, ek gelir sayılmaz.
+// Parası çıkan / giren kasa yalnız kullanıcının yazabildiği kasalardan seçilir (sahibi ya da süper admin).
 export function DebtModal({
   language,
   cashAccounts,
@@ -24,6 +26,8 @@ export function DebtModal({
   initialMode = "lend",
   kasaId,
   creditorId,
+  pairKey: initialPairKey,
+  preferCollect = false,
   onDone,
   onClose,
 }: {
@@ -32,10 +36,14 @@ export function DebtModal({
   records: RecordItem[];
   isSuperAdmin?: boolean;
   initialMode?: DebtModalMode;
-  // Ön seçim: borç verirken borç veren kasa, öderken borçlu kasa.
+  // Ön seçim: borç verirken borç veren kasa; geri ödemede borçlu kasa (ya da preferCollect ile tahsilatı alan kasa).
   kasaId?: number;
-  // Ödemede ön seçili alacaklı kasa (Borç Detay'daki "Ödeme yap" düğmesi).
+  // Geri ödemede ön seçili alacaklı kasa.
   creditorId?: number;
+  // Geri ödemede ön seçili borç (Borç Detay'daki satır düğmesi).
+  pairKey?: string;
+  // Kasa sayfasındaki "Borç tahsil et": kasaId'nin sistem dışı alacakları önce seçilir.
+  preferCollect?: boolean;
   onDone: () => void;
   onClose: () => void;
 }) {
@@ -52,22 +60,33 @@ export function DebtModal({
 
   // Borç ver
   const [lenderId, setLenderId] = useState<number | null>(() => (initialMode === "lend" && kasaId && writableIds.has(kasaId) ? kasaId : null));
+  const [outside, setOutside] = useState(false);
   const [borrowerId, setBorrowerId] = useState<number | null>(null);
+  const [party, setParty] = useState("");
+  const [person, setPerson] = useState("");
   const [currency, setCurrency] = useState("USD");
+  const parties = useMemo(() => knownParties(records), [records]);
 
-  // Borç öde: yalnız kalan borcu olan (borçlu, alacaklı, para birimi) çiftleri; borçlu kasa yazılabilir olmalı.
-  const openPairs = useMemo(() => debtPairs(records).filter((p) => p.outstanding > 0.004 && writableIds.has(p.debtorId)), [records, writableIds]);
-  const debtorOptions = [...new Map(openPairs.map((p) => [p.debtorId, p.debtorName || nameOf(p.debtorId)])).entries()];
-  const [debtorId, setDebtorId] = useState<number | null>(() => {
-    if (initialMode === "repay" && kasaId && openPairs.some((p) => p.debtorId === kasaId)) return kasaId;
-    return openPairs[0]?.debtorId ?? null;
-  });
-  const pairsOfDebtor = openPairs.filter((p) => p.debtorId === debtorId);
+  // Geri ödeme: kalan borcu olan çiftler. Kasalar arası borcu borçlu kasa öder (yazabilmeli); sistem dışı borcun
+  // tahsilatını alacaklı kasa yazar (yazabilmeli).
+  const openPairs = useMemo(
+    () => debtPairs(records).filter((p) => p.outstanding > 0.004 && writableIds.has(p.external ? p.creditorId : p.debtorId)),
+    [records, writableIds],
+  );
   const [pairKey, setPairKey] = useState<string>(() => {
-    const own = openPairs.filter((p) => p.debtorId === (initialMode === "repay" && kasaId ? kasaId : openPairs[0]?.debtorId));
-    return (own.find((p) => p.creditorId === creditorId) ?? own[0])?.key ?? "";
+    const pick = (fn: (p: DebtPair) => boolean) => openPairs.find(fn)?.key;
+    if (initialPairKey && openPairs.some((p) => p.key === initialPairKey)) return initialPairKey;
+    if (kasaId) {
+      const collect = pick((p) => p.external && p.creditorId === kasaId);
+      const pay = pick((p) => !p.external && p.debtorId === kasaId && (creditorId == null || p.creditorId === creditorId)) ?? pick((p) => !p.external && p.debtorId === kasaId);
+      const chosen = preferCollect ? collect ?? pay : pay ?? collect;
+      if (chosen) return chosen;
+    }
+    return openPairs[0]?.key ?? "";
   });
-  const pair = pairsOfDebtor.find((p) => p.key === pairKey) ?? pairsOfDebtor[0];
+  const pair = openPairs.find((p) => p.key === pairKey) ?? openPairs[0];
+  const pairLabel = (p: DebtPair) =>
+    `${localizeData(p.debtorName || nameOf(p.debtorId) || "—", language)} → ${localizeData(p.creditorName || nameOf(p.creditorId) || "—", language)} — ${tx(language, "kalan", "remaining", "mayî")} ${money(p.outstanding, p.currency)}`;
 
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today());
@@ -78,7 +97,7 @@ export function DebtModal({
   const remaining = pair?.outstanding ?? 0;
   const amountOk = Number.isFinite(amountNum) && amountNum > 0;
   const valid = mode === "lend"
-    ? lenderId != null && borrowerId != null && lenderId !== borrowerId && amountOk
+    ? lenderId != null && (outside ? party.trim().length > 0 : borrowerId != null && lenderId !== borrowerId) && amountOk
     : Boolean(pair) && amountOk && amountNum <= remaining + 0.001;
 
   async function submit() {
@@ -86,8 +105,12 @@ export function DebtModal({
     setSubmitting(true);
     try {
       const body = mode === "lend"
-        ? { lenderCashAccountId: lenderId, borrowerCashAccountId: borrowerId, amount: amountNum, currency, date, note }
-        : { debtorCashAccountId: pair!.debtorId, creditorCashAccountId: pair!.creditorId, amount: amountNum, currency: pair!.currency, date, note };
+        ? outside
+          ? { lenderCashAccountId: lenderId, borrowerParty: party.trim(), person: person.trim(), amount: amountNum, currency, date, note }
+          : { lenderCashAccountId: lenderId, borrowerCashAccountId: borrowerId, amount: amountNum, currency, date, note }
+        : pair!.external
+          ? { debtorParty: pair!.debtorName, creditorCashAccountId: pair!.creditorId, person: person.trim(), amount: amountNum, currency: pair!.currency, date, note }
+          : { debtorCashAccountId: pair!.debtorId, creditorCashAccountId: pair!.creditorId, amount: amountNum, currency: pair!.currency, date, note };
       const response = await fetch(mode === "lend" ? "/api/debts" : "/api/debts/repay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,7 +121,14 @@ export function DebtModal({
         notify(info.error && info.error !== "Validation failed" ? info.error : info.issues?.[0]?.message || tx(language, "Borç işlemi kaydedilemedi.", "The debt operation could not be saved.", "Karûbarê deynê nehat tomarkirin."));
         return;
       }
-      notify(mode === "lend" ? tx(language, "Borç verildi.", "Debt lent.", "Deyn hat dayîn.") : tx(language, "Borç ödemesi kaydedildi.", "Repayment saved.", "Dravdana deynê hat tomarkirin."), "success");
+      notify(
+        mode === "lend"
+          ? tx(language, "Borç verildi.", "Debt lent.", "Deyn hat dayîn.")
+          : pair!.external
+            ? tx(language, "Tahsilat kaydedildi.", "Collection saved.", "Standin hat tomarkirin.")
+            : tx(language, "Borç ödemesi kaydedildi.", "Repayment saved.", "Dravdana deynê hat tomarkirin."),
+        "success",
+      );
       onDone();
       onClose();
     } catch {
@@ -108,7 +138,14 @@ export function DebtModal({
     }
   }
 
-  const title = mode === "lend" ? tx(language, "Borç ver", "Lend", "Deyn bide") : tx(language, "Borç öde", "Repay debt", "Deyn bide vegerîne");
+  const title = mode === "lend" ? tx(language, "Borç ver", "Lend", "Deyn bide") : tx(language, "Geri ödeme / Tahsilat", "Repayment / Collection", "Vegerandin / Standin");
+  const intro = mode === "lend"
+    ? outside
+      ? tx(language, "Borç veren kasaya tek kayıt yazılır: kasa bakiyesi düşer, gider istatistiğine girmez. Borç Detay'da alacak olarak görünür.", "One record is written in the lending kasa: its balance drops, but it does not count as an expense. It shows as a receivable in Debt Details.", "Yek qeyd di qaseya deyndêr de tê nivîsandin: balans kêm dibe, wek mesref nayê hesibandin. Di Hûrguliyên Deynê de wek deynê ku tê standin xuya dike.")
+      : tx(language, "Borç veren kasada gider, borç alan kasada gelir olarak iki kayıt birlikte yazılır. Borç veren kasanın gelir/gider istatistiği değişmez; yalnız bakiyesi düşer.", "Two records are written together: an expense in the lending kasa and income in the borrowing kasa. The lender's income/expense statistics stay unchanged; only its balance drops.", "Du qeyd bi hev re têne nivîsandin: mesref di qaseya deyndêr de, dahat di qaseya deyndar de. Statîstîka deyndêr naguhere; tenê balans kêm dibe.")
+    : pair?.external
+      ? tx(language, "Geri ödenen para alacaklı kasaya tahsilat olarak girer: bakiye artar, ek gelir sayılmaz. Tutar kalan alacağı aşamaz.", "The repaid money enters the creditor kasa as a collection: the balance rises, but it does not count as extra income. The amount cannot exceed what is owed.", "Pereyê vegerî wek standin dikeve qaseya deyndêr: balans zêde dibe, wek dahata zêde nayê hesibandin. Meblağ nikare ji deynê mayî zêdetir be.")
+      : tx(language, "Borçlu kasada gider, alacaklı kasada tahsilat olarak iki kayıt birlikte yazılır. Ödeme kalan borcu aşamaz.", "Two records are written together: an expense in the debtor kasa and a collection in the creditor kasa. The payment cannot exceed the remaining debt.", "Du qeyd bi hev re têne nivîsandin: mesref di qaseya deyndar de, berhevkirin di qaseya deyndêr de. Dravdan nikare ji deynê mayî zêdetir be.");
 
   return (
     <div className="overlay">
@@ -116,17 +153,13 @@ export function DebtModal({
         <div className="modalHead">
           <div>
             <h2>{title}</h2>
-            <p>
-              {mode === "lend"
-                ? tx(language, "Borç veren kasada gider, borç alan kasada gelir olarak iki kayıt birlikte yazılır. Borç veren kasanın gelir/gider istatistiği değişmez; yalnız bakiyesi düşer.", "Two records are written together: an expense in the lending kasa and income in the borrowing kasa. The lender's income/expense statistics stay unchanged; only its balance drops.", "Du qeyd bi hev re têne nivîsandin: mesref di qaseya deyndêr de, dahat di qaseya deyndar de. Statîstîka deyndêr naguhere; tenê balans kêm dibe.")
-                : tx(language, "Borçlu kasada gider, alacaklı kasada tahsilat olarak iki kayıt birlikte yazılır. Ödeme kalan borcu aşamaz.", "Two records are written together: an expense in the debtor kasa and a collection in the creditor kasa. The payment cannot exceed the remaining debt.", "Du qeyd bi hev re têne nivîsandin: mesref di qaseya deyndar de, berhevkirin di qaseya deyndêr de. Dravdan nikare ji deynê mayî zêdetir be.")}
-            </p>
+            <p>{intro}</p>
           </div>
           <button type="button" onClick={onClose} aria-label={tx(language, "Kapat", "Close", "Bigire")}>×</button>
         </div>
         <div className="debtModeTabs" role="tablist" aria-label={tx(language, "Borç işlemi", "Debt operation", "Karûbarê deynê")}>
-          {([["lend", tx(language, "Borç ver", "Lend", "Deyn bide")], ["repay", tx(language, "Borç öde", "Repay", "Deyn vegerîne")]] as const).map(([id, label]) => (
-            <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "on" : ""} onClick={() => { setMode(id); setAmount(""); if (id === "lend" && lenderId == null && kasaId && writableIds.has(kasaId)) setLenderId(kasaId); }}>{label}</button>
+          {([["lend", tx(language, "Borç ver", "Lend", "Deyn bide")], ["repay", tx(language, "Geri ödeme / Tahsilat", "Repayment / Collection", "Vegerandin / Standin")]] as const).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={mode === id} className={mode === id ? "on" : ""} onClick={() => { setMode(id); setAmount(""); setPerson(""); if (id === "lend" && lenderId == null && kasaId && writableIds.has(kasaId)) setLenderId(kasaId); }}>{label}</button>
           ))}
         </div>
         <div className="formGrid">
@@ -139,13 +172,38 @@ export function DebtModal({
                   {writable.map((a) => <option key={a.id} value={a.id}>{localizeData(a.name, language)}</option>)}
                 </select>
               </label>
-              <label>
-                {tx(language, "Borç alan kasa", "Borrowing kasa", "Qaseya deyndar")}
-                <select value={borrowerId ?? ""} onChange={(e) => setBorrowerId(e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">{tx(language, "— Seçin —", "— Select —", "— Hilbijêre —")}</option>
-                  {cashAccounts.filter((a) => a.id !== lenderId).map((a) => <option key={a.id} value={a.id}>{localizeData(a.name, language)}</option>)}
-                </select>
-              </label>
+              <div className="debtBorrowerKind wide" role="radiogroup" aria-label={tx(language, "Borç alan", "Borrower", "Deyndar")}>
+                <span>{tx(language, "Borç alan", "Borrower", "Deyndar")}</span>
+                <button type="button" role="radio" aria-checked={!outside} className={!outside ? "on" : ""} onClick={() => setOutside(false)}>
+                  ▣ {tx(language, "Sistemdeki kasa / proje", "Kasa / project in the system", "Qase / projeya di sîstemê de")}
+                </button>
+                <button type="button" role="radio" aria-checked={outside} className={outside ? "on" : ""} onClick={() => setOutside(true)}>
+                  ◇ {tx(language, "Sistem dışı kasa / proje", "Kasa / project outside the system", "Qase / projeya derveyî sîstemê")}
+                </button>
+              </div>
+              {outside ? (
+                <>
+                  <label>
+                    {tx(language, "Borç alan kasa / proje", "Borrowing kasa / project", "Qase / projeya deyndar")}
+                    <input list="debtPartyOptions" value={party} onChange={(e) => setParty(e.target.value)} placeholder={tx(language, "ör. C.GROUP", "e.g. C.GROUP", "mînak C.GROUP")} maxLength={200} />
+                    <datalist id="debtPartyOptions">
+                      {parties.map((p) => <option key={p} value={p} />)}
+                    </datalist>
+                  </label>
+                  <label>
+                    {tx(language, "Parayı alan kişi", "Received by", "Kesê ku pere girt")}
+                    <input value={person} onChange={(e) => setPerson(e.target.value)} placeholder={tx(language, "isteğe bağlı", "optional", "bijarte")} maxLength={200} />
+                  </label>
+                </>
+              ) : (
+                <label>
+                  {tx(language, "Borç alan kasa / proje", "Borrowing kasa / project", "Qase / projeya deyndar")}
+                  <select value={borrowerId ?? ""} onChange={(e) => setBorrowerId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">{tx(language, "— Listeden seçin —", "— Pick from the list —", "— Ji lîsteyê hilbijêre —")}</option>
+                    {cashAccounts.filter((a) => a.id !== lenderId).map((a) => <option key={a.id} value={a.id}>{localizeData(a.name, language)}</option>)}
+                  </select>
+                </label>
+              )}
               <label>
                 {tx(language, "Tutar / Para birimi", "Amount / Currency", "Meblağ / Yekeya pere")}
                 <div className="amountCurrency">
@@ -157,27 +215,20 @@ export function DebtModal({
               </label>
             </>
           ) : openPairs.length === 0 ? (
-            <p className="debtEmpty wide">{tx(language, "Ödenecek açık borç yok.", "There is no open debt to repay.", "Deynê vekirî yê ku were dayîn tune.")}</p>
+            <p className="debtEmpty wide">{tx(language, "Ödenecek ya da tahsil edilecek açık borç yok.", "There is no open debt to repay or collect.", "Deynê vekirî yê ku were dayîn an standin tune.")}</p>
           ) : (
             <>
-              <label>
-                {tx(language, "Borçlu kasa (ödeyen)", "Debtor kasa (paying)", "Qaseya deyndar (dide)")}
-                <select value={debtorId ?? ""} onChange={(e) => { const id = Number(e.target.value); setDebtorId(id); setPairKey(openPairs.find((p) => p.debtorId === id)?.key ?? ""); setAmount(""); }}>
-                  {debtorOptions.map(([id, name]) => <option key={id} value={id}>{localizeData(name, language)}</option>)}
-                </select>
-              </label>
-              <label>
-                {tx(language, "Alacaklı kasa", "Creditor kasa", "Qaseya deyndêr")}
+              <label className="wide">
+                {tx(language, "Borç (borçlu → alacaklı)", "Debt (debtor → creditor)", "Deyn (deyndar → deyndêr)")}
                 <select value={pair?.key ?? ""} onChange={(e) => { setPairKey(e.target.value); setAmount(""); }}>
-                  {pairsOfDebtor.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {localizeData(p.creditorName || nameOf(p.creditorId) || "—", language)} — {tx(language, "kalan", "remaining", "mayî")} {money(p.outstanding, p.currency)}
-                    </option>
-                  ))}
+                  {openPairs.map((p) => <option key={p.key} value={p.key}>{pairLabel(p)}</option>)}
                 </select>
+                {pair?.external && pair.people.length > 0 && (
+                  <small className="debtHint">{tx(language, "Parayı alan", "Received by", "Kesê ku pere girt")}: {pair.people.join(", ")}</small>
+                )}
               </label>
               <label>
-                {tx(language, "Ödeme tutarı", "Payment amount", "Mîqdara dravdanê")} ({pair?.currency})
+                {pair?.external ? tx(language, "Tahsil edilen tutar", "Amount collected", "Meblağa hatî standin") : tx(language, "Ödeme tutarı", "Payment amount", "Mîqdara dravdanê")} ({pair?.currency})
                 <div className="amountCurrency">
                   <input type="number" min="0" max={remaining} step="0.01" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
                   <button type="button" className="light compact" onClick={() => setAmount(String(remaining))}>{tx(language, "Tamamı", "All", "Hemû")}</button>
@@ -187,6 +238,12 @@ export function DebtModal({
                   {amountOk && amountNum > remaining + 0.001 ? ` · ${tx(language, "Ödeme kalan borçtan büyük olamaz", "The payment cannot exceed the remaining debt", "Dravdan nikare ji deynê mayî mezintir be")}` : ""}
                 </small>
               </label>
+              {pair?.external && (
+                <label>
+                  {tx(language, "Ödeyen kişi", "Paid by", "Kesê ku da")}
+                  <input value={person} onChange={(e) => setPerson(e.target.value)} placeholder={tx(language, "isteğe bağlı", "optional", "bijarte")} maxLength={200} />
+                </label>
+              )}
             </>
           )}
           <label>
@@ -200,7 +257,9 @@ export function DebtModal({
         </div>
         <div className="modalActions">
           <button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
-          <button type="button" className="primary" disabled={!valid || submitting} onClick={submit}>{title}</button>
+          <button type="button" className="primary" disabled={!valid || submitting} onClick={submit}>
+            {mode === "lend" ? title : pair?.external ? tx(language, "Tahsil et", "Collect", "Bistîne") : tx(language, "Ödeme yap", "Make payment", "Dravdan bike")}
+          </button>
         </div>
       </div>
     </div>

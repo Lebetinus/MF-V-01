@@ -9,7 +9,7 @@ import type { Kind } from "../../_lib/types";
 import { toClientArchiveItem } from "../../_lib/archive";
 import { parseBody, recordUpdateSchema } from "../../_lib/validate";
 import { deleteReason, formatAmount, logActivity, withReason } from "../../_lib/activity";
-import { debtPairOf, debtTwinOf, lockDebtPair, outstandingDebt } from "../../_lib/debts";
+import { debtPairOf, debtTwinOf, isPartyDebtLeg, lockDebtPair, lockPartyDebt, outstandingDebt, outstandingPartyDebt } from "../../_lib/debts";
 import { reverseTransfer, TRANSFER_LOCKED_FIELDS, transferForRecord } from "../../_lib/transfers";
 
 class RecordConflictError extends Error {}
@@ -200,12 +200,19 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
       removed = await db.transaction(async (tx) => {
         const pair = debtPairOf(old);
         if (pair) await lockDebtPair(pair.debtorId, pair.creditorId, tx);
+        // Sistem dışı kasaya / projeye borç: tek kayıttır, ikizi yoktur.
+        const party = isPartyDebtLeg(old) && old.cashAccountId != null ? { kasaId: old.cashAccountId, name: old.debtParty } : null;
+        if (party) await lockPartyDebt(party.kasaId, party.name, tx);
         // Kilit alındıktan sonra yeniden okunur: bu arada başka bir istek silmiş olabilir.
         const current = (await tx.select().from(records).where(eq(records.id, id)).limit(1))[0];
         if (!current) throw new DebtGoneError();
-        const twin = await debtTwinOf(current, tx);
+        const twin = party ? null : await debtTwinOf(current, tx);
         if (pair && (current.debtRole === "lent" || current.debtRole === "borrowed")) {
           const remaining = await outstandingDebt(pair.debtorId, pair.creditorId, current.currency, tx);
+          if (remaining - current.amount < -0.004) throw new DebtConflictError();
+        }
+        if (party && current.debtRole === "lent") {
+          const remaining = await outstandingPartyDebt(party.kasaId, party.name, current.currency, tx);
           if (remaining - current.amount < -0.004) throw new DebtConflictError();
         }
         const legs = twin ? [current, twin] : [current];
@@ -229,8 +236,9 @@ export const DELETE = withErrorHandling<{ params: Promise<{ id: string }> }>(asy
       throw error;
     }
     const lendLeg = old.debtRole === "lent" || old.debtRole === "borrowed";
-    const route = removed.legs.find((leg) => leg.kind === "expense");
-    const target = removed.legs.find((leg) => leg.kind === "income");
+    const outside = isPartyDebtLeg(old);
+    const route = outside ? (lendLeg ? old : { cashAccount: old.debtParty }) : removed.legs.find((leg) => leg.kind === "expense");
+    const target = outside ? (lendLeg ? { cashAccount: old.debtParty } : old) : removed.legs.find((leg) => leg.kind === "income");
     await logActivity(session.user, {
       category: "cash",
       action: "delete",

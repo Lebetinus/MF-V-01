@@ -65,6 +65,8 @@ export type RecordItem = {
   debtRole?: string;
   debtCashAccountId?: number | null;
   debtLinkId?: number | null;
+  // Sistem dışı kasaya / projeye borç (debtCashAccountId boş): borç alan kasanın / projenin adı.
+  debtParty?: string;
   // Sent back with edits so the server can detect a concurrent change
   // (see saveRecord's 409 handling) — meaningless on a not-yet-saved record.
   updatedAt?: string;

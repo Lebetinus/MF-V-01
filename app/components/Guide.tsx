@@ -87,7 +87,7 @@ export function Guide({ language }: { language: Language }) {
     },
     {
       id: "debts",
-      title: tx(language, "Kasalar Arası Borç", "Debts Between Cash Accounts", "Deyn di Navbera Qaseyan de"),
+      title: tx(language, "Borç", "Debts", "Deyn"),
       body: (
         <>
           <p>
@@ -112,6 +112,14 @@ export function Guide({ language }: { language: Language }) {
               "Borç veren kasa sermaye gibidir: verdiği borç ve geri aldığı tahsilat gelir/gider istatistiğine girmez, yalnız bakiyesini değiştirir; borç ödendikçe bakiyesi eski haline döner. Borç alan kasada ise alınan borç gelir, geri ödeme gider sayılır. Kasa sayfasındaki \"Borç durumu\" kutusu verilen / geri alınan / alacak ve alınan / ödenen / kalan borç rakamlarını gösterir; kayıt tablolarında borç kayıtlarının yanında \"Borç\" rozeti görünür.",
               "The lending kasa works like capital: the money it lends and collects back is not counted in its income/expense statistics, it only moves its balance, which returns to where it was as the debt is repaid. In the borrowing kasa the borrowed money counts as income and the repayment as expense. The \"Debt status\" box on a kasa's page shows lent / collected / receivable and borrowed / repaid / remaining; debt records carry a \"Debt\" badge in the record tables.",
               "Qaseya deyndêr wek sermiyanê ye: deynê dide û distîne nakeve statîstîka dahat/mesrefê, tenê balansê diguherîne. Di qaseya deyndar de deynê hatî girtin dahat e, vegerandin mesref e. Qutiya \"Rewşa deynê\" ya li rûpela qaseyê van hejmaran nîşan dide; qeydên deynê di tabloyan de nîşana \"Deyn\" digirin.",
+            )}
+          </p>
+          <p>
+            {tx(
+              language,
+              "Borç alan kasa / proje sistemde yoksa (örneğin C.GROUP, T.ÇİFTLİĞİ gibi proje kasaları) \"Borç ver\" penceresinde \"Sistem dışı kasa / proje\" seçin, adını yazın; parayı alan kişinin adı kayıt bilgisi olarak girilir. Bu borç yalnız borç veren kasaya yazılır: bakiye düşer, gider sayılmaz. Daha önce gider olarak girilmiş bir kaydı kasa sayfasındaki ⇄ düğmesiyle \"Borca çevir\"in; tutarı, tarihi ve kişisi aynen kalır. Borç geri ödenince kasa sayfasındaki \"Borç tahsil et\" ya da Borç Detay'daki \"Tahsil et\" ile girin: para kasa bakiyesine döner, ek gelir sayılmaz. Gelir olarak girilmiş bir geri ödeme de ⇄ ile tahsilat olarak işaretlenebilir.",
+              "If the borrowing kasa / project is not in the system (e.g. project kasas such as C.GROUP), choose \"Kasa / project outside the system\" in the \"Lend\" window and type its name; the person who received the money is kept as information. Such a debt is written only to the lending kasa: the balance drops, but it is not an expense. An expense entered earlier can be turned into a debt with the ⇄ button on the kasa page; its amount, date and person stay. When it is repaid, use \"Collect debt\" on the kasa page or \"Collect\" on Debt Details: the money returns to the balance without counting as extra income. A repayment entered as income can be marked as a collection with ⇄ too.",
+              "Heke qase / projeya deyndar di sîstemê de tune be (mînak C.GROUP), di pencereya \"Deyn bide\" de \"Qase / projeya derveyî sîstemê\" hilbijêrin û navê wê binivîsin; navê kesê ku pere girt wek agahî tê tomarkirin. Ev deyn tenê di qaseya deyndêr de tê nivîsandin: balans kêm dibe, wek mesref nayê hesibandin. Mesrefeke berê bi bişkoka ⇄ dikare bibe deyn. Dema deyn vegere, bi \"Deyn bistîne\" pere vedigere balansê û wek dahata zêde nayê hesibandin.",
             )}
           </p>
         </>

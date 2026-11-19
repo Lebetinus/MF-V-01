@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Title, DeleteConfirmModal } from "./shared";
-import { isDebtLeg, kasaDebtByCurrency, kasaDebtStatus } from "../lib/debts";
+import { debtPairs, isDebtLeg, kasaDebtByCurrency, kasaDebtStatus } from "../lib/debts";
 import { DebtModal, type DebtModalMode } from "./DebtModal";
+import { DebtMarkModal } from "./DebtMarkModal";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
 import { RecordCommentsModal } from "./Comments";
 import { KasaDeleteModal, KasaEditModal, NewKasaModal, NO_WORKSPACE, parentWorkspaceOptions, workspaceOptions } from "./KasaManage";
@@ -156,7 +157,9 @@ export function Records({
   // "Kasalar arası aktarım" penceresinin kaynak kasası.
   const [transferTarget, setTransferTarget] = useState<CashAccountSummary | null>(null);
   // Kasa sayfasındaki "Borç ver" / "Borç öde" penceresi (bu kasa ön seçili).
-  const [debtTarget, setDebtTarget] = useState<{ mode: DebtModalMode; kasaId: number } | null>(null);
+  const [debtTarget, setDebtTarget] = useState<{ mode: DebtModalMode; kasaId: number; collect?: boolean } | null>(null);
+  // "Borca çevir" / "Borçtan çıkar" penceresinin kaydı.
+  const [debtMarkTarget, setDebtMarkTarget] = useState<RecordItem | null>(null);
   const { shareBusyKey, dashboardShareBusy, toggleShare, toggleDashboardShare } = useKasaSharing({ language, shareTarget, setShareTarget, onCashAccountsChange });
   const { approvingId, approveTransfer } = useTransferApproval({ language, onTransfersChanged });
   const [source, setSource] = useState("Tümü");
@@ -306,6 +309,7 @@ export function Records({
       setCommentTarget,
       approveTransfer,
       setDeleteTarget,
+      onDebtMark: setDebtMarkTarget,
       startRowDrag,
       columnOrder,
       columnWidths,
@@ -372,6 +376,8 @@ export function Records({
   // Bu rakamlar Gelir/Gider kutularına girmez.
   const kasaDebt = kasaSplitActive ? kasaDebtByCurrency(allRecords, source) : {};
   const debtStatus = kasaSplitActive ? kasaDebtStatus(allRecords, source) : { lender: null, borrower: null };
+  // Bu kasanın sistem dışı kasalardan / projelerden açık alacağı var mı ("Tahsil et" düğmesi).
+  const kasaPartyReceivable = kasaSplitActive && debtPairs(allRecords).some((p) => p.external && p.creditorName === source && p.outstanding > 0.004);
   const kasaIncomeRows = kasaSplitActive ? orderedRows.filter((x) => x.kind !== "expense") : [];
   const kasaExpenseRows = kasaSplitActive ? orderedRows.filter((x) => x.kind === "expense") : [];
   // Satır seçimi: seçili satırlar Excel'e çıkarılabilir, kopyalanabilir veya toplu silinebilir.
@@ -626,6 +632,9 @@ export function Records({
                   <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "lend", kasaId: acc.id })}>↗ {tx(language, "Borç ver", "Lend", "Deyn bide")}</button>
                   {Object.keys(kasaDebt).length > 0 && (
                     <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "repay", kasaId: acc.id })}>↩ {tx(language, "Borç öde", "Repay debt", "Deyn vegerîne")}</button>
+                  )}
+                  {kasaPartyReceivable && (
+                    <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "repay", kasaId: acc.id, collect: true })}>↙ {tx(language, "Borç tahsil et", "Collect debt", "Deyn bistîne")}</button>
                   )}
                 </>
               );
@@ -1097,6 +1106,16 @@ export function Records({
           onClose={() => setTransferTarget(null)}
         />
       )}
+      {debtMarkTarget && (
+        <DebtMarkModal
+          language={language}
+          record={debtMarkTarget}
+          records={allRecords}
+          cashAccounts={cashAccounts}
+          onDone={onTransfersChanged}
+          onClose={() => setDebtMarkTarget(null)}
+        />
+      )}
       {debtTarget && (
         <DebtModal
           language={language}
@@ -1105,6 +1124,7 @@ export function Records({
           isSuperAdmin={isSuperAdmin}
           initialMode={debtTarget.mode}
           kasaId={debtTarget.kasaId}
+          preferCollect={debtTarget.collect}
           onDone={onTransfersChanged}
           onClose={() => setDebtTarget(null)}
         />

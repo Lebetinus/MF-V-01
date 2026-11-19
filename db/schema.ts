@@ -159,6 +159,9 @@ export const records = pgTable("records", {
   // (eskiden ödemenin azalttığı "lent" giderleri tutardı; geçmiş kayıtlar artık hiç değiştirilmez).
   debtRole: text("debt_role").notNull().default(""),
   debtCashAccountId: integer("debt_cash_account_id"),
+  // Sistem dışı kasaya / projeye borç (debtCashAccountId boş): borç alan kasanın / projenin adı. Bu borçlar tek
+  // kayıttır (karşı kasa sistemde yok): borç veren kasada "lent" gider, geri ödemede "collected" gelir.
+  debtParty: text("debt_party").notNull().default(""),
   debtLinkId: integer("debt_link_id"),
   debtMeta: jsonb("debt_meta").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

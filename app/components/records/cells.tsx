@@ -2,7 +2,7 @@
 
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { PersonChip } from "../shared";
-import { debtPairs } from "../../lib/debts";
+import { debtPairOfRecord } from "../../lib/debts";
 import { workspaceKeyOf, type workspaceOptions } from "../KasaManage";
 import { TableTools } from "../TableTools";
 import { tx, localizeData } from "../../lib/i18n";
@@ -32,6 +32,8 @@ export type RecordCellContext = {
   setCommentTarget: (x: RecordItem) => void;
   approveTransfer: (transferId: number) => void;
   setDeleteTarget: (x: RecordItem) => void;
+  // "Borca çevir" / "Borçtan çıkar" penceresi (sistem dışı kasaya / projeye borç; bkz. DebtMarkModal).
+  onDebtMark?: (x: RecordItem) => void;
   startRowDrag: (e: ReactMouseEvent, id: number) => void;
 };
 
@@ -62,9 +64,7 @@ export function debtRoleLabel(role: string | undefined, language: Language): str
 export function debtTooltip(x: RecordItem, language: Language, allRecords: RecordItem[]): string {
   const title = debtRoleLabel(x.debtRole, language);
   const lenderSide = x.debtRole === "lent" || x.debtRole === "collected";
-  const debtorId = lenderSide ? x.debtCashAccountId : x.cashAccountId;
-  const creditorId = lenderSide ? x.cashAccountId : x.debtCashAccountId;
-  const pair = debtPairs(allRecords).find((p) => p.debtorId === debtorId && p.creditorId === creditorId && p.currency === x.currency);
+  const pair = debtPairOfRecord(allRecords, x);
   if (!pair) return `${title}: ${money(x.amount, x.currency)}`;
   const route = `${localizeData(pair.creditorName || "—", language)} → ${localizeData(pair.debtorName || "—", language)}`;
   return [
@@ -72,6 +72,7 @@ export function debtTooltip(x: RecordItem, language: Language, allRecords: Recor
     `${tx(language, "Verilen borç", "Lent", "Deynê hatî dayîn")}: ${money(pair.given, pair.currency)}`,
     `${tx(language, "Geri ödenen", "Repaid", "Hatî vegerandin")}: ${money(pair.returned, pair.currency)}`,
     `${tx(language, "Kalan", "Remaining", "Mayî")}: ${money(pair.outstanding, pair.currency)}`,
+    ...(pair.external ? [tx(language, "Sistem dışı kasa / proje", "Kasa / project outside the system", "Qase / projeya derveyî sîstemê") + (pair.people.length ? ` · ${tx(language, "Alan", "Received by", "Wergir")}: ${pair.people.join(", ")}` : "")] : []),
     lenderSide
       ? tx(language, "Borç veren kasanın kaydı: bakiyeye girer, gelir/gider istatistiğine girmez.", "Lender-side record: affects the balance, not income/expense statistics.", "Qeyda deyndêr: dikeve balansê, nakeve statîstîka dahat/mesrefê.")
       : tx(language, "Borç alan kasanın kaydı: bakiyeye ve gelir/gider istatistiğine girer.", "Borrower-side record: counts in the balance and income/expense statistics.", "Qeyda deyndar: dikeve balans û statîstîka dahat/mesrefê."),
@@ -111,7 +112,7 @@ export function columnCellClassName(id: ColumnId): string {
 export function renderCell(
   id: ColumnId,
   x: RecordItem,
-  ctx: { pendingTransfer?: CashTransfer; canApprove?: boolean },
+  ctx: { pendingTransfer?: CashTransfer; canApprove?: boolean; isTransfer?: boolean },
   cellCtx: RecordCellContext,
 ) {
   const {
@@ -130,6 +131,7 @@ export function renderCell(
     setCommentTarget,
     approveTransfer,
     setDeleteTarget,
+    onDebtMark,
     startRowDrag,
   } = cellCtx;
   switch (id) {
@@ -281,6 +283,20 @@ export function renderCell(
               <button className="icon edit" title={tx(language, "Düzenle", "Edit", "Biguherîne")} onClick={() => onEdit(x)}>
                 ✎
               </button>
+              {onDebtMark && x.cashAccountId != null && !ctx.isTransfer && (
+                <button
+                  type="button"
+                  className={`icon debtMark${x.debtRole ? " on" : ""}`}
+                  title={x.debtRole
+                    ? tx(language, "Borçtan çıkar (normal kayda döndür)", "Remove the debt mark", "Nîşana deynê rake")
+                    : x.kind === "expense"
+                      ? tx(language, "Borca çevir", "Mark as debt", "Bike deyn")
+                      : tx(language, "Borç tahsilatı olarak işaretle", "Mark as debt collection", "Wek standina deynê nîşan bike")}
+                  onClick={() => onDebtMark(x)}
+                >
+                  ⇄
+                </button>
+              )}
               <button
                 className="icon delete"
                 title={tx(language, "Sil", "Delete", "Jêbirin")}
@@ -415,6 +431,7 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
           {tableRows.map((x) => {
             const pendingTransfer = cashTransfers.find((t) => t.toRecordId === x.id && t.status === "pending");
             const canApprove = pendingTransfer && cashAccounts.some((a) => a.id === pendingTransfer.toCashAccountId);
+            const isTransfer = cashTransfers.some((t) => t.toRecordId === x.id || t.fromRecordId === x.id);
             return (
               <tr
                 key={x.id}
@@ -427,7 +444,7 @@ export function renderRecordsTable(tableRows: RecordItem[], tableCtx: RecordsTab
                 </td>
                 {cols.map((id) => (
                   <td key={id} className={columnCellClassName(id)}>
-                    {renderCell(id, x, { pendingTransfer, canApprove }, tableCtx)}
+                    {renderCell(id, x, { pendingTransfer, canApprove, isTransfer }, tableCtx)}
                   </td>
                 ))}
               </tr>

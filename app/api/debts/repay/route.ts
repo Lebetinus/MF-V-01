@@ -1,6 +1,6 @@
 import { getDb } from "../../../../db";
 import { requireSession } from "../../_lib/auth";
-import { runDebtOperation } from "../../_lib/debts";
+import { runDebtOperation, runPartyDebtOperation } from "../../_lib/debts";
 import { json, withErrorHandling } from "../../_lib/http";
 import { debtRepaySchema, parseBody } from "../../_lib/validate";
 
@@ -12,6 +12,16 @@ export const POST = withErrorHandling(async (request: Request) => {
   const parsed = await parseBody(request, debtRepaySchema);
   if ("response" in parsed) return parsed.response;
   const p = parsed.data;
+  // Sistem dışı kasa / projeden tahsilat: alacaklı kasada tek "collected" gelir kaydı.
+  if (p.debtorCashAccountId == null) {
+    const result = await runPartyDebtOperation(
+      session.user,
+      "collect",
+      { kasaId: p.creditorCashAccountId, party: p.debtorParty, person: p.person, amount: p.amount, currency: p.currency, date: p.date, note: p.note, detail: p.detail },
+      getDb(),
+    );
+    return json(result.body, { status: result.status });
+  }
   const result = await runDebtOperation(
     session.user,
     "repay",

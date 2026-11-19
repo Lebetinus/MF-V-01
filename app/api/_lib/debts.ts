@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import type { DbClient } from "../../../db";
 import { cashAccounts, records } from "../../../db/schema";
 import { formatAmount, logActivity } from "./activity";
@@ -190,4 +190,253 @@ export async function runDebtOperation(
     if (error instanceof DebtRequestError) return { status: error.status, body: { error: error.message } };
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sistem dışı kasaya / projeye borç. Borç alan taraf sistemde bir kasa değildir (ör. "C.GROUP" projesi); parayı
+// alan kişinin adı kaydın "Kişi" alanında durur (yalnız bilgi). Karşı kasa olmadığı için her işlem TEK kayıttır:
+//  - Borç ver:     borç veren kasada "lent" gider       (debtCashAccountId boş, debtParty = proje adı)
+//  - Tahsil et:    aynı kasada "collected" gelir        (geri ödenen para kasaya döner)
+// İkisi de bakiyeye girer, gelir/gider istatistiğine girmez (isDebtLeg). Kalan alacak = lent − collected,
+// (kasa, proje, para birimi) başına. Proje adı büyük/küçük harf ve boşluk farkı gözetilmeden eşleşir.
+// ---------------------------------------------------------------------------------------------------------------
+
+export const normalizeParty = (name: string) => name.trim().replace(/\s+/g, " ");
+export const partyKey = (name: string) => normalizeParty(name).toLocaleUpperCase("tr-TR");
+
+// Bir kasanın sistem dışı bir projeden (para biriminde) kalan alacağı: verilen borç − tahsil edilen.
+export async function outstandingPartyDebt(kasaId: number, party: string, currency: string, db: DbClient): Promise<number> {
+  const rows = await db
+    .select({ role: records.debtRole, amount: records.amount, party: records.debtParty })
+    .from(records)
+    .where(and(eq(records.cashAccountId, kasaId), isNull(records.debtCashAccountId), eq(records.currency, currency), ne(records.debtParty, "")));
+  const key = partyKey(party);
+  let sum = 0;
+  for (const r of rows) {
+    if (partyKey(r.party) !== key) continue;
+    if (r.role === "lent") sum += r.amount;
+    else if (r.role === "collected") sum -= r.amount;
+  }
+  return round2(sum);
+}
+
+// Daha önce kullanılmış yazım (ilk kayıttaki) korunur: "c.group" yazılsa da "C.GROUP" olarak kaydedilir.
+async function knownPartySpelling(party: string, db: DbClient): Promise<string> {
+  const rows = await db
+    .select({ party: records.debtParty })
+    .from(records)
+    .where(and(isNull(records.debtCashAccountId), ne(records.debtParty, "")))
+    .orderBy(records.id);
+  const key = partyKey(party);
+  return rows.find((r) => partyKey(r.party) === key)?.party ?? normalizeParty(party);
+}
+
+export async function lockPartyDebt(kasaId: number, party: string, tx: DbClient): Promise<void> {
+  const key = `debt-party:${kasaId}:${partyKey(party)}`;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`);
+}
+
+// Sistem dışı borç kaydı mı (karşı kasası olmayan lent / collected).
+export const isPartyDebtLeg = (leg: { debtRole: string; debtCashAccountId: number | null; debtParty: string }) =>
+  (leg.debtRole === "lent" || leg.debtRole === "collected") && leg.debtCashAccountId == null && leg.debtParty.trim() !== "";
+
+export type PartyDebtInput = {
+  kasaId: number;
+  party: string;
+  person: string;
+  amount: number;
+  currency: string;
+  date: string;
+  note: string;
+  detail: string;
+};
+
+// POST /api/debts (borrowerParty ile) ve POST /api/debts/repay (debtorParty ile). Yetki kasalar arası borçla
+// aynıdır: Gelir ve Gider izni + kasaya yazma yetkisi. Tahsilat kalan alacağı aşamaz.
+export async function runPartyDebtOperation(
+  user: SessionUser,
+  mode: "lend" | "collect",
+  input: PartyDebtInput,
+  db: DbClient,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!user.isAdmin && !(user.permissions.includes("income") && user.permissions.includes("expense"))) {
+    return { status: 403, body: { error: "Borç işlemi için Gelir ve Gider yetkisi gerekir" } };
+  }
+  const lend = mode === "lend";
+  try {
+    const leg = await db.transaction(async (tx) => {
+      const name = await kasaName(input.kasaId, tx);
+      if (!name) throw new DebtRequestError(404, "Kasa bulunamadı");
+      if (!(await canAccessCashAccount(user, input.kasaId, tx)) || !(await canWriteCashAccount(user, input.kasaId, tx))) {
+        throw new DebtRequestError(403, lend ? "Borç veren kasaya yazma yetkiniz (erişiminiz) yok" : "Tahsilatı alan kasaya yazma yetkiniz (erişiminiz) yok");
+      }
+      await lockPartyDebt(input.kasaId, input.party, tx);
+      const party = await knownPartySpelling(input.party, tx);
+      if (!lend) {
+        const remaining = await outstandingPartyDebt(input.kasaId, party, input.currency, tx);
+        if (remaining <= 0.004) throw new DebtRequestError(400, `${name} kasasının ${party} için ${input.currency} cinsinden alacağı yok`);
+        if (input.amount > remaining + 0.001) throw new DebtRequestError(400, `Tahsilat kalan alacaktan büyük olamaz (kalan: ${remaining} ${input.currency})`);
+      }
+      const [row] = await tx
+        .insert(records)
+        .values({
+          kind: lend ? "expense" : "income",
+          date: input.date,
+          source: party,
+          detail: input.detail || (lend ? `Borç verildi → ${party}` : `Borç tahsilatı ← ${party}`),
+          note: input.note,
+          person: normalizeParty(input.person),
+          amount: round2(input.amount),
+          currency: input.currency,
+          cashAccount: name,
+          cashAccountId: input.kasaId,
+          debtRole: lend ? "lent" : "collected",
+          debtParty: party,
+        })
+        .returning();
+      return row;
+    });
+    await logActivity(user, {
+      category: "cash",
+      action: "create",
+      summary: lend
+        ? `Borç verildi: ${leg.cashAccount} → ${leg.debtParty}${leg.person ? ` (${leg.person})` : ""} — ${formatAmount(leg.amount, leg.currency)}`
+        : `Borç tahsil edildi: ${leg.debtParty} → ${leg.cashAccount} — ${formatAmount(leg.amount, leg.currency)}`,
+      kasa: leg.cashAccount,
+      meta: { ids: [leg.id] },
+    });
+    return { status: 201, body: { records: [leg] } };
+  } catch (error) {
+    if (error instanceof DebtRequestError) return { status: error.status, body: { error: error.message } };
+    throw error;
+  }
+}
+
+type DebtChange = { record?: Leg; error?: { status: number; message: string } };
+
+// "Borca çevir": var olan normal bir kaydı sistem dışı borç kaydına çevirir (gider → verilen borç, gelir → borç
+// tahsilatı); tutar, tarih, ana başlık, kişi ve belgeler aynen kalır. Tahsilata çevirmek kalan alacağı aşamaz.
+export async function markRecordAsPartyDebt(tx: DbClient, old: Leg, partyInput: string): Promise<DebtChange> {
+  if (old.debtRole) return { error: { status: 400, message: "Bu kayıt zaten bir borç kaydı" } };
+  if (old.cashAccountId == null) return { error: { status: 400, message: "Kasaya bağlı olmayan kayıt borca çevrilemez" } };
+  await lockPartyDebt(old.cashAccountId, partyInput, tx);
+  const party = await knownPartySpelling(partyInput, tx);
+  const role = old.kind === "expense" ? "lent" : "collected";
+  if (role === "collected") {
+    const remaining = await outstandingPartyDebt(old.cashAccountId, party, old.currency, tx);
+    if (old.amount > remaining + 0.001) {
+      return { error: { status: 400, message: `Tahsilat kalan alacaktan büyük olamaz (${party} kalan: ${remaining} ${old.currency})` } };
+    }
+  }
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: role, debtParty: party, debtCashAccountId: null, debtLinkId: null, updatedAt: new Date() })
+    .where(and(eq(records.id, old.id), eq(records.debtRole, "")))
+    .returning();
+  if (!record) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
+  return { record };
+}
+
+// "Borçtan çıkar": sistem dışı borç kaydını yeniden normal gelir / gidere döndürür. Verilen borcu geri almak, o borca
+// yapılmış tahsilatlar kalan alacaktan fazla kalacaksa reddedilir.
+export async function unmarkPartyDebt(tx: DbClient, old: Leg): Promise<DebtChange> {
+  if (!isPartyDebtLeg(old) || old.cashAccountId == null) {
+    return { error: { status: 400, message: "Yalnız sistem dışı kasaya / projeye borç kaydı normal kayda döndürülebilir" } };
+  }
+  await lockPartyDebt(old.cashAccountId, old.debtParty, tx);
+  if (old.debtRole === "lent") {
+    const remaining = await outstandingPartyDebt(old.cashAccountId, old.debtParty, old.currency, tx);
+    if (remaining - old.amount < -0.004) {
+      return { error: { status: 409, message: "Bu borca yapılan tahsilatlar kalan alacaktan fazla olur; önce tahsilatları geri alın" } };
+    }
+  }
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: "", debtParty: "", updatedAt: new Date() })
+    .where(and(eq(records.id, old.id), eq(records.debtRole, old.debtRole)))
+    .returning();
+  if (!record) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
+  return { record };
+}
+
+// "Borca çevir" — sistemdeki bir kasaya / projeye: var olan kayıt kasalar arası borcun bir tarafı olur ve karşı
+// kasaya ikizi yazılır (Borç ver / Borç öde ile yazılan çiftle aynı yapı). Gider → "lent" (karşı kasada "borrowed"
+// gelir); gelir → "collected" (karşı kasada "repay" gider; karşı kasanın bu kasaya kalan borcunu aşamaz). Tutar,
+// tarih, ana başlık ve kişi aynen kalır. debtParty her iki tarafta karşı kasanın adını tutar (kullanıcı karşı kasayı
+// göremese de borç ona göre adlandırılır).
+export async function markRecordAsKasaDebt(
+  tx: DbClient,
+  user: SessionUser,
+  old: Leg,
+  counterpartId: number,
+): Promise<DebtChange & { twin?: Leg }> {
+  if (old.debtRole) return { error: { status: 400, message: "Bu kayıt zaten bir borç kaydı" } };
+  if (old.cashAccountId == null) return { error: { status: 400, message: "Kasaya bağlı olmayan kayıt borca çevrilemez" } };
+  if (counterpartId === old.cashAccountId) return { error: { status: 400, message: "Borç alan kasa, kaydın kasasından farklı olmalıdır" } };
+  const counterpartName = await kasaName(counterpartId, tx);
+  if (!counterpartName) return { error: { status: 404, message: "Kasa bulunamadı" } };
+  if (!(await canAccessCashAccount(user, counterpartId, tx))) return { error: { status: 403, message: "Seçilen kasaya erişiminiz yok" } };
+  await lockDebtPair(old.cashAccountId, counterpartId, tx);
+  const lend = old.kind === "expense";
+  if (!lend) {
+    // Gelir, karşı kasanın (borçlu) bu kasaya (alacaklı) geri ödemesi sayılır.
+    const remaining = await outstandingDebt(counterpartId, old.cashAccountId, old.currency, tx);
+    if (old.amount > remaining + 0.001) {
+      return { error: { status: 400, message: `Tahsilat kalan borçtan büyük olamaz (${counterpartName} kalan: ${remaining} ${old.currency})` } };
+    }
+  }
+  const [twin] = await tx
+    .insert(records)
+    .values({
+      kind: lend ? "income" : "expense",
+      date: old.date,
+      source: lend ? "Borç alındı" : "Borç ödemesi",
+      detail: lend ? `Borç alındı ← ${old.cashAccount}` : `Borç ödemesi → ${old.cashAccount}`,
+      note: old.note,
+      person: old.person,
+      amount: old.amount,
+      currency: old.currency,
+      cashAccount: counterpartName,
+      cashAccountId: counterpartId,
+      debtRole: lend ? "borrowed" : "repay",
+      debtCashAccountId: old.cashAccountId,
+      debtParty: old.cashAccount,
+      debtLinkId: old.id,
+    })
+    .returning();
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: lend ? "lent" : "collected", debtCashAccountId: counterpartId, debtParty: counterpartName, debtLinkId: twin.id, updatedAt: new Date() })
+    .where(and(eq(records.id, old.id), eq(records.debtRole, "")))
+    .returning();
+  // Yarış: kayıt bu arada değiştiyse transaction geri alınır (ikiz de yazılmamış olur).
+  if (!record) throw new DebtRaceError();
+  return { record, twin };
+}
+
+export class DebtRaceError extends Error {}
+
+// "Borçtan çıkar" — kasalar arası borç kaydı: tıklanan kayıt normal gelir / gidere döner, karşı kasadaki ikizi silinir
+// (Arşiv'e yazılması çağıranın işidir). Verilen / alınan borcu geri almak, o borca yapılmış geri ödemeler kalan borçtan
+// fazla kalacaksa reddedilir.
+export async function unmarkKasaDebt(tx: DbClient, old: Leg): Promise<DebtChange & { twin?: Leg | null }> {
+  const pair = debtPairOf(old);
+  if (!pair) return { error: { status: 400, message: "Bu kayıt kasalar arası bir borç kaydı değil" } };
+  await lockDebtPair(pair.debtorId, pair.creditorId, tx);
+  const current = (await tx.select().from(records).where(eq(records.id, old.id)).limit(1))[0];
+  if (!current || current.debtRole !== old.debtRole) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
+  if (current.debtRole === "lent" || current.debtRole === "borrowed") {
+    const remaining = await outstandingDebt(pair.debtorId, pair.creditorId, current.currency, tx);
+    if (remaining - current.amount < -0.004) {
+      return { error: { status: 409, message: "Bu borca yapılan geri ödemeler kalan borçtan fazla olur; önce geri ödemeleri geri alın" } };
+    }
+  }
+  const twin = await debtTwinOf(current, tx);
+  if (twin) await tx.delete(records).where(eq(records.id, twin.id));
+  const [record] = await tx
+    .update(records)
+    .set({ debtRole: "", debtCashAccountId: null, debtLinkId: null, debtParty: "", updatedAt: new Date() })
+    .where(eq(records.id, current.id))
+    .returning();
+  return { record, twin };
 }

@@ -254,24 +254,39 @@ export const cashAccountCreateSchema = z.object({
 
 // Kasalar arası borç (bkz. app/api/_lib/debts.ts). Tutar sıfırdan büyük olmalı; para birimi çiftin borç birimidir.
 const debtAmountSchema = amountSchema.refine((n) => n > 0, "Tutar sıfırdan büyük olmalıdır");
+// Karşı taraf ya sistemdeki bir kasadır (…CashAccountId) ya da sistem dışı bir kasa / proje (…Party, adıyla);
+// ikisinden tam biri verilmelidir. person: parayı alan / ödeyen kişi (yalnız kayıt bilgisi).
+const debtPartySchema = z.string().trim().max(200).optional().default("");
+const oneCounterparty = (id: number | undefined, party: string) => (id != null) !== (party.trim().length > 0);
 export const debtLendSchema = z.object({
   lenderCashAccountId: z.number().int().positive(),
-  borrowerCashAccountId: z.number().int().positive(),
+  borrowerCashAccountId: z.number().int().positive().optional(),
+  borrowerParty: debtPartySchema,
+  person: shortText(200),
   amount: debtAmountSchema,
   currency: currencySchema.optional().default("USD"),
   date: dateSchema,
   note: shortText(2000),
   detail: shortText(2000),
-});
+}).refine((d) => oneCounterparty(d.borrowerCashAccountId, d.borrowerParty), "Borç alan kasa ya da sistem dışı kasa / proje adı seçilmelidir");
 export const debtRepaySchema = z.object({
-  debtorCashAccountId: z.number().int().positive(),
+  debtorCashAccountId: z.number().int().positive().optional(),
+  debtorParty: debtPartySchema,
   creditorCashAccountId: z.number().int().positive(),
+  person: shortText(200),
   amount: debtAmountSchema,
   currency: currencySchema.optional().default("USD"),
   date: dateSchema,
   note: shortText(2000),
   detail: shortText(2000),
-});
+}).refine((d) => oneCounterparty(d.debtorCashAccountId, d.debtorParty), "Borçlu kasa ya da sistem dışı kasa / proje adı seçilmelidir");
+// Var olan bir kaydı borç olarak işaretleme ("Borca çevir"): gider → verilen borç, gelir → borç tahsilatı. Karşı taraf
+// ya sistemdeki bir kasa / proje (cashAccountId; listeden seçilir) ya da sistem dışı bir kasa / proje (party; adıyla).
+export const recordDebtMarkSchema = z.object({
+  cashAccountId: z.number().int().positive().optional(),
+  party: z.string().trim().max(200).optional().default(""),
+  updatedAt: z.string().optional(),
+}).refine((d) => oneCounterparty(d.cashAccountId, d.party), "Borç alan kasa / proje seçilmelidir");
 
 export const cashTransferInputSchema = z.object({
   fromCashAccountId: z.number().int().positive(),
