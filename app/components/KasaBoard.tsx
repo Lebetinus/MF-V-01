@@ -167,7 +167,7 @@ export function KasaBoard({
   // satırlarına dahil değildir, ayrı satırda gösterilir.
   const lentGiven = Object.fromEntries(Object.entries(kasaDebtStatus(allRecords, k.name).lender?.given ?? {}).filter(([, v]) => Math.abs(v) > 0.004));
   const hasLent = Object.keys(lentGiven).length > 0;
-  // Alacağı olan kasada bakiyenin altında küçük yazıyla "Alacakla toplam" = bakiye + kalan alacak (para birimine göre).
+  // Alacağı olan kasada "Alacak" rozetinin yanında "Alacakla toplam" = bakiye + kalan alacak (para birimine göre).
   const withReceivable: Record<string, number> = { ...k.totalByCurrency };
   for (const [cur, v] of Object.entries(receivable)) withReceivable[cur] = Math.round(((withReceivable[cur] ?? 0) + v) * 100) / 100;
   const shared = (account?.sharedWithUserIds?.length ?? 0) > 0;
@@ -192,11 +192,6 @@ export function KasaBoard({
         <span className="kbName">{localizeData(k.name, language)}</span>
         <span className="kbWs" style={{ color: w.color }}>◆ {w.name}</span>
         <strong className={`kbBal${negative ? " neg" : ""}`}><MoneyStack by={k.totalByCurrency} /></strong>
-        {hasReceivable && (
-          <span className="kbWithRecv" title={tx(language, "Kasadaki para + henüz geri dönmemiş alacak", "Cash on hand + receivable not yet returned", "Pereyê di qaseyê de + deynê ku hîn venegeriyaye")}>
-            {tx(language, "Alacakla toplam", "With receivables", "Bi deynê ku tê standin")} <MoneyStack by={withReceivable} />
-          </span>
-        )}
         <span className="kbBar" aria-hidden="true" title={barTitle}>
           <i className="in" style={{ width: `${keptPct}%` }} />
           <i className="out" style={{ width: `${spentPct}%` }} />
@@ -217,6 +212,11 @@ export function KasaBoard({
           {negative && <span className="lpBadge bad">{tx(language, "Eksi bakiye", "Negative balance", "Balansa neyînî")}</span>}
           {hasDebt && <span className="lpBadge warn">{tx(language, "Borç", "Debt", "Deyn")}: {moneyBreakdown(debt)}</span>}
           {hasReceivable && <span className="lpBadge good">{tx(language, "Alacak", "Receivable", "Deynê ku tê standin")}: {moneyBreakdown(receivable)}</span>}
+          {hasReceivable && (
+            <span className="kbWithRecv" title={tx(language, "Kasadaki para + henüz geri dönmemiş alacak", "Cash on hand + receivable not yet returned", "Pereyê di qaseyê de + deynê ku hîn venegeriyaye")}>
+              {tx(language, "Alacakla toplam", "With receivables", "Bi deynê ku tê standin")}: {moneyBreakdown(withReceivable)}
+            </span>
+          )}
         </span>
         {(account?.ownerName || shared) && (
           <span className="kbOwner">
