@@ -1,0 +1,1 @@
+ALTER TABLE "records" ADD COLUMN "debt_party" text DEFAULT '' NOT NULL;

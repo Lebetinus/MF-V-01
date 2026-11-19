@@ -5193,3 +5193,18 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .noteSheetBadge { margin-right: 5px; color: #38a477; font-size: 13px; }
 .noteCard p.noteSheetCaption { height: auto; min-height: 0; max-height: 36px; }
 @media (max-width: 640px) { .noteFormatPick { grid-template-columns: 1fr; } }
+
+/* Borç: sistem dışı kasaya / projeye borç ve "Borca çevir" (DebtModal, DebtMarkModal, DebtDetail) */
+.debtBorrowerKind { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; font-weight: 600; color: var(--ink); }
+.debtBorrowerKind > span { margin-right: 4px; }
+.debtBorrowerKind button { border: 1px solid var(--line); background: var(--bg); padding: 6px 12px; border-radius: 8px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.debtBorrowerKind button.on { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
+.debtOutsideTag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 6px; font-size: 10px; font-weight: 700; color: var(--amber); background: var(--amber-bg); border: 1px solid #f1dfb7; vertical-align: middle; }
+.debtPeople { display: block; margin-top: 2px; }
+.debtMarkFacts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 13px; }
+.debtMarkFacts dt { color: var(--muted); }
+.debtMarkFacts dd { margin: 0; font-weight: 600; }
+.debtMarkFacts dd.negative, .debtHint.negative { color: var(--red); }
+.debtMarkFacts dd.positive { color: var(--green); }
+.icon.debtMark { color: var(--amber); margin-left: 3px; }
+.icon.debtMark.on { background: var(--amber-bg); border-color: var(--amber); }

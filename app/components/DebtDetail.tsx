@@ -14,7 +14,7 @@ const isLenderLeg = (x: RecordItem) => x.debtRole === "lent" || x.debtRole === "
 // Bir çiftin hareketleri işlem başına bir satır: iki taraf da görünüyorsa ikiz kayıtlar tek işlem olarak gösterilir.
 function operationsOf(p: DebtPair) {
   const seen = new Set<number>();
-  const ops: { id: number; date: string; lend: boolean; amount: number; currency: string; text: string; note: string }[] = [];
+  const ops: { id: number; date: string; lend: boolean; amount: number; currency: string; text: string; note: string; person: string }[] = [];
   for (const x of p.movements) {
     if (seen.has(x.id)) continue;
     seen.add(x.id);
@@ -27,6 +27,8 @@ function operationsOf(p: DebtPair) {
       currency: x.currency,
       text: x.detail || x.source,
       note: x.note,
+      // Kasalar arası borçta "Kişi" karşı kasanın adıdır; yalnız sistem dışı borçta parayı alan / ödeyen kişidir.
+      person: p.external ? x.person : "",
     });
   }
   return ops;
@@ -52,7 +54,7 @@ export function DebtDetail({
   const pairs = useMemo(() => debtPairs(records), [records]);
   const [showClosed, setShowClosed] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const [modal, setModal] = useState<{ mode: DebtModalMode; kasaId?: number; creditorId?: number } | null>(null);
+  const [modal, setModal] = useState<{ mode: DebtModalMode; kasaId?: number; creditorId?: number; pairKey?: string } | null>(null);
   const shown = pairs.filter((p) => showClosed || p.outstanding > 0.004);
   const writableIds = new Set(cashAccounts.filter((a) => a.isOwner || isSuperAdmin).map((a) => a.id));
   // Üstteki toplamlar: alacak = borç veren tarafı görünen çiftlerin kalanı, borç = borç alan tarafı görünenlerin.
@@ -72,7 +74,7 @@ export function DebtDetail({
       <div className="debtDetailHead">
         <Title
           title={tx(language, "Borç Detay", "Debt Details", "Hûrguliyên Deynê")}
-          sub={tx(language, "Kasalar arası verilen borçlar, geri ödemeler ve kalan borçlar.", "Debts lent between cash accounts, repayments and what remains.", "Deynên di navbera qaseyan de, dravdan û deynê mayî.")}
+          sub={tx(language, "Kasalara ve sistem dışı kasalara / projelere verilen borçlar, geri ödemeler ve kalan borçlar.", "Debts lent to cash accounts and to kasas / projects outside the system, repayments and what remains.", "Deynên ku dane qaseyan û qase / projeyên derveyî sîstemê, dravdan û deynê mayî.")}
         />
         {!readOnly && (
           <button type="button" className="primary" onClick={() => setModal({ mode: "lend" })}>
@@ -91,7 +93,7 @@ export function DebtDetail({
         </div>
         <label className="checkField"><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />{tx(language, "Kapanan borçları göster", "Show closed debts", "Deynên girtî nîşan bide")}</label>
       </div>
-      {shown.length === 0 && <p className="debtEmpty">{tx(language, "Açık borç yok. “＋ Borç ver” ile bir kasadan başka bir kasaya borç verebilirsiniz.", "No open debts. Use “＋ Lend” to lend money from one cash account to another.", "Deynê vekirî tune. Bi “＋ Deyn bide” ji qaseyekê deyn bide qaseyeke din.")}</p>}
+      {shown.length === 0 && <p className="debtEmpty">{tx(language, "Açık borç yok. “＋ Borç ver” ile bir kasadan başka bir kasaya ya da sistem dışı bir kasaya / projeye borç verebilirsiniz; kasa sayfasındaki bir gideri de ⇄ ile borca çevirebilirsiniz.", "No open debts. Use “＋ Lend” to lend from one cash account to another or to a kasa / project outside the system; an expense on a kasa page can be turned into a debt with ⇄.", "Deynê vekirî tune. Bi “＋ Deyn bide” deyn bide qaseyeke din an qase / projeyeke derveyî sîstemê; mesrefek di rûpela qaseyê de bi ⇄ dikare bibe deyn.")}</p>}
       {shown.length > 0 && (
         <TableTools id="debt-detail" language={language} className="debtTableWrap" resize={false}>
           <table className="lpTable debtTable">
@@ -114,12 +116,17 @@ export function DebtDetail({
                 const dates = p.movements.map((x) => x.date).sort();
                 const lastRepay = p.movements.filter((x) => x.debtRole === "repay" || x.debtRole === "collected").map((x) => x.date).sort().pop();
                 const pct = p.given > 0 ? Math.min(100, Math.round((p.returned / p.given) * 100)) : 0;
-                const canPay = !readOnly && open && writableIds.has(p.debtorId);
+                // Kasalar arası borcu borçlu kasa öder; sistem dışı borcun tahsilatını alacaklı kasa yazar.
+                const canPay = !readOnly && open && writableIds.has(p.external ? p.creditorId : p.debtorId);
                 return (
                   <Fragment key={p.key}>
                     <tr className="debtRow" onClick={() => setOpenKey(openKey === p.key ? null : p.key)}>
                       <td>{dates[0] ? date(dates[0], language) : "—"}</td>
-                      <td><b>{localizeData(p.debtorName || "—", language)}</b></td>
+                      <td>
+                        <b>{localizeData(p.debtorName || "—", language)}</b>
+                        {p.external && <span className="debtOutsideTag" title={tx(language, "Sistem dışı kasa / proje", "Kasa / project outside the system", "Qase / projeya derveyî sîstemê")}>{tx(language, "sistem dışı", "outside", "derveyî")}</span>}
+                        {p.people.length > 0 && <small className="subNote debtPeople">👤 {p.people.join(", ")}</small>}
+                      </td>
                       <td>{localizeData(p.creditorName || "—", language)}</td>
                       <td className="num">{money(p.given, p.currency)}</td>
                       <td className="num positive">{money(p.returned, p.currency)}</td>
@@ -131,8 +138,8 @@ export function DebtDetail({
                       {!readOnly && (
                         <td>
                           {canPay && (
-                            <button type="button" className="light compact" onClick={(e) => { e.stopPropagation(); setModal({ mode: "repay", kasaId: p.debtorId, creditorId: p.creditorId }); }}>
-                              {tx(language, "Ödeme yap", "Make payment", "Dravdan bike")}
+                            <button type="button" className="light compact" onClick={(e) => { e.stopPropagation(); setModal({ mode: "repay", kasaId: p.debtorId, creditorId: p.creditorId, pairKey: p.key }); }}>
+                              {p.external ? tx(language, "Tahsil et", "Collect", "Bistîne") : tx(language, "Ödeme yap", "Make payment", "Dravdan bike")}
                             </button>
                           )}
                         </td>
@@ -148,6 +155,7 @@ export function DebtDetail({
                                 <th>{tx(language, "İşlem", "Type", "Cure")}</th>
                                 <th>{tx(language, "Yön", "Direction", "Alî")}</th>
                                 <th>{tx(language, "Açıklama", "Description", "Ravekirin")}</th>
+                                <th>{tx(language, "Kişi", "Person", "Kes")}</th>
                                 <th className="num">{tx(language, "Tutar", "Amount", "Mîqdar")}</th>
                               </tr>
                             </thead>
@@ -162,6 +170,7 @@ export function DebtDetail({
                                       : `${localizeData(p.debtorName || "—", language)} → ${localizeData(p.creditorName || "—", language)}`}
                                   </td>
                                   <td>{localizeData(op.text || "—", language)}{op.note ? <small className="subNote"> · {op.note}</small> : null}</td>
+                                  <td>{op.person ? localizeData(op.person, language) : "—"}</td>
                                   <td className={`num ${op.lend ? "negative" : "positive"}`}>{money(op.amount, op.currency)}</td>
                                 </tr>
                               ))}
@@ -186,6 +195,7 @@ export function DebtDetail({
           initialMode={modal.mode}
           kasaId={modal.kasaId}
           creditorId={modal.creditorId}
+          pairKey={modal.pairKey}
           onDone={onChanged}
           onClose={() => setModal(null)}
         />

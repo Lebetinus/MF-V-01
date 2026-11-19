@@ -1,6 +1,6 @@
 import { getDb } from "../../../db";
 import { requireSession } from "../_lib/auth";
-import { runDebtOperation } from "../_lib/debts";
+import { runDebtOperation, runPartyDebtOperation } from "../_lib/debts";
 import { json, withErrorHandling } from "../_lib/http";
 import { debtLendSchema, parseBody } from "../_lib/validate";
 
@@ -12,6 +12,16 @@ export const POST = withErrorHandling(async (request: Request) => {
   const parsed = await parseBody(request, debtLendSchema);
   if ("response" in parsed) return parsed.response;
   const p = parsed.data;
+  // Sistem dışı kasaya / projeye borç: borç veren kasada tek kayıt (bkz. runPartyDebtOperation).
+  if (p.borrowerCashAccountId == null) {
+    const result = await runPartyDebtOperation(
+      session.user,
+      "lend",
+      { kasaId: p.lenderCashAccountId, party: p.borrowerParty, person: p.person, amount: p.amount, currency: p.currency, date: p.date, note: p.note, detail: p.detail },
+      getDb(),
+    );
+    return json(result.body, { status: result.status });
+  }
   const result = await runDebtOperation(
     session.user,
     "lend",
