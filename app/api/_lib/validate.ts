@@ -280,6 +280,23 @@ export const debtRepaySchema = z.object({
   note: shortText(2000),
   detail: shortText(2000),
 }).refine((d) => oneCounterparty(d.debtorCashAccountId, d.debtorParty), "Borçlu kasa ya da sistem dışı kasa / proje adı seçilmelidir");
+// Döviz (bkz. app/api/_lib/fx.ts). Kur: bir taraf USD ise "1 USD = rate diğer birim", değilse "1 kaynak = rate hedef".
+const fxRateSchema = z.number().finite().positive("Kur sıfırdan büyük olmalıdır").max(1_000_000_000);
+export const fxExchangeSchema = z.object({
+  cashAccountId: z.number().int().positive(),
+  fromCurrency: currencySchema,
+  toCurrency: currencySchema,
+  amount: amountSchema.refine((n) => n > 0, "Tutar sıfırdan büyük olmalıdır"),
+  rate: fxRateSchema,
+  date: dateSchema,
+  note: shortText(2000),
+}).refine((d) => d.fromCurrency !== d.toCurrency, "Verilen ve alınan para birimi farklı olmalıdır");
+export const recordConvertSchema = z.object({
+  toCurrency: currencySchema.optional().default("USD"),
+  rate: fxRateSchema,
+  updatedAt: z.string().optional(),
+});
+
 // Var olan bir kaydı borç olarak işaretleme ("Borca çevir"): gider → verilen borç, gelir → borç tahsilatı. Karşı taraf
 // ya sistemdeki bir kasa / proje (cashAccountId; listeden seçilir) ya da sistem dışı bir kasa / proje (party; adıyla).
 export const recordDebtMarkSchema = z.object({

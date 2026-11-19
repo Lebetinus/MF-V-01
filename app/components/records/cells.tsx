@@ -9,6 +9,7 @@ import { tx, localizeData } from "../../lib/i18n";
 import { date, money, toUsd, type ExchangeRates } from "../../lib/finance";
 import type { CashAccountSummary, CashTransfer, KasaSection, Language, RecordItem, RecordsView } from "../../lib/types";
 import { DocCell } from "./documents";
+import { fxRateLabel } from "../../lib/fx";
 import type { ColumnId } from "./useColumnLayout";
 
 // 💬 sütununun özeti (bkz. refreshCommentSummaries in Records()).
@@ -235,7 +236,19 @@ export function renderCell(
           : usd === null
             ? tx(language, "Bu para birimi için kur bulunamadı (Ayarlar > Döviz Kurları)", "No rate available for this currency (Settings > Exchange Rates)", "Ji bo vê diravê kur nehat dîtin")
             : `≈ ${money(usd, "USD")}\n1 USD = ${exchangeRates[x.currency]} ${x.currency}\n${tx(language, "Günlük kur", "Daily rate", "Kurê rojane")}`;
-        return <span className={`${x.kind === "income" ? "amountIncome" : x.kind === "expense" ? "amountExpense" : ""}${tip ? " hasRateTip" : ""}`} title={tip}>{money(x.amount, x.currency)}</span>;
+        const amountEl = <span className={`${x.kind === "income" ? "amountIncome" : x.kind === "expense" ? "amountExpense" : ""}${tip ? " hasRateTip" : ""}`} title={tip}>{money(x.amount, x.currency)}</span>;
+        // Çevrilmiş kayıt / döviz bozdurma: ilk tutar ve kullanılan kur küçük yazıyla altta (bilgi).
+        if (x.originalCurrency && x.originalAmount != null) {
+          const rateText = x.fxRate != null ? fxRateLabel(x.originalCurrency, x.currency, x.fxRate) : "";
+          return (
+            <>
+              {amountEl}
+              <small className="amountOrig" title={rateText}>⇆ {money(x.originalAmount, x.originalCurrency)}{rateText ? ` · ${rateText}` : ""}</small>
+            </>
+          );
+        }
+        if (x.fxRole === "out") return <>{amountEl}<small className="amountOrig">⇆ {tx(language, "Döviz bozdurma", "Exchange", "Guhertina diravê")}</small></>;
+        return amountEl;
       }
     case "location":
       return (
@@ -283,7 +296,7 @@ export function renderCell(
               <button className="icon edit" title={tx(language, "Düzenle", "Edit", "Biguherîne")} onClick={() => onEdit(x)}>
                 ✎
               </button>
-              {onDebtMark && x.cashAccountId != null && !ctx.isTransfer && (
+              {onDebtMark && x.cashAccountId != null && !ctx.isTransfer && !x.fxRole && (
                 <button
                   type="button"
                   className={`icon debtMark${x.debtRole ? " on" : ""}`}

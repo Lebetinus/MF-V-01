@@ -67,6 +67,13 @@ export type RecordItem = {
   debtLinkId?: number | null;
   // Sistem dışı kasaya / projeye borç (debtCashAccountId boş): borç alan kasanın / projenin adı.
   debtParty?: string;
+  // Döviz (bkz. app/api/_lib/fx.ts): fxRole "out" / "in" = kasa içi döviz bozdurmanın kaydı (fxLinkId öteki kayıt);
+  // originalAmount / originalCurrency / fxRate = kayıt başka birimden çevrildiyse ilk tutar, birimi ve kur (bilgi).
+  fxRole?: string;
+  fxLinkId?: number | null;
+  originalAmount?: number | null;
+  originalCurrency?: string;
+  fxRate?: number | null;
   // Sent back with edits so the server can detect a concurrent change
   // (see saveRecord's 409 handling) — meaningless on a not-yet-saved record.
   updatedAt?: string;

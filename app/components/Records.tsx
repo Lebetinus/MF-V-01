@@ -5,6 +5,7 @@ import { Title, DeleteConfirmModal } from "./shared";
 import { debtPairs, isDebtLeg, kasaDebtByCurrency, kasaDebtStatus } from "../lib/debts";
 import { DebtModal, type DebtModalMode } from "./DebtModal";
 import { DebtMarkModal } from "./DebtMarkModal";
+import { FxExchangeModal } from "./FxModals";
 import { KasaBoard, type BoardAction } from "./KasaBoard";
 import { RecordCommentsModal } from "./Comments";
 import { KasaDeleteModal, KasaEditModal, NewKasaModal, NO_WORKSPACE, parentWorkspaceOptions, workspaceOptions } from "./KasaManage";
@@ -160,6 +161,8 @@ export function Records({
   const [debtTarget, setDebtTarget] = useState<{ mode: DebtModalMode; kasaId: number; collect?: boolean } | null>(null);
   // "Borca çevir" / "Borçtan çıkar" penceresinin kaydı.
   const [debtMarkTarget, setDebtMarkTarget] = useState<RecordItem | null>(null);
+  // "Döviz bozdur" penceresinin kasası.
+  const [fxTarget, setFxTarget] = useState<{ id: number; name: string } | null>(null);
   const { shareBusyKey, dashboardShareBusy, toggleShare, toggleDashboardShare } = useKasaSharing({ language, shareTarget, setShareTarget, onCashAccountsChange });
   const { approvingId, approveTransfer } = useTransferApproval({ language, onTransfersChanged });
   const [source, setSource] = useState("Tümü");
@@ -629,6 +632,7 @@ export function Records({
               if (!acc || readOnly || !(acc.isOwner || isSuperAdmin)) return null;
               return (
                 <>
+                  <button type="button" className="light compact" onClick={() => setFxTarget({ id: acc.id, name: acc.name })}>⇆ {tx(language, "Döviz bozdur", "Exchange currency", "Dirav biguherîne")}</button>
                   <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "lend", kasaId: acc.id })}>↗ {tx(language, "Borç ver", "Lend", "Deyn bide")}</button>
                   {Object.keys(kasaDebt).length > 0 && (
                     <button type="button" className="light compact" onClick={() => setDebtTarget({ mode: "repay", kasaId: acc.id })}>↩ {tx(language, "Borç öde", "Repay debt", "Deyn vegerîne")}</button>
@@ -1104,6 +1108,16 @@ export function Records({
           users={users}
           onTransfersChanged={onTransfersChanged}
           onClose={() => setTransferTarget(null)}
+        />
+      )}
+      {fxTarget && (
+        <FxExchangeModal
+          language={language}
+          kasa={fxTarget}
+          records={allRecords}
+          exchangeRates={exchangeRates}
+          onDone={onTransfersChanged}
+          onClose={() => setFxTarget(null)}
         />
       )}
       {debtMarkTarget && (

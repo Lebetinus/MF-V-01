@@ -126,6 +126,30 @@ export function Guide({ language }: { language: Language }) {
       ),
     },
     {
+      id: "fx",
+      title: tx(language, "Döviz Bozdurma ve Dolara Çevirme", "Currency Exchange and Conversion", "Guhertina Diravan"),
+      body: (
+        <>
+          <p>
+            {tx(
+              language,
+              "Bir kasada birden fazla para birimi olabilir (ör. dolar ve Suriye lirası); her birimin bakiyesi ayrı tutulur. Kasadaki bir birimi ötekine çevirmek için kasa sayfasındaki \"⇆ Döviz bozdur\" düğmesini kullanın: verilen birimi, tutarı ve alınan birimi seçin. Kur, Ayarlar > Döviz Kurları'ndan önerilir; gerçekte kullanılan kuru elle yazabilirsiniz. Verilen birimde gider, alınan birimde gelir olarak iki kayıt birlikte yazılır; bakiye iki birimde de değişir ama gelir/gider istatistiğine girmez. Kayıtlardan birini silmek bozdurmanın tamamını geri alır.",
+              "A kasa can hold several currencies (e.g. dollars and Syrian pounds); each currency has its own balance. To turn one currency of the kasa into another, use \"⇆ Exchange currency\" on the kasa page: pick the currency given, the amount and the currency received. The rate is suggested from Settings > Exchange Rates and can be typed by hand. Two records are written together; the balance changes in both currencies but income/expense statistics do not. Deleting one of them undoes the whole exchange.",
+              "Qaseyek dikare çend diravan bigire; balansa her diravî cuda ye. Ji bo guhertina diravekî bi bişkoka \"⇆ Dirav biguherîne\" dirav, meblağ û kurê hilbijêrin. Du qeyd bi hev re têne nivîsandin; statîstîka dahat/mesrefê naguhere.",
+            )}
+          </p>
+          <p>
+            {tx(
+              language,
+              "Daha önce başka bir birimle girilmiş bir kaydı dolara çevirmek için kaydı düzenleyin (✎) ve \"Kur\" bölümündeki \"Dolara çevir\" düğmesine basın. Kaydın tutarı ve birimi çevrilir; ilk tutar, birimi ve kullanılan kur kayıtta bilgi olarak kalır ve tabloda tutarın altında görünür. Çevirme aynı yerden geri alınabilir.",
+              "To convert a record entered in another currency into dollars, edit it (✎) and press \"Convert to dollars\" in the \"Currency\" section. Its amount and currency are converted; the original amount, currency and rate stay on the record and show under the amount in the table. The conversion can be undone from the same place.",
+              "Ji bo ku qeydeke kevn bikin dolar, qeydê biguherînin (✎) û di beşa \"Kur\" de \"Bike dolar\" bikirtînin. Meblağa destpêkê û kur wek agahî dimînin.",
+            )}
+          </p>
+        </>
+      ),
+    },
+    {
       id: "kasaBoxes",
       title: tx(language, "Gelir, Gider ve Kasa Kutuları", "Income, Expense and Cash Boxes", "Qutiyên Dahat, Mesref û Qaseyê"),
       body: (

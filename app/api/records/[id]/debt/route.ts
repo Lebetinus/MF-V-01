@@ -46,6 +46,7 @@ export const POST = withErrorHandling<Context>(async (request, { params }) => {
   if (parsed.data.updatedAt && new Date(parsed.data.updatedAt).getTime() !== old.updatedAt.getTime()) {
     return json({ error: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" }, { status: 409 });
   }
+  if (old.fxRole) return json({ error: "Döviz bozdurma kaydı borca çevrilemez" }, { status: 400 });
   // Kasa aktarımı kayıtları çift yaşar; bir tarafı borca çevrilemez.
   if (await transferForRecord(old.id, db)) {
     return json({ error: "Kasa aktarımı kaydı borca çevrilemez" }, { status: 400 });

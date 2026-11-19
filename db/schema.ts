@@ -164,6 +164,15 @@ export const records = pgTable("records", {
   debtParty: text("debt_party").notNull().default(""),
   debtLinkId: integer("debt_link_id"),
   debtMeta: jsonb("debt_meta").notNull().default([]),
+  // Döviz (bkz. app/api/_lib/fx.ts). fxRole: kasa içi döviz bozdurmanın kaydı — "out" (verilen para birimindeki gider)
+  // ya da "in" (alınan para birimindeki gelir); fxLinkId = aynı bozdurmanın öteki kaydı. Bozdurma kayıtları bakiyeye
+  // girer, gelir/gider istatistiğine girmez. originalAmount / originalCurrency / fxRate: kayıt başka bir para
+  // biriminden çevrildiyse (ör. "Dolara çevir") çevrilen tutar, birimi ve kullanılan kur — yalnız bilgi.
+  fxRole: text("fx_role").notNull().default(""),
+  fxLinkId: integer("fx_link_id"),
+  originalAmount: numeric("original_amount", { precision: 16, scale: 2, mode: "number" }),
+  originalCurrency: text("original_currency").notNull().default(""),
+  fxRate: numeric("fx_rate", { precision: 20, scale: 8, mode: "number" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
