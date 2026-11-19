@@ -196,7 +196,6 @@ export function renderCell(
           recordId={x.id}
           docs={docs}
           tableRows={tableRows}
-          onOpen={() => onEdit(x)}
           onOpenDetail={() => setDetailViewTarget(x)}
         />
       );
