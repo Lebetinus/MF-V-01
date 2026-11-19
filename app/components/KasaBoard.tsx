@@ -4,7 +4,7 @@ import { MoneyStack } from "./MoneyStack";
 import { useMemo, useState } from "react";
 import { localizeData, tx } from "../lib/i18n";
 import { date, moneyBreakdown, toUsd } from "../lib/finance";
-import { kasaDebtByCurrency, kasaReceivableByCurrency } from "../lib/debts";
+import { kasaDebtByCurrency, kasaDebtStatus, kasaReceivableByCurrency } from "../lib/debts";
 import type { CashAccountSummary, Language, RecordItem } from "../lib/types";
 import { NO_WORKSPACE } from "./KasaManage";
 
@@ -163,6 +163,10 @@ export function KasaBoard({
   // Borç veren kasa olarak geri alınmayı bekleyen alacak.
   const receivable = kasaReceivableByCurrency(allRecords, k.name);
   const hasReceivable = Object.keys(receivable).length > 0;
+  // Bu kasanın verdiği borç (toplam; geri alınanlar düşülmez — kalanı "Alacak" rozeti gösterir). Gelir/gider
+  // satırlarına dahil değildir, ayrı satırda gösterilir.
+  const lentGiven = Object.fromEntries(Object.entries(kasaDebtStatus(allRecords, k.name).lender?.given ?? {}).filter(([, v]) => Math.abs(v) > 0.004));
+  const hasLent = Object.keys(lentGiven).length > 0;
   const shared = (account?.sharedWithUserIds?.length ?? 0) > 0;
   // Çubuk: kasaya giren paranın tamamı = %100; yeşil = kasada kalan (bakiye), kırmızı = harcanan. Eskiden gelir ile
   // gider birbirine oranlanıyordu; bakiye sıfır olsa da çubuk yarı yeşil yarı kırmızı görünüyordu.
@@ -192,6 +196,11 @@ export function KasaBoard({
         <span className="kbIo">
           <span className="pos">↗ <MoneyStack by={k.totalInByCurrency} /></span>
           <span className="neg">↘ <MoneyStack by={k.totalOutByCurrency} /></span>
+          {hasLent && (
+            <span className="lent" title={tx(language, "Verilen borç (gelir/gider toplamlarına dahil değil)", "Money lent (not included in income/expense)", "Deynê hatî dayîn (ne di dahat/mesrefê de)")}>
+              ⇄ {tx(language, "Verilen borç", "Lent", "Deyn hat dayîn")} <MoneyStack by={lentGiven} />
+            </span>
+          )}
         </span>
         <span className="kbMeta">
           {last ? `${tx(language, "Son hareket", "Last activity", "Tevgera dawî")} ${date(last, language)}` : tx(language, "Hareket yok", "No activity", "Tevger tune")} · {k.count} {tx(language, "kayıt", "records", "tomar")}
