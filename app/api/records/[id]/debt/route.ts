@@ -6,13 +6,13 @@ import { json, withErrorHandling } from "../../../_lib/http";
 import { canWriteCashAccount } from "../../../_lib/cash-access";
 import { formatAmount, logActivity } from "../../../_lib/activity";
 import { toClientArchiveItem } from "../../../_lib/archive";
-import { DebtRaceError, markRecordAsKasaDebt, markRecordAsPartyDebt, unmarkKasaDebt, unmarkPartyDebt } from "../../../_lib/debts";
+import { DebtRaceError, DebtStepError, markRecordAsKasaDebt, markRecordAsPartyDebt, unmarkKasaDebt, unmarkPartyDebt } from "../../../_lib/debts";
 import { transferForRecord } from "../../../_lib/transfers";
 import { parseBody, recordDebtMarkSchema } from "../../../_lib/validate";
 
 type Context = { params: Promise<{ id: string }> };
 type Row = typeof records.$inferSelect;
-type Outcome = { record?: Row; error?: { status: number; message: string }; twin?: Row | null; archiveEntry?: typeof archive.$inferSelect };
+type Outcome = { record?: Row; error?: { status: number; message: string }; twin?: Row | null; removedTwin?: Row | null; archiveEntry?: typeof archive.$inferSelect };
 
 // Ortak denetim: kayıt var, kullanıcının Gelir + Gider izni var ve kaydın kasasına yazabiliyor.
 async function loadWritable(request: Request, params: Context["params"]) {
@@ -54,16 +54,33 @@ export const POST = withErrorHandling<Context>(async (request, { params }) => {
   let result: Outcome;
   try {
     result = await db.transaction(async (tx): Promise<Outcome> => {
+      // Zaten borç kaydıysa karşı taraf değiştiriliyor: önce eski işaret kaldırılır (kasalar arası borçta eski karşı
+      // kasadaki ikiz silinir), sonra yeni işaret konur. Biri başarısız olursa ikisi de geri alınır.
+      let base: Row = old;
+      let removedTwin: Row | null = null;
+      if (old.debtRole) {
+        const un = old.debtCashAccountId != null ? await unmarkKasaDebt(tx, old) : await unmarkPartyDebt(tx, old);
+        if (!un.record) return un;
+        base = un.record;
+        removedTwin = ("twin" in un ? (un.twin as Row | null | undefined) : null) ?? null;
+      }
       // Sistemdeki kasa / proje: karşı kasaya ikiz kayıt yazılır. Sistem dışı: tek kayıt.
       const change = cashAccountId != null
-        ? await markRecordAsKasaDebt(tx, user, old, cashAccountId)
-        : await markRecordAsPartyDebt(tx, old, party);
-      if (!change.record) return change;
+        ? await markRecordAsKasaDebt(tx, user, base, cashAccountId)
+        : await markRecordAsPartyDebt(tx, base, party);
+      if (!change.record) {
+        if (base !== old) throw new DebtStepError(change.error!.status, change.error!.message);
+        return change;
+      }
       const [archiveEntry] = await tx.insert(archive).values({ action: "Düzenlendi", userName: user.name, oldRecord: old }).returning();
-      return { ...change, archiveEntry };
+      if (removedTwin) {
+        await tx.insert(archive).values({ action: "Silindi", userName: user.name, oldRecord: removedTwin, reason: `Borcun karşı kasası değiştirildi: ${old.cashAccount} kaydının eski karşı kaydı` });
+      }
+      return { ...change, archiveEntry, removedTwin };
     });
   } catch (error) {
     if (error instanceof DebtRaceError) return json({ error: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" }, { status: 409 });
+    if (error instanceof DebtStepError) return json({ error: error.message }, { status: error.status });
     throw error;
   }
   if (!result.record) return json({ error: result.error!.message }, { status: result.error!.status });
@@ -80,6 +97,7 @@ export const POST = withErrorHandling<Context>(async (request, { params }) => {
   return json({
     record: rec,
     twin: result.twin ?? null,
+    removedRecordIds: result.removedTwin ? [result.removedTwin.id] : [],
     archiveEntry: result.archiveEntry ? toClientArchiveItem(result.archiveEntry) : null,
   });
 });

@@ -47,10 +47,13 @@ export function DebtMarkModal({
     return kasaOptions.find((a) => norm(a.name) === norm(x.source));
   }, [kasaOptions, x.source]);
 
-  // Gider → borç: karşı taraf sistemdeki kasa (varsayılan) ya da sistem dışı ad.
-  const [outside, setOutside] = useState(false);
-  const [kasaId, setKasaId] = useState<number | null>(() => sameNameKasa?.id ?? null);
-  const [party, setParty] = useState(() => x.source);
+  // Verilen borcun karşı tarafı sonradan değiştirilebilir (gider kaydı); tahsilat kaydı yalnız borçtan çıkarılır.
+  const canChange = marked && expense && (x.debtRole === "lent");
+  // Gider → borç: karşı taraf sistemdeki kasa (varsayılan) ya da sistem dışı ad. İşaretli kayıtta şimdiki karşı taraf.
+  const [outside, setOutside] = useState(() => marked && isPartyDebt(x));
+  const [kasaId, setKasaId] = useState<number | null>(() => (marked ? x.debtCashAccountId ?? null : sameNameKasa?.id ?? null));
+  const [party, setParty] = useState(() => (marked && isPartyDebt(x) ? x.debtParty ?? "" : x.source));
+  const changed = !marked || (outside ? !isPartyDebt(x) || party.trim().toLocaleUpperCase("tr-TR") !== (x.debtParty ?? "").toLocaleUpperCase("tr-TR") : kasaId !== (x.debtCashAccountId ?? null));
   // Gelir → tahsilat: bu kasanın aynı para birimindeki açık alacakları (kasalar arası ve sistem dışı).
   const openForIncome = useMemo(
     () => debtPairs(records).filter((p) => p.creditorId === x.cashAccountId && p.currency === x.currency && p.outstanding > 0.004),
@@ -61,17 +64,18 @@ export function DebtMarkModal({
   const tooMuch = !expense && !marked && chosenPair != null && x.amount > chosenPair.outstanding + 0.001;
 
   const [busy, setBusy] = useState(false);
-  const valid = marked || (expense ? (outside ? party.trim().length > 0 : kasaId != null) : chosenPair != null && !tooMuch);
+  const pickerValid = expense ? (outside ? party.trim().length > 0 : kasaId != null) : chosenPair != null && !tooMuch;
+  const valid = marked ? canChange && pickerValid && changed : pickerValid;
   const pair = marked ? debtPairOfRecord(records, x) : undefined;
   const kasaLeg = marked && !isPartyDebt(x);
   const counterpartName = x.debtParty || cashAccounts.find((a) => a.id === x.debtCashAccountId)?.name || "—";
 
-  async function submit() {
-    if (!valid || busy) return;
+  async function submit(unmark = false) {
+    if ((!unmark && !valid) || busy) return;
     setBusy(true);
     try {
       let body: Record<string, unknown> | null = null;
-      if (!marked) {
+      if (!unmark) {
         if (expense) body = outside ? { party: party.trim() } : { cashAccountId: kasaId };
         else body = chosenPair!.external ? { party: chosenPair!.debtorName } : { cashAccountId: chosenPair!.debtorId };
         body.updatedAt = x.updatedAt;
@@ -85,8 +89,10 @@ export function DebtMarkModal({
         return;
       }
       notify(
-        marked
+        unmark
           ? tx(language, "Borç işareti kaldırıldı.", "Debt mark removed.", "Nîşana deynê hat rakirin.")
+          : marked
+            ? tx(language, "Borcun karşı tarafı değiştirildi.", "The debt's counterpart was changed.", "Aliyê din ê deynê hat guhertin.")
           : expense
             ? tx(language, "Gider borca çevrildi.", "Expense marked as debt.", "Mesref bû deyn.")
             : tx(language, "Gelir tahsilat olarak işaretlendi.", "Income marked as a collection.", "Dahat wek standin hat nîşankirin."),
@@ -102,12 +108,16 @@ export function DebtMarkModal({
   }
 
   const title = marked
-    ? tx(language, "Borçtan çıkar", "Remove debt mark", "Nîşana deynê rake")
+    ? canChange
+      ? tx(language, "Borç bilgisi", "Debt details", "Agahiya deynê")
+      : tx(language, "Borçtan çıkar", "Remove debt mark", "Nîşana deynê rake")
     : expense
       ? tx(language, "Borca çevir", "Mark as debt", "Bike deyn")
       : tx(language, "Borç tahsilatı olarak işaretle", "Mark as debt collection", "Wek standina deynê nîşan bike");
 
-  const intro = marked
+  const intro = canChange
+    ? tx(language, "Paranın verildiği kasayı / projeyi değiştirebilir ya da kaydı borçtan çıkarabilirsiniz. Sistem içi borçta ana başlık seçilen kasanın adı olur; borçtan çıkarılınca eski başlık geri gelir.", "You can change where the money went or remove the debt mark. For a debt inside the system the main category becomes the chosen kasa's name; removing the mark restores the old one.", "Hûn dikarin qase / projeya ku pere çûyê biguherînin an nîşana deynê rakin.")
+    : marked
     ? kasaLeg
       ? tx(language, `Kayıt yeniden normal gelir / gider olur ve istatistiklere girer. ${counterpartName} kasasındaki karşı kayıt silinir (Arşiv'e taşınır).`, `The record becomes a normal income / expense again. Its counterpart in ${counterpartName} is deleted (moved to the Archive).`, `Qeyd dîsa dibe dahat / mesrefa asayî. Qeyda hevpar a di ${counterpartName} de tê jêbirin (diçe Arşîvê).`)
       : tx(language, "Kayıt yeniden normal gelir / gider olur ve istatistiklere girer. Tutarı, tarihi ve diğer bilgileri değişmez.", "The record becomes a normal income / expense again and counts in the statistics. Its amount, date and other details stay the same.", "Qeyd dîsa dibe dahat / mesrefa asayî û dikeve statîstîkan. Meblağ, dîrok û agahiyên din naguherin.")
@@ -141,7 +151,7 @@ export function DebtMarkModal({
             </>
           )}
         </dl>
-        {!marked && (
+        {(!marked || canChange) && (
           <div className="formGrid">
             {expense ? (
               <>
@@ -197,7 +207,16 @@ export function DebtMarkModal({
         )}
         <div className="modalActions">
           <button type="button" className="light" onClick={onClose}>{tx(language, "Vazgeç", "Cancel", "Betal")}</button>
-          <button type="button" className="primary" disabled={!valid || busy} onClick={submit}>{title}</button>
+          {marked && (
+            <button type="button" className={canChange ? "light redText" : "primary"} disabled={busy} onClick={() => submit(true)}>
+              {tx(language, "Borçtan çıkar", "Remove debt mark", "Nîşana deynê rake")}
+            </button>
+          )}
+          {(!marked || canChange) && (
+            <button type="button" className="primary" disabled={!valid || busy} onClick={() => submit()}>
+              {marked ? tx(language, "Değişikliği kaydet", "Save change", "Guhertinê tomar bike") : title}
+            </button>
+          )}
         </div>
       </div>
     </div>

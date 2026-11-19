@@ -287,7 +287,9 @@ export function renderCell(
                 <button
                   type="button"
                   className={`icon debtMark${x.debtRole ? " on" : ""}`}
-                  title={x.debtRole
+                  title={x.debtRole === "lent"
+                    ? tx(language, "Borç bilgisi: karşı kasayı değiştir / borçtan çıkar", "Debt details: change the counterpart / remove the mark", "Agahiya deynê")
+                    : x.debtRole
                     ? tx(language, "Borçtan çıkar (normal kayda döndür)", "Remove the debt mark", "Nîşana deynê rake")
                     : x.kind === "expense"
                       ? tx(language, "Borca çevir", "Mark as debt", "Bike deyn")

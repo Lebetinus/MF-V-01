@@ -352,7 +352,7 @@ export async function unmarkPartyDebt(tx: DbClient, old: Leg): Promise<DebtChang
   }
   const [record] = await tx
     .update(records)
-    .set({ debtRole: "", debtParty: "", updatedAt: new Date() })
+    .set({ debtRole: "", debtParty: "", source: originalSourceOf(old), debtMeta: [], updatedAt: new Date() })
     .where(and(eq(records.id, old.id), eq(records.debtRole, old.debtRole)))
     .returning();
   if (!record) return { error: { status: 409, message: "Bu kayıt başka bir kullanıcı tarafından değiştirildi" } };
@@ -390,7 +390,8 @@ export async function markRecordAsKasaDebt(
     .values({
       kind: lend ? "income" : "expense",
       date: old.date,
-      source: lend ? "Borç alındı" : "Borç ödemesi",
+      // Ana başlık karşı kasanın adıdır (bu kayıtta da seçilen kasanın adı olur).
+      source: old.cashAccount,
       detail: lend ? `Borç alındı ← ${old.cashAccount}` : `Borç ödemesi → ${old.cashAccount}`,
       note: old.note,
       person: old.person,
@@ -406,7 +407,16 @@ export async function markRecordAsKasaDebt(
     .returning();
   const [record] = await tx
     .update(records)
-    .set({ debtRole: lend ? "lent" : "collected", debtCashAccountId: counterpartId, debtParty: counterpartName, debtLinkId: twin.id, updatedAt: new Date() })
+    .set({
+      debtRole: lend ? "lent" : "collected",
+      debtCashAccountId: counterpartId,
+      debtParty: counterpartName,
+      debtLinkId: twin.id,
+      // Sistem içi borçta ana başlık seçilen kasanın adı olur; eski başlık "Borçtan çıkar" için saklanır.
+      source: counterpartName,
+      debtMeta: { originalSource: old.source },
+      updatedAt: new Date(),
+    })
     .where(and(eq(records.id, old.id), eq(records.debtRole, "")))
     .returning();
   // Yarış: kayıt bu arada değiştiyse transaction geri alınır (ikiz de yazılmamış olur).
@@ -435,8 +445,22 @@ export async function unmarkKasaDebt(tx: DbClient, old: Leg): Promise<DebtChange
   if (twin) await tx.delete(records).where(eq(records.id, twin.id));
   const [record] = await tx
     .update(records)
-    .set({ debtRole: "", debtCashAccountId: null, debtLinkId: null, debtParty: "", updatedAt: new Date() })
+    .set({ debtRole: "", debtCashAccountId: null, debtLinkId: null, debtParty: "", source: originalSourceOf(current), debtMeta: [], updatedAt: new Date() })
     .where(eq(records.id, current.id))
     .returning();
   return { record, twin };
+}
+
+// "Borca çevir" sırasında değişen ana başlığın eski hali (debtMeta.originalSource); yoksa kaydın şimdiki başlığı.
+export function originalSourceOf(leg: { source: string; debtMeta: unknown }): string {
+  const meta = leg.debtMeta as { originalSource?: unknown } | null;
+  return meta && typeof meta === "object" && !Array.isArray(meta) && typeof meta.originalSource === "string" ? meta.originalSource : leg.source;
+}
+
+// Borç adımı başarısız olursa transaction geri alınsın diye fırlatılır (ör. karşı tarafı değiştirirken: işaret
+// kaldırıldıktan sonra yeni işaret konamazsa kaldırma da geri alınır).
+export class DebtStepError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
 }

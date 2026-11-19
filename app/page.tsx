@@ -6,6 +6,7 @@ import { ProfileModal } from "./components/ProfileModal";
 import { Dashboard } from "./components/Dashboard";
 import { Records } from "./components/Records";
 import { RecordModal } from "./components/records/RecordModal";
+import { DebtMarkModal } from "./components/DebtMarkModal";
 import { useDraggableModals, DeleteConfirmModal } from "./components/shared";
 import { Archive } from "./components/Archive";
 import { Activity } from "./components/Activity";
@@ -121,6 +122,8 @@ export default function Home() {
   // Kasa Kontrol Merkezi: çalışma alanlarının elle sıralaması (genel / liste / rj / sec-<id> anahtarları).
   const [workspaceOrder, setWorkspaceOrder] = useState<string[]>([]);
   const [cashTransfers, setCashTransfers] = useState<CashTransfer[]>([]);
+  // Düzenleme penceresindeki "Borç" bölümünden açılan borç penceresinin kaydı.
+  const [debtMarkFromEdit, setDebtMarkFromEdit] = useState<RecordItem | null>(null);
   // Badge next to "Yorumlar" in the sidebar — comments on records this user
   // can see that they haven't opened yet (see app/api/comments/unread-count
   // and the per-record/read-all "mark read" endpoints Comments.tsx calls).
@@ -1188,6 +1191,23 @@ export default function Home() {
           onSave={saveRecord}
           cashAccounts={cashAccounts}
           sections={sections}
+          onOpenDebt={
+            // Borç bilgisi yalnız kayıtlı, bir kasaya bağlı ve kasa aktarımı olmayan kayıtta açılır; düzenleme penceresi
+            // kapanır (kaydedilmemiş değişiklikler bırakılır) ve borç penceresi açılır.
+            modal.item && modal.item.cashAccountId != null && !cashTransfers.some((t) => t.fromRecordId === modal.item!.id || t.toRecordId === modal.item!.id)
+              ? () => { const item = modal.item!; setModal(null); setDebtMarkFromEdit(item); }
+              : undefined
+          }
+        />
+      )}
+      {debtMarkFromEdit && (
+        <DebtMarkModal
+          language={language}
+          record={debtMarkFromEdit}
+          records={records}
+          cashAccounts={cashAccounts}
+          onDone={refreshAfterCashTransfer}
+          onClose={() => setDebtMarkFromEdit(null)}
         />
       )}
       {noteDeleteId !== null && (

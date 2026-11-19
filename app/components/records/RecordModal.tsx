@@ -24,7 +24,11 @@ export function RecordModal({
   onSave,
   cashAccounts,
   sections = [],
+  onOpenDebt,
 }: {
+  // Kayıtlı bir gelir/giderin borç bilgisini açar (Borca çevir / karşı kasayı değiştir / Borçtan çıkar; DebtMarkModal).
+  // Verilmezse (yeni kayıt, kasa aktarımı) borç bölümü gösterilmez.
+  onOpenDebt?: () => void;
   language: Language;
   kind: Kind;
   initial?: RecordItem;
@@ -445,6 +449,26 @@ export function RecordModal({
           {rfDetail}
           {rfTags}
           {rfLink}
+          {initial && onOpenDebt && (
+            <>
+              {sec(tx(language, "BORÇ", "DEBT", "DEYN"))}
+              <div className="wide rfDebt">
+                <span>
+                  {initial.debtRole
+                    ? `${initial.debtRole === "lent" || initial.debtRole === "repay" ? "→" : "←"} ${localizeData(initial.debtParty || initial.source, language)}${initial.debtCashAccountId == null ? ` · ${tx(language, "sistem dışı", "outside", "derveyî")}` : ""}`
+                    : tx(language, "Bu kayıt borç değil.", "This record is not a debt.", "Ev qeyd ne deyn e.")}
+                  {initial.debtRole && <small>{tx(language, "Tutar, kasa ve para birimi borç kaydında değiştirilemez.", "Amount, kasa and currency cannot be changed on a debt record.", "Meblağ, qase û diravê di qeyda deynê de nayên guhertin.")}</small>}
+                </span>
+                <button type="button" className="light compact" onClick={onOpenDebt}>
+                  ⇄ {initial.debtRole
+                    ? tx(language, "Borç bilgisini değiştir", "Change debt details", "Agahiya deynê biguherîne")
+                    : kind === "expense"
+                      ? tx(language, "Borca çevir", "Mark as debt", "Bike deyn")
+                      : tx(language, "Borç tahsilatı olarak işaretle", "Mark as debt collection", "Wek standina deynê nîşan bike")}
+                </button>
+              </div>
+            </>
+          )}
           {sec(tx(language, "EK BİLGİ", "EXTRA", "ZÊDE"))}
           <label className="wide">
             {tx(language, "Belgeler", "Documents", "Belge")}
