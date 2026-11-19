@@ -5208,3 +5208,5 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .debtMarkFacts dd.positive { color: var(--green); }
 .icon.debtMark { color: var(--amber); margin-left: 3px; }
 .icon.debtMark.on { background: var(--amber-bg); border-color: var(--amber); }
+.rfDebt { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid #f1dfb7; border-radius: 10px; background: var(--amber-bg); font-size: 13px; font-weight: 600; }
+.rfDebt small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; margin-top: 2px; }

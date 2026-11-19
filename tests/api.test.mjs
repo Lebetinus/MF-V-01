@@ -969,7 +969,8 @@ test("party debts: an expense becomes a debt and an income becomes its collectio
   assert.equal(await kasaBalance(kasa), 820, "the balance does not change");
   assert.equal(await partyOutstanding(kasa, project), 300);
   const again = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { party: project } });
-  assert.equal(again.status, 400, "already a debt");
+  assert.equal(again.status, 200, "marking a debt again just (re)sets its counterpart");
+  assert.equal(await partyOutstanding(kasa, project), 300, "nothing is counted twice");
   const amountEdit = await call("PUT", `/api/records/${expense.id}`, { cookie: adminCookie, body: { amount: 1 } });
   assert.equal(amountEdit.status, 400, "a debt record's amount is locked");
 
@@ -1037,7 +1038,8 @@ test("debt mark: an expense becomes a kasa-to-kasa debt picked from the list, wi
   assert.equal(lent.debtParty, `${RUN_TAG}_kmBorrower`);
   assert.equal(lent.amount, 300);
   assert.equal(lent.person, "SİNAN", "the person stays");
-  assert.equal(lent.source, `${RUN_TAG}_kmProject`, "the title stays");
+  assert.equal(lent.source, `${RUN_TAG}_kmBorrower`, "inside the system the title becomes the chosen kasa");
+  assert.equal(twin.source, lenderName, "the twin is titled with the lending kasa");
   assert.equal(twin.kind, "income");
   assert.equal(twin.debtRole, "borrowed");
   assert.equal(twin.cashAccountId, borrower);
@@ -1071,6 +1073,53 @@ test("debt mark: an expense becomes a kasa-to-kasa debt picked from the list, wi
   assert.equal(await recordExists(collect.json.twin.id), false);
   assert.equal(unCollect.json.record.debtRole, "");
   assert.equal(await outstanding(borrower, lender), 200);
+});
+
+test("debt mark: the counterpart can be changed later, and unmarking restores the original title", async () => {
+  const lenderName = `${RUN_TAG}_chLender`;
+  const lender = await makeKasa(lenderName, 1000);
+  const first = await makeKasa(`${RUN_TAG}_chFirst`);
+  const second = await makeKasa(`${RUN_TAG}_chSecond`);
+  const expense = await plainRecord(lenderName, "expense", 200, `${RUN_TAG}_typedByHand`, "ŞOREŞ");
+
+  // Outside first, then moved onto a kasa from the list.
+  const outside = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { party: `${RUN_TAG}_typedByHand` } });
+  assert.equal(outside.status, 200);
+  assert.equal(outside.json.record.source, `${RUN_TAG}_typedByHand`, "outside debts keep the title");
+  const toFirst = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: first } });
+  assert.equal(toFirst.status, 200);
+  assert.equal(toFirst.json.record.debtCashAccountId, first);
+  assert.equal(toFirst.json.record.source, `${RUN_TAG}_chFirst`);
+  assert.equal(await kasaBalance(first), 200);
+  assert.equal(await partyOutstanding(lender, `${RUN_TAG}_typedByHand`), 0, "the outside debt is gone");
+
+  // Kasa to another kasa: the old twin goes, a new one is written.
+  const oldTwinId = toFirst.json.twin.id;
+  const toSecond = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: second } });
+  assert.equal(toSecond.status, 200);
+  assert.deepEqual(toSecond.json.removedRecordIds, [oldTwinId]);
+  assert.equal(await recordExists(oldTwinId), false);
+  assert.equal(toSecond.json.record.source, `${RUN_TAG}_chSecond`);
+  assert.equal(await kasaBalance(first), 0);
+  assert.equal(await kasaBalance(second), 200);
+  assert.equal(await kasaBalance(lender), 800, "the lender's balance never moves");
+
+  // A failed change rolls everything back: once the second kasa has repaid, the debt cannot move.
+  assert.equal((await repay(second, lender, 50)).status, 201);
+  const blocked = await call("POST", `/api/records/${expense.id}/debt`, { cookie: adminCookie, body: { cashAccountId: first } });
+  assert.equal(blocked.status, 409);
+  const after = (await call("GET", "/api/records", { cookie: adminCookie })).json.records.find((r) => r.id === expense.id);
+  assert.equal(after.debtCashAccountId, second, "nothing changed");
+  assert.equal(await outstanding(second, lender), 150);
+
+  // Unmarking (after the repayment is undone) restores the hand-typed title.
+  const repayLeg = (await call("GET", "/api/records", { cookie: adminCookie })).json.records.find((r) => r.cashAccountId === second && r.debtRole === "repay");
+  assert.equal((await deleteRecord(repayLeg.id)).status, 200);
+  const un = await call("DELETE", `/api/records/${expense.id}/debt`, { cookie: adminCookie });
+  assert.equal(un.status, 200);
+  assert.equal(un.json.record.source, `${RUN_TAG}_typedByHand`);
+  assert.equal(un.json.record.debtRole, "");
+  assert.equal(await kasaBalance(second), 0);
 });
 
 test("records: two saves from the same version — exactly one wins", async () => {
