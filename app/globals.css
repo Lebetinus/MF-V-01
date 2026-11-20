@@ -5224,6 +5224,18 @@ header { background: transparent; border-bottom: 0; min-height: 64px; padding: 1
 .formGrid .fxRate input, .fxRate input { width: 170px; flex: 0 0 170px; min-width: 0; }
 .fxRate > span { font-weight: 600; color: var(--ink); white-space: nowrap; }
 .fxResult { align-self: end; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 13px; font-variant-numeric: tabular-nums; }
-.fxResult b { color: var(--green); }
-.fxResult small { color: var(--muted); }
+.fxResult b { color: var(--ink); }
+.fxResult small { display: block; margin-top: 4px; color: var(--muted); }
+.fxFlow { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.fxFlow .out b { color: var(--red); }
+.fxFlow .in b { color: var(--green); }
+.fxHeld { display: grid; gap: 6px; margin-bottom: 12px; }
+.fxHeld > span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.fxHeldCards { display: flex; flex-wrap: wrap; gap: 8px; }
+.fxHeldCard { display: grid; gap: 2px; min-width: 120px; padding: 8px 12px; text-align: left; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); cursor: pointer; font-variant-numeric: tabular-nums; }
+.fxHeldCard b { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.fxHeldCard span { font-size: 14px; font-weight: 700; }
+.fxHeldCard small { font-size: 10.5px; font-weight: 600; color: var(--blue); }
+.fxHeldCard.active { border-color: var(--blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 18%, transparent); background: #fff; }
+.fxHeldCard.negative span { color: var(--red); }
 small.amountOrig { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); white-space: normal; line-height: 1.3; }

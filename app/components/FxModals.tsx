@@ -94,6 +94,10 @@ export function FxExchangeModal({
   const result = ok ? fxConvert(amountNum, from, to, rateNum) : 0;
   const available = balances[from] ?? 0;
   const overBalance = ok && amountNum > available + 0.004;
+  // Kasanın bakiyesi olan birimleri (kartlar) ve işlemden sonraki bakiyeler.
+  const held = Object.entries(balances).filter(([, v]) => Math.abs(v) > 0.004).sort((a, b) => (a[0] === "USD" ? 1 : 0) - (b[0] === "USD" ? 1 : 0) || b[1] - a[1]);
+  const afterFrom = available - (ok ? amountNum : 0);
+  const afterTo = (balances[to] ?? 0) + (ok ? result : 0);
 
   async function submit() {
     if (!ok || result <= 0 || busy) return;
@@ -126,25 +130,41 @@ export function FxExchangeModal({
         <div className="modalHead">
           <div>
             <h2>{title} · {localizeData(kasa.name, language)}</h2>
-            <p>{tx(language, "Kasadaki bir para birimini ötekine çevirir: verilen birimde gider, alınan birimde gelir olarak iki kayıt birlikte yazılır. Bakiye iki birimde de değişir; gelir/gider istatistiğine girmez. Çevrilen tutar ve kur kayıtta bilgi olarak kalır.", "Converts one currency of the kasa into another: an expense in the given currency and income in the received one are written together. The balance changes in both currencies but income/expense statistics do not. The converted amount and the rate stay on the record.", "Diravekî qaseyê dike diravekî din: du qeyd bi hev re têne nivîsandin. Balans di her du diravan de diguhere; statîstîka dahat/mesrefê naguhere.")}</p>
+            <p>{tx(language, "Kasadaki bir para birimini ötekine çevirir (ör. SYP'yi dolara bozdurmak): bozdurulan para kasadan çıkar, karşılığı kasaya girer; iki kayıt birlikte yazılır. Bakiye iki birimde de değişir; gelir/gider istatistiğine girmez. Çevrilen tutar ve kur kayıtta bilgi olarak kalır.", "Converts one currency of the kasa into another: an expense in the given currency and income in the received one are written together. The balance changes in both currencies but income/expense statistics do not. The converted amount and the rate stay on the record.", "Diravekî qaseyê dike diravekî din: du qeyd bi hev re têne nivîsandin. Balans di her du diravan de diguhere; statîstîka dahat/mesrefê naguhere.")}</p>
           </div>
           <button type="button" onClick={onClose} aria-label={tx(language, "Kapat", "Close", "Bigire")}>×</button>
         </div>
+        <div className="fxHeld">
+          <span>{tx(language, "Kasadaki para — bozdurulacak parayı seçin", "Money in the kasa — pick the money to exchange", "Pereyê di qaseyê de — pereyê ku were guhertin hilbijêrin")}</span>
+          {held.length === 0 ? (
+            <small className="debtHint">{tx(language, "Bu kasada bakiye yok.", "This kasa has no balance.", "Di vê qaseyê de balans tune.")}</small>
+          ) : (
+            <div className="fxHeldCards">
+              {held.map(([c, v]) => (
+                <button key={c} type="button" className={`fxHeldCard${c === from ? " active" : ""}${v < 0 ? " negative" : ""}`} onClick={() => pickFrom(c)} aria-pressed={c === from}>
+                  <b>{c}</b>
+                  <span>{money(v, c)}</span>
+                  {c === from && <small>{tx(language, "bozdurulacak", "to exchange", "tê guhertin")}</small>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="formGrid">
           <label>
-            {tx(language, "Verilen para birimi", "Currency given", "Diravê hatî dayîn")}
+            {tx(language, "Kasadan çıkacak para (bozdurulacak)", "Money leaving the kasa (exchanged)", "Pereyê ji qaseyê derdikeve")}
             <select value={from} onChange={(e) => pickFrom(e.target.value)}>
               {FX_CURRENCIES.map((c) => <option key={c} value={c}>{c}{balances[c] ? ` — ${tx(language, "kasada", "in kasa", "di qaseyê de")} ${money(balances[c], c)}` : ""}</option>)}
             </select>
           </label>
           <label>
-            {tx(language, "Alınan para birimi", "Currency received", "Diravê hatî standin")}
+            {tx(language, "Kasaya girecek para", "Money entering the kasa", "Pereyê dikeve qaseyê")}
             <select value={to} onChange={(e) => pickTo(e.target.value)}>
-              {FX_CURRENCIES.filter((c) => c !== from).map((c) => <option key={c} value={c}>{c}</option>)}
+              {FX_CURRENCIES.filter((c) => c !== from).map((c) => <option key={c} value={c}>{c}{balances[c] ? ` — ${tx(language, "kasada", "in kasa", "di qaseyê de")} ${money(balances[c], c)}` : ""}</option>)}
             </select>
           </label>
           <label>
-            {tx(language, "Verilen tutar", "Amount given", "Meblağa hatî dayîn")} ({from})
+            {tx(language, "Bozdurulacak tutar", "Amount to exchange", "Meblağa ku tê guhertin")} ({from})
             <div className="amountCurrency">
               <input type="number" min="0" step="any" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
               {available > 0.004 && <button type="button" className="light compact" onClick={() => setAmount(String(Math.round(available * 100) / 100))}>{tx(language, "Tamamı", "All", "Hemû")}</button>}
@@ -160,9 +180,17 @@ export function FxExchangeModal({
           </label>
           <RateField language={language} from={from} to={to} rate={rate} setRate={setRate} suggested={suggested} />
           <div className="wide fxResult">
-            {ok
-              ? <>{money(amountNum, from)} → <b>{money(result, to)}</b> <small>· {fxRateLabel(from, to, rateNum)}</small></>
-              : tx(language, "Tutarı ve kuru girin.", "Enter the amount and the rate.", "Meblağ û kurê binivîsin.")}
+            {ok ? (
+              <>
+                <div className="fxFlow">
+                  <span className="out">{tx(language, "Kasadan çıkacak", "Leaves the kasa", "Ji qaseyê derdikeve")}: <b>{money(amountNum, from)}</b></span>
+                  <span className="in">{tx(language, "Kasaya girecek", "Enters the kasa", "Dikeve qaseyê")}: <b>{money(result, to)}</b></span>
+                </div>
+                <small>
+                  {fxRateLabel(from, to, rateNum)} · {tx(language, "İşlemden sonra kasada", "After this the kasa holds", "Piştî vê di qaseyê de")}: {money(afterFrom, from)} · {money(afterTo, to)}
+                </small>
+              </>
+            ) : tx(language, "Tutarı ve kuru girin.", "Enter the amount and the rate.", "Meblağ û kurê binivîsin.")}
           </div>
           <label className="wide">
             {tx(language, "Not", "Note", "Nîşe")}
